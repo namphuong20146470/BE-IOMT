@@ -290,7 +290,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     warning_severity: 'moderate',
                     measured_value: deviceData.voltage,
                     threshold_value: thresholds.voltage_max,
-                    warning_message: `Điện áp vượt ngưỡng cao: ${deviceData.voltage}V (ngưỡng: ${thresholds.voltage_max}V)`
+                    warning_message: `Điện áp vượt ngưỡng cao`
                 });
             } else if (deviceData.voltage < thresholds.voltage_min * 0.8) {
                 warnings.push({
@@ -298,7 +298,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     warning_severity: 'major',
                     measured_value: deviceData.voltage,
                     threshold_value: thresholds.voltage_min * 0.8,
-                    warning_message: `Điện áp thấp nghiêm trọng: ${deviceData.voltage}V (ngưỡng nghiêm trọng: ${(thresholds.voltage_min * 0.8).toFixed(1)}V)`
+                    warning_message: `Điện áp thấp nghiêm trọng`
                 });
             } else if (deviceData.voltage < thresholds.voltage_min) {
                 warnings.push({
@@ -306,7 +306,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     warning_severity: 'moderate',
                     measured_value: deviceData.voltage,
                     threshold_value: thresholds.voltage_min,
-                    warning_message: `Điện áp thấp: ${deviceData.voltage}V (ngưỡng: ${thresholds.voltage_min}V)`
+                    warning_message: `Điện áp thấp`
                 });
             }
         }
@@ -319,7 +319,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     warning_severity: 'major',
                     measured_value: deviceData.current,
                     threshold_value: thresholds.current_max * 1.2,
-                    warning_message: `Dòng điện vượt ngưỡng nghiêm trọng: ${deviceData.current}A (ngưỡng nghiêm trọng: ${(thresholds.current_max * 1.2).toFixed(2)}A)`
+                    warning_message: `Dòng điện vượt ngưỡng nghiêm trọng`
                 });
             } else if (deviceData.current > thresholds.current_max) {
                 warnings.push({
@@ -327,7 +327,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     warning_severity: 'moderate',
                     measured_value: deviceData.current,
                     threshold_value: thresholds.current_max,
-                    warning_message: `Dòng điện vượt ngưỡng: ${deviceData.current}A (ngưỡng: ${thresholds.current_max}A)`
+                    warning_message: `Dòng điện vượt ngưỡng`
                 });
             }
         }
@@ -340,7 +340,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     warning_severity: 'major',
                     measured_value: deviceData.power_operating,
                     threshold_value: thresholds.power_max * 1.2,
-                    warning_message: `Công suất vượt ngưỡng nghiêm trọng: ${deviceData.power_operating}W (ngưỡng nghiêm trọng: ${(thresholds.power_max * 1.2).toFixed(1)}W)`
+                    warning_message: `Công suất vượt ngưỡng nghiêm trọng`
                 });
             } else if (deviceData.power_operating > thresholds.power_max) {
                 warnings.push({
@@ -348,7 +348,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     warning_severity: 'moderate',
                     measured_value: deviceData.power_operating,
                     threshold_value: thresholds.power_max,
-                    warning_message: `Công suất vượt ngưỡng: ${deviceData.power_operating}W (ngưỡng: ${thresholds.power_max}W)`
+                    warning_message: `Công suất vượt ngưỡng`
                 });
             }
         }
@@ -363,7 +363,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                         warning_severity: 'critical',
                         measured_value: deviceData.temperature_c,
                         threshold_value: thresholds.temperature_max * 1.2,
-                        warning_message: `Nhiệt độ quá cao nguy hiểm: ${deviceData.temperature_c}°C (ngưỡng nguy hiểm: ${(thresholds.temperature_max * 1.2).toFixed(1)}°C)`
+                        warning_message: `Nhiệt độ quá cao nguy hiểm`
                     });
                 } else if (deviceData.temperature_c > thresholds.temperature_max) {
                     warnings.push({
@@ -371,7 +371,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                         warning_severity: 'moderate',
                         measured_value: deviceData.temperature_c,
                         threshold_value: thresholds.temperature_max,
-                        warning_message: `Nhiệt độ vượt ngưỡng: ${deviceData.temperature_c}°C (ngưỡng: ${thresholds.temperature_max}°C)`
+                        warning_message: `Nhiệt độ vượt ngưỡng`
                     });
                 }
             }
@@ -384,7 +384,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                         warning_severity: 'major',
                         measured_value: deviceData.humidity_percent,
                         threshold_value: thresholds.humidity_max * 1.2,
-                        warning_message: `Độ ẩm quá cao nghiêm trọng: ${deviceData.humidity_percent}% (ngưỡng nghiêm trọng: ${(thresholds.humidity_max * 1.2).toFixed(1)}%)`
+                        warning_message: `Độ ẩm quá cao nghiêm trọng`
                     });
                 } else if (deviceData.humidity_percent > thresholds.humidity_max) {
                     warnings.push({
@@ -392,7 +392,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                         warning_severity: 'moderate',
                         measured_value: deviceData.humidity_percent,
                         threshold_value: thresholds.humidity_max,
-                        warning_message: `Độ ẩm vượt ngưỡng: ${deviceData.humidity_percent}% (ngưỡng: ${thresholds.humidity_max}%)`
+                        warning_message: `Độ ẩm vượt ngưỡng`
                     });
                 }
             }
@@ -405,7 +405,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                         warning_severity: 'critical',
                         measured_value: deviceData.leak_current_ma,
                         threshold_value: thresholds.leak_current_shutdown,
-                        warning_message: `Dòng rò vượt ngưỡng ngắt thiết bị: ${deviceData.leak_current_ma}mA (ngưỡng: ${thresholds.leak_current_shutdown}mA)`
+                        warning_message: `Dòng rò vượt ngưỡng ngắt thiết bị`
                     });
                 } else if (deviceData.leak_current_ma >= thresholds.leak_current_strong) {
                     warnings.push({
@@ -413,7 +413,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                         warning_severity: 'major',
                         measured_value: deviceData.leak_current_ma,
                         threshold_value: thresholds.leak_current_strong,
-                        warning_message: `Dòng rò vượt ngưỡng mạnh: ${deviceData.leak_current_ma}mA (ngưỡng: ${thresholds.leak_current_strong}mA)`
+                        warning_message: `Dòng rò vượt ngưỡng mạnh`
                     });
                 } else if (deviceData.leak_current_ma >= thresholds.leak_current_soft) {
                     warnings.push({
@@ -421,7 +421,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                         warning_severity: 'minor',
                         measured_value: deviceData.leak_current_ma,
                         threshold_value: thresholds.leak_current_soft,
-                        warning_message: `Dòng rò vượt ngưỡng nhẹ: ${deviceData.leak_current_ma}mA (ngưỡng: ${thresholds.leak_current_soft}mA)`
+                        warning_message: `Dòng rò vượt ngưỡng nhẹ`
                     });
                 }
             }
@@ -539,5 +539,53 @@ export const deleteAllWarningLogs = async (req, res) => {
         });
     }
 };
+
+    // PATCH /warnings/:id/status - cập nhật trạng thái cảnh báo
+    export const updateWarningStatus = async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { status, acknowledged_by, resolution_notes } = req.body;
+            // Tự động lấy user id từ xác thực nếu không truyền lên
+            let userId = acknowledged_by;
+            if (userId === undefined && req.user && req.user.id) {
+                userId = req.user.id;
+            }
+            if (!status || !['active', 'in_progress', 'resolved', 'ignored'].includes(status)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Trạng thái không hợp lệ. Chỉ chấp nhận: active, in_progress, resolved, ignored.'
+                });
+            }
+            let setClause = `status = '${status}'`;
+            if (status === 'resolved') {
+                setClause += `, resolved_at = CURRENT_TIMESTAMP`;
+            }
+            if (userId !== undefined) {
+                setClause += `, acknowledged_by = ${parseInt(userId)}`;
+            }
+            if (resolution_notes !== undefined) {
+                setClause += `, resolution_notes = '${resolution_notes}'`;
+            }
+            const query = `UPDATE device_warning_logs SET ${setClause} WHERE id = ${parseInt(id)} RETURNING *`;
+            const result = await prisma.$queryRawUnsafe(query);
+            if (!result || result.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Không tìm thấy cảnh báo với id này.'
+                });
+            }
+            return res.status(200).json({
+                success: true,
+                updated_warning: result[0]
+            });
+        } catch (error) {
+            console.error('Error updating warning status:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Lỗi khi cập nhật trạng thái cảnh báo',
+                error: error.message
+            });
+        }
+    };
 
 

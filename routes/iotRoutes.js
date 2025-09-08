@@ -70,6 +70,8 @@ import {
     checkDeviceWarnings,
     deleteAllWarningLogs
 } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
+import { updateWarningStatus } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
+
 // Add this import at the top with the other imports
 
 const router = express.Router();
@@ -134,6 +136,8 @@ router.get('/warnings', getAllWarningLogs);
 router.get('/warnings/latest', getLatestWarningLogs);
 router.get('/warnings/active', getActiveWarnings);
 router.get('/warnings/statistics', getWarningStatistics);
+// PATCH endpoint cập nhật trạng thái cảnh báo
+router.patch('/warnings/:id/status', updateWarningStatus);
 router.put('/warnings/:id/acknowledge', acknowledgeWarning);
 router.put('/warnings/:id/resolve', resolveWarning);
 router.post('/warnings/delete-all', deleteAllWarningLogs);
@@ -154,5 +158,7 @@ router.post('/warnings/test', async (req, res) => {
         });
     }
 });
+
+
 
 export default router;
