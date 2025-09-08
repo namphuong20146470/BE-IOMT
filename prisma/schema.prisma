@@ -63,9 +63,11 @@ model iot_environment_status {
   leak_current_ma  Float?    @db.Real
   temperature_c    Float?    @db.Real
   humidity_percent Float?    @db.Real
-  leak_status      Boolean?  @default(false)
   over_temperature Boolean?  @default(false)
   over_humidity    Boolean?  @default(false)
+  soft_warning     Boolean?  @default(false)
+  strong_warning   Boolean?  @default(false)
+  shutdown_warning Boolean?  @default(false)
   timestamp        DateTime? @default(now()) @db.Timestamp(6)
 }
 
@@ -84,4 +86,61 @@ model led_nova_100 {
   under_voltage_operating Boolean?                 @default(false)
   power_socket_status     Boolean?                 @default(false)
   timestamp               DateTime?                @default(now()) @db.Timestamp(6)
+}
+
+// Add this to your schema.prisma file
+// In your device_warning_logs model
+model device_warning_logs {
+  id                 Int       @id @default(autoincrement())
+  device_type        String    
+  device_name        String?   
+  device_id          Int?      
+  warning_type       String    
+  warning_severity   String    
+  measured_value     Float?    
+  threshold_value    Float?    
+  warning_message    String    
+  status             String    @default("active") 
+  resolved_at        DateTime?
+  acknowledged_by    Int?      
+  resolution_notes   String?
+  timestamp          DateTime  @default(now()) @db.Timestamp(6)
+  
+  // Relation to users
+  users              users?    @relation(fields: [acknowledged_by], references: [id])
+  
+  @@index([device_type, timestamp])
+  @@index([warning_type, timestamp])
+  @@index([status, timestamp])
+}
+
+model logs {
+  id         Int       @id @default(autoincrement())
+  user_id    Int?
+  action     String    @db.VarChar(50)
+  target     String?   @db.VarChar(100)
+  details    String?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  users      users?    @relation(fields: [user_id], references: [id])
+}
+
+model roles {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique @db.VarChar(50)
+  description String?
+  id_role     String? @unique(map: "unique_id_role") @db.VarChar(20)
+  users       users[]
+}
+
+// Update your users model to include the reverse relation
+model users {
+  id                  Int                  @id @default(autoincrement())
+  username            String               @unique @db.VarChar(50)
+  password_hash       String
+  full_name           String?              @db.VarChar(100)
+  role_id             Int?
+  is_active           Boolean?             @default(true)
+  logs                logs[]
+  device_warning_logs device_warning_logs[] // Add this line for the reverse relation
+  roles               roles?               @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }

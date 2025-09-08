@@ -1,23 +1,33 @@
-import jwt from "jsonwebtoken";
-import dotenv from "dotenv";
+import jwt from 'jsonwebtoken';
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 
-dotenv.config();
+export default async function authMiddleware(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) return res.status(401).json({ message: 'Chưa đăng nhập' });
 
-export default (req, res, next) => {
-    const authHeader = req.headers["authorization"];
-    if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-    
-    // Extract token from "Bearer <token>"
-    const parts = authHeader.split(' ');
-    if (parts.length !== 2 || parts[0] !== 'Bearer') {
-        return res.status(401).json({ error: "Authorization format should be: Bearer <token>" });
-    }
-    
-    const token = parts[1];
+    const token = authHeader.split(' ')[1]; // Lấy phần sau "Bearer "
+    if (!token) return res.status(401).json({ message: 'Chưa đăng nhập' });
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-        if (err) return res.status(403).json({ error: "Invalid token" });
-        req.user = decoded;
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key');
+        const user = await prisma.users.findUnique({
+            where: { id: decoded.id },
+            include: { roles: true }
+        });
+        if (!user) return res.status(401).json({ message: 'Chưa đăng nhập' });
+
+        // Gán đầy đủ thông tin user vào req.user
+        req.user = {
+            id: user.id,
+            username: user.username,
+            full_name: user.full_name,
+            role_id: user.role_id,
+            roles: user.roles,
+            is_active: user.is_active
+        };
         next();
-    });
-};
+    } catch (err) {
+        return res.status(401).json({ message: 'Chưa đăng nhập' });
+    }
+}

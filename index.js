@@ -5,6 +5,8 @@ import http from 'http';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import iot from './routes/iotRoutes.js';
+
+import actLog from './routes/actLog.js';
 // import '../BE-DX/controllers/MQTT/mqtt-client.js'; // Add this line to import MQTT client
 import './Database/mqtt.database.js'; // Ensure this is the correct path to your MQTT database file
 import { configureSSL } from './config/ssl.js';
@@ -26,29 +28,33 @@ app.use(cors());
 
 // Routes
 app.use('/iot', iot);
-
+app.use('/actlog', actLog);
 
 // SSL Configuration
 const { options, useHttps } = configureSSL();
 
 // Start server
-if (useHttps) {
-    https.createServer(options, app).listen(port, "0.0.0.0", () => {
-        console.log(`🔒 Server HTTPS chạy tại: https://192.168.0.252:${port}`);
-    });
-
-    try {
-        http.createServer((req, res) => {
-            res.writeHead(301, { "Location": `https://${req.headers.host}${req.url}` });
-            res.end();
-        }).listen(httpPort, () => {
-            console.log(`🌍 HTTP Server chạy trên cổng ${httpPort} và tự động chuyển sang HTTPS`);
+if (process.env.NODE_ENV !== 'test') {
+    if (useHttps) {
+        https.createServer(options, app).listen(port, "0.0.0.0", () => {
+            console.log(`🔒 Server HTTPS chạy tại: https://192.168.0.252:${port}`);
         });
-    } catch (error) {
-        console.error("❌ Không thể khởi động HTTP server:", error.message);
+
+        try {
+            http.createServer((req, res) => {
+                res.writeHead(301, { "Location": `https://${req.headers.host}${req.url}` });
+                res.end();
+            }).listen(httpPort, () => {
+                console.log(`🌍 HTTP Server chạy trên cổng ${httpPort} và tự động chuyển sang HTTPS`);
+            });
+        } catch (error) {
+            console.error("❌ Không thể khởi động HTTP server:", error.message);
+        }
+    } else {
+        app.listen(port, () => {
+            console.log(`Server đang chạy tại http://localhost:${port}`);
+        });
     }
-} else {
-    app.listen(port, () => {
-        console.log(`Server đang chạy tại http://localhost:${port}`);
-    });
 }
+
+export default app;

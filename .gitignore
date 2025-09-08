@@ -14,3 +14,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 logs/
+
+# Logs
+*.log
+
+# Prisma lock
+prisma/migrations/migration_lock.toml
+
+# Local databases or dumps
+Database/
+*.db
+
+# Node
+node_modules/
