@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { sendWarningMail } from '../../services/mailService.js';
 
 const prisma = new PrismaClient();
 
@@ -292,7 +293,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     threshold_value: thresholds.voltage_max,
                     warning_message: `Điện áp vượt ngưỡng cao`
                 });
-            } else if (deviceData.voltage < thresholds.voltage_min * 0.8) {
+            } else if (deviceData.voltage < thresholds.voltage_min * 0.8 && deviceData.statusOperating != true) {
                 warnings.push({
                     warning_type: 'voltage_low',
                     warning_severity: 'major',
@@ -300,7 +301,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     threshold_value: thresholds.voltage_min * 0.8,
                     warning_message: `Điện áp thấp nghiêm trọng`
                 });
-            } else if (deviceData.voltage < thresholds.voltage_min) {
+            } else if (deviceData.voltage < thresholds.voltage_min && deviceData.statusOperating != true) {
                 warnings.push({
                     warning_type: 'voltage_warning',
                     warning_severity: 'moderate',
@@ -427,8 +428,30 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
             }
         }
 
-        // Insert warnings into database
+        // Chống spam: chỉ insert nếu chưa có cảnh báo active cùng loại trong 5 phút
+        const WARNING_COOLDOWN_SECONDS = 300; // 5 phút
         for (const warning of warnings) {
+            // Kiểm tra cảnh báo active cùng loại, cùng thiết bị
+            const existing = await prisma.device_warning_logs.findFirst({
+                where: {
+                    device_type: deviceType,
+                    device_id: deviceId,
+                    warning_type: warning.warning_type,
+                    status: 'active'
+                },
+                orderBy: { timestamp: 'desc' }
+            });
+
+            if (existing) {
+                const lastTimestamp = new Date(existing.timestamp).getTime();
+                const now = Date.now();
+                if ((now - lastTimestamp) / 1000 < WARNING_COOLDOWN_SECONDS) {
+                    // Bỏ qua, không insert mới
+                    continue;
+                }
+            }
+
+            // Nếu chưa có hoặc đã qua cooldown, insert cảnh báo mới
             await prisma.$queryRaw`
                 INSERT INTO device_warning_logs (
                     device_type,
@@ -454,6 +477,21 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     CURRENT_TIMESTAMP
                 )
             `;
+
+            // Gửi mail cảnh báo
+            try {
+                await sendWarningMail({
+                    device_name: thresholds.device_name,
+                    device_id: deviceId,
+                    warning_type: warning.warning_type,
+                    warning_severity: warning.warning_severity,
+                    warning_message: warning.warning_message,
+                    timestamp: new Date().toISOString()
+                });
+                console.log(`📧 Mail cảnh báo đã được gửi cho ${warning.warning_type}`);
+            } catch (mailError) {
+                console.error('Lỗi gửi mail cảnh báo:', mailError);
+            }
         }
 
         if (warnings.length > 0) {
@@ -588,4 +626,47 @@ export const deleteAllWarningLogs = async (req, res) => {
         }
     };
 
+    // POST /warnings/test - test kiểm tra cảnh báo thủ công cho dữ liệu hiện tại
+    export const testCheckWarnings = async (req, res) => {
+    try {
+        const { device_type, data } = req.body;
+        const warnings = await checkDeviceWarnings(device_type, data);
+        res.json({
+            success: true,
+            warnings_created: warnings?.length || 0,
+            warnings: warnings || []
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+}
 
+// DELETE /warnings/:id - xóa cảnh báo theo id
+export const deleteWarningById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await prisma.$queryRaw`
+            DELETE FROM device_warning_logs WHERE id = ${parseInt(id)} RETURNING id
+        `;
+        if (!result || result.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy cảnh báo với id này.'
+            });
+        }
+        return res.status(200).json({
+            success: true,
+            deleted_id: result[0].id
+        });
+    } catch (error) {
+        console.error('Error deleting warning:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi khi xóa cảnh báo',
+            error: error.message
+        });
+    }
+};

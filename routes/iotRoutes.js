@@ -68,7 +68,8 @@ import {
     resolveWarning,
     getWarningStatistics,
     checkDeviceWarnings,
-    deleteAllWarningLogs
+    deleteAllWarningLogs,
+    testCheckWarnings
 } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 import { updateWarningStatus } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 
@@ -142,22 +143,11 @@ router.put('/warnings/:id/acknowledge', acknowledgeWarning);
 router.put('/warnings/:id/resolve', resolveWarning);
 router.post('/warnings/delete-all', deleteAllWarningLogs);
 // Test endpoint to manually check warnings for current data
-router.post('/warnings/test', async (req, res) => {
-    try {
-        const { device_type, data } = req.body;
-        const warnings = await checkDeviceWarnings(device_type, data);
-        res.json({
-            success: true,
-            warnings_created: warnings?.length || 0,
-            warnings: warnings || []
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+router.post('/warnings/test', testCheckWarnings);
+
+// DELETE endpoint xóa cảnh báo theo id
+import { deleteWarningById } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
+router.delete('/warnings/:id', deleteWarningById);
 
 
 
