@@ -16,9 +16,9 @@ dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
-// In your index.js
-const port = process.env.PORT || 3005; // Change from 3002 to 3003
-const httpPort = process.env.HTTP_PORT || 3030;
+// Port configuration  
+const port = process.env.PORT || 3005;
+const httpPort = process.env.HTTP_PORT || 3006;
 
 // Middleware
 app.use(express.json());
