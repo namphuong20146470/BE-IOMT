@@ -1,6 +1,9 @@
 import express from 'express';
 import authMiddleware from '../middleware/authMiddleware.js';
 import { createRole, getAllRoles, deleteRole, updateRole } from '../controllers/roles/role.controller.js';
+
+// Import device routes
+import deviceRoutes from './deviceRoutes.js';
 // Import các controller cần thiết
 import {
     loginUser,
@@ -91,4 +94,8 @@ router.post('/logs/all', deleteAllLogs);
 router.post('/login', loginUser);
 // Đăng xuất
 router.post('/logout', authMiddleware, logoutUser);
+
+// Device management routes
+router.use('/devices', deviceRoutes);
+
 export default router;
