@@ -1,11 +1,24 @@
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 const prisma = new PrismaClient();
 
+// Legacy hash function for existing users
 const hashPassword = (password) => {
     return crypto.createHash('sha256').update(password).digest('hex');
 };
+
+// New bcrypt hash function for new users (recommended)
+const hashPasswordBcrypt = async (password) => {
+    return await bcrypt.hash(password, 10);
+};
+
+function getVietnamDate() {
+    const now = new Date();
+    return new Date(now.getTime() + 7 * 60 * 60 * 1000);
+}
 
 export const createUserV2 = async (req, res) => {
     try {
@@ -108,9 +121,25 @@ export const loginV2 = async (req, res) => {
             });
         }
 
+        // Generate JWT token
+        const token = jwt.sign(
+            {
+                id: user[0].id,
+                username: user[0].username,
+                email: user[0].email,
+                organization_id: user[0].organization_id,
+                department_id: user[0].department_id
+            },
+            process.env.JWT_SECRET || 'secret_key',
+            { expiresIn: '1d' }
+        );
+
         res.status(200).json({
             success: true,
-            data: user[0],
+            data: {
+                token,
+                user: user[0]
+            },
             message: 'Login V2 successful'
         });
     } catch (error) {
