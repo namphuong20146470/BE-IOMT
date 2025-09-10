@@ -14,6 +14,31 @@ import {
 
 } from '../controllers/users/user.controller.js';
 
+// V2 User controllers
+import { 
+    createUserV2, 
+    loginV2, 
+    getAllUsersV2, 
+    getUserV2ById,
+    updateUserV2
+} from '../controllers/users/user_V2.controller.js';
+
+// Organizations controllers
+import {
+    createOrganization,
+    getAllOrganizations,
+    getOrganizationById,
+    updateOrganization
+} from '../controllers/organizations/organizations.controller.js';
+
+// Departments controllers
+import {
+    createDepartment,
+    getDepartmentsByOrganization,
+    getAllDepartments,
+    updateDepartment
+} from '../controllers/departments/departments.controller.js';
+
 // Import các controller cần thiết cho logs
 import { getAllLogs, createLog, deleteLog, deleteAllLogs } from '../controllers/logs/log.controller.js';
 
@@ -35,6 +60,25 @@ router.post('/users', authMiddleware, createUser);
 router.put('/users/:id', authMiddleware, updateUser);
 router.delete('/users/:id', authMiddleware, deleteUser);
 router.post('/users/all-except-admin', authMiddleware, deleteAllUsersExceptAdmin);
+
+// V2 User routes with /v2 prefix
+router.post('/v2/users', createUserV2);
+router.post('/v2/login', loginV2);
+router.get('/v2/users', getAllUsersV2);
+router.get('/v2/users/:id', getUserV2ById);
+router.put('/v2/users/:id', updateUserV2);
+
+// Organizations routes
+router.post('/organizations', createOrganization);
+router.get('/organizations', getAllOrganizations);
+router.get('/organizations/:id', getOrganizationById);
+router.put('/organizations/:id', updateOrganization);
+
+// Departments routes
+router.post('/departments', createDepartment);
+router.get('/departments', getAllDepartments);
+router.get('/departments/organization/:organization_id', getDepartmentsByOrganization);
+router.put('/departments/:id', updateDepartment);
 
 // Lấy tất cả logs (chỉ trưởng phòng TBYT, BGĐ BV, NCC GP)
 router.get('/logs', getAllLogs);

@@ -73,6 +73,8 @@ import {
 } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 import { updateWarningStatus } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 
+
+
 // Add this import at the top with the other imports
 
 const router = express.Router();
@@ -148,6 +150,7 @@ router.post('/warnings/test', testCheckWarnings);
 // DELETE endpoint xóa cảnh báo theo id
 import { deleteWarningById } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 router.delete('/warnings/:id', deleteWarningById);
+
 
 
 
