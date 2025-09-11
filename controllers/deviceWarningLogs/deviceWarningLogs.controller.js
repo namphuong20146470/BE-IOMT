@@ -283,7 +283,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     warning_severity: 'major',
                     measured_value: deviceData.voltage,
                     threshold_value: thresholds.voltage_max * 1.2,
-                    warning_message: `Điện áp vượt ngưỡng cao nghiêm trọng: ${deviceData.voltage}V (ngưỡng nghiêm trọng: ${(thresholds.voltage_max * 1.2).toFixed(1)}V)`
+                    warning_message: `Điện áp vượt ngưỡng cao nghiêm trọng`
                 });
             } else if (deviceData.voltage > thresholds.voltage_max) {
                 warnings.push({
@@ -293,7 +293,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     threshold_value: thresholds.voltage_max,
                     warning_message: `Điện áp vượt ngưỡng cao`
                 });
-            } else if (deviceData.voltage < thresholds.voltage_min * 0.8 && deviceData.statusOperating != true) {
+            } else if (deviceData.voltage < thresholds.voltage_min * 0.8 && deviceData.statusOperating != false) {
                 warnings.push({
                     warning_type: 'voltage_low',
                     warning_severity: 'major',
@@ -301,7 +301,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     threshold_value: thresholds.voltage_min * 0.8,
                     warning_message: `Điện áp thấp nghiêm trọng`
                 });
-            } else if (deviceData.voltage < thresholds.voltage_min && deviceData.statusOperating != true) {
+            } else if (deviceData.voltage < thresholds.voltage_min && deviceData.statusOperating != false) {
                 warnings.push({
                     warning_type: 'voltage_warning',
                     warning_severity: 'moderate',
@@ -424,20 +424,29 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                         threshold_value: thresholds.leak_current_soft,
                         warning_message: `Dòng rò vượt ngưỡng nhẹ`
                     });
-                }
+                } 
+                // else if (deviceData.statusOperating === true) {
+                //     warnings.push({
+                //         warning_type: 'status_operating',
+                //         warning_severity: 'info',
+                //         measured_value: null,
+                //         threshold_value: null,
+                //         warning_message: `Thiết bị đang hoạt động bình thường`
+                //     });
+                // }
             }
         }
 
         // Chống spam: chỉ insert nếu chưa có cảnh báo active cùng loại trong 5 phút
         const WARNING_COOLDOWN_SECONDS = 300; // 5 phút
-        for (const warning of warnings) {
+        for (const warning of warnings) { 
             // Kiểm tra cảnh báo active cùng loại, cùng thiết bị
             const existing = await prisma.device_warning_logs.findFirst({
                 where: {
                     device_type: deviceType,
-                    device_id: deviceId,
+                    device_name: thresholds.device_name,
                     warning_type: warning.warning_type,
-                    status: 'active'
+                    status: 'active' 
                 },
                 orderBy: { timestamp: 'desc' }
             });

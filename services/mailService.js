@@ -7,8 +7,8 @@ const transporter = nodemailer.createTransport({
     port: 587, // STARTTLS port
     secure: false, // false for STARTTLS
     auth: {
-        user: 'honghai.nguyen@hoangphucthanh.vn',
-        pass: 'Hai@01'
+        user: 'haismile0901@gmail.com',
+        pass: 'Hai0947976244'
     },
     tls: {
         ciphers: 'SSLv3'
@@ -27,7 +27,7 @@ export async function sendWarningMail(warning) {
     console.log('⚠️ Nội dung cảnh báo:', warning);
     
     const mailOptions = {
-        from: 'IoT Warning <honghai.nguyen@hoangphucthanh.vn>',
+        from: 'IoT Warning <haismile0901@gmail.com>',
         to: WARNING_RECIPIENTS.join(','),
         subject: `Cảnh báo thiết bị: ${warning.device_name}`,
         text:
