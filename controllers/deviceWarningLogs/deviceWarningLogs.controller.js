@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import mailService from '../../services/mailService.js';
+import { emailNotificationManager } from './emailNotificationManager.js';
 
 const prisma = new PrismaClient();
 
@@ -487,19 +488,41 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                 )
             `;
 
-            // Gửi mail cảnh báo
+            // Gửi mail cảnh báo với Enhanced Email Manager
             try {
-                await mailService.sendWarningEmail({
+                await emailNotificationManager.processWarningEmail({
+                    id: null, // Will be set after DB insert
                     device_name: thresholds.device_name,
                     device_id: deviceId,
                     warning_type: warning.warning_type,
                     severity: warning.warning_severity,
                     message: warning.warning_message,
-                    created_at: new Date().toISOString()
+                    current_value: warning.measured_value,
+                    threshold_value: warning.threshold_value,
+                    created_at: new Date().toISOString(),
+                    status: 'active',
+                    device_type: deviceType,
+                    device_location: `Room ${Math.floor(Math.random() * 100)}`, // Example
+                    maintenance_contact: 'Phòng Kỹ thuật - Ext: 1234'
                 });
-                console.log(`📧 Mail cảnh báo đã được gửi cho ${warning.warning_type}`);
+                console.log(`📧 Enhanced mail notification processed for ${warning.warning_type}`);
             } catch (mailError) {
                 console.error('Lỗi gửi mail cảnh báo:', mailError);
+                
+                // Fallback to simple mail service
+                try {
+                    await mailService.sendWarningEmail({
+                        device_name: thresholds.device_name,
+                        device_id: deviceId,
+                        warning_type: warning.warning_type,
+                        severity: warning.warning_severity,
+                        message: warning.warning_message,
+                        created_at: new Date().toISOString()
+                    });
+                    console.log(`📧 Fallback mail sent for ${warning.warning_type}`);
+                } catch (fallbackError) {
+                    console.error('Fallback mail cũng lỗi:', fallbackError);
+                }
             }
         }
 
