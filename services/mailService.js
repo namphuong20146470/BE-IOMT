@@ -255,7 +255,7 @@ class MailService {
             </div>
             
             <div class="footer">
-                <p>Email tự động từ Hệ thống giám sát IoT - BVĐKTP</p>
+                <p>Email tự động từ Hệ thống giám sát IoT</p>
                 <p>Thời gian: ${now} | Không trả lời email này</p>
                 ${data.notification_id ? `<p>Notification ID: ${data.notification_id}</p>` : ''}
             </div>

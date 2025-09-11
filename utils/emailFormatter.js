@@ -49,9 +49,12 @@ export async function formatWarningDataForEmail(warningData, emailType = 'warnin
         severity: severityMapping[warningData.warning_severity] || warningData.warning_severity || 'medium',
         message: warningData.warning_message || 'Không có mô tả',
         
-        // Giá trị và ngưỡng
-        current_value: warningData.measured_value,
-        threshold_value: warningData.threshold_value,
+        // Giá trị và ngưỡng - Format chuẩn
+        current_value: formatMeasuredValue(warningData.measured_value, warningData.warning_type),
+        threshold_value: formatThresholdValue(warningData.threshold_value, warningData.warning_type),
+        raw_current_value: warningData.measured_value,
+        raw_threshold_value: warningData.threshold_value,
+        value_comparison: getValueComparisonText(warningData.measured_value, warningData.threshold_value, warningData.warning_type),
         
         // Thời gian
         created_at: warningData.timestamp || new Date().toISOString(),
@@ -162,6 +165,139 @@ export function formatWarningsDigestForEmail(warningsList) {
 }
 
 /**
+ * Format measured value based on warning type
+ */
+function formatMeasuredValue(value, warningType) {
+    if (value === null || value === undefined) return 'N/A';
+    
+    const units = getUnitForWarningType(warningType);
+    const formattedValue = formatNumberWithPrecision(value, warningType);
+    
+    return `${formattedValue}${units}`;
+}
+
+/**
+ * Format threshold value based on warning type
+ */
+function formatThresholdValue(value, warningType) {
+    if (value === null || value === undefined) return 'N/A';
+    
+    const units = getUnitForWarningType(warningType);
+    const formattedValue = formatNumberWithPrecision(value, warningType);
+    
+    return `${formattedValue}${units}`;
+}
+
+/**
+ * Get appropriate unit for warning type
+ */
+function getUnitForWarningType(warningType) {
+    const unitMapping = {
+        // Điện áp
+        'voltage_high': 'V',
+        'voltage_low': 'V', 
+        'voltage_warning': 'V',
+        
+        // Dòng điện
+        'current_high': 'A',
+        'current_warning': 'A',
+        'leak_current_shutdown': 'mA',
+        'leak_current_strong': 'mA',
+        'leak_current_soft': 'mA',
+        
+        // Công suất
+        'power_high': 'W',
+        'power_warning': 'W',
+        
+        // Nhiệt độ
+        'temperature_high': '°C',
+        'temperature_warning': '°C',
+        
+        // Độ ẩm
+        'humidity_high': '%',
+        'humidity_warning': '%',
+        
+        // Default
+        'default': ''
+    };
+    
+    return unitMapping[warningType] || unitMapping['default'];
+}
+
+/**
+ * Format number with appropriate precision based on warning type
+ */
+function formatNumberWithPrecision(value, warningType) {
+    if (value === null || value === undefined) return 'N/A';
+    
+    const num = parseFloat(value);
+    if (isNaN(num)) return value.toString();
+    
+    // Precision rules based on warning type
+    const precisionMapping = {
+        // Điện áp - 1 số thập phân
+        'voltage_high': 1,
+        'voltage_low': 1,
+        'voltage_warning': 1,
+        
+        // Dòng điện - 2 số thập phân cho A, 1 cho mA
+        'current_high': 2,
+        'current_warning': 2,
+        'leak_current_shutdown': 1,
+        'leak_current_strong': 1,
+        'leak_current_soft': 1,
+        
+        // Công suất - Không thập phân cho W
+        'power_high': 0,
+        'power_warning': 0,
+        
+        // Nhiệt độ - 1 số thập phân
+        'temperature_high': 1,
+        'temperature_warning': 1,
+        
+        // Độ ẩm - 1 số thập phân
+        'humidity_high': 1,
+        'humidity_warning': 1,
+        
+        // Default
+        'default': 1
+    };
+    
+    const precision = precisionMapping[warningType] !== undefined 
+        ? precisionMapping[warningType] 
+        : precisionMapping['default'];
+    
+    return num.toFixed(precision);
+}
+
+/**
+ * Get comparison text between measured and threshold values
+ */
+function getValueComparisonText(measuredValue, thresholdValue, warningType) {
+    if (!measuredValue || !thresholdValue) return '';
+    
+    const measured = parseFloat(measuredValue);
+    const threshold = parseFloat(thresholdValue);
+    
+    if (isNaN(measured) || isNaN(threshold)) return '';
+    
+    const difference = measured - threshold;
+    const percentageDiff = ((difference / threshold) * 100);
+    
+    const units = getUnitForWarningType(warningType);
+    const formattedDiff = formatNumberWithPrecision(Math.abs(difference), warningType);
+    const formattedPercent = Math.abs(percentageDiff).toFixed(1);
+    
+    if (difference > 0) {
+        return `Vượt ngưỡng ${formattedDiff}${units} (${formattedPercent}%)`;
+    } else if (difference < 0) {
+        return `Thấp hơn ngưỡng ${formattedDiff}${units} (${formattedPercent}%)`;
+    } else {
+        return `Đúng ngưỡng`;
+    }
+}
+
+/**
  * Get severity configuration
  */
 function getSeverityConfig(severity) {
@@ -191,7 +327,7 @@ function getSeverityConfig(severity) {
                 subject_prefix: 'ℹ️ Thông báo thiết bị'
             };
         default:
-            return {
+            return {  
                 icon: '⚪',
                 color: '#757575',
                 subject_prefix: '⚠️ Cảnh báo thiết bị'
