@@ -1,0 +1,264 @@
+/**
+ * Helper function để format dữ liệu cảnh báo từ database thành format phù hợp cho mailService
+ * 
+ * @param {Object} warningData - Dữ liệu cảnh báo từ database
+ * @param {string} emailType - Loại email: 'warning', 'resolution', 'digest'
+ * @returns {Object} - Dữ liệu đã format cho mailService
+ */
+
+export function formatWarningDataForEmail(warningData, emailType = 'warning') {
+    // Mapping severity từ database sang format chuẩn
+    const severityMapping = {
+        'critical': 'critical',
+        'major': 'high',
+        'moderate': 'medium', 
+        'minor': 'low'
+    };
+
+    // Mapping warning_type sang mô tả dễ hiểu
+    const warningTypeDescriptions = {
+        'voltage_high': 'Điện áp quá cao',
+        'voltage_low': 'Điện áp thấp',
+        'voltage_warning': 'Cảnh báo điện áp',
+        'current_high': 'Dòng điện quá cao',
+        'current_warning': 'Cảnh báo dòng điện',
+        'power_high': 'Công suất quá cao',
+        'power_warning': 'Cảnh báo công suất',
+        'temperature_high': 'Nhiệt độ quá cao',
+        'temperature_warning': 'Cảnh báo nhiệt độ',
+        'humidity_high': 'Độ ẩm quá cao',
+        'humidity_warning': 'Cảnh báo độ ẩm',
+        'leak_current_shutdown': 'Dòng rò nguy hiểm',
+        'leak_current_strong': 'Dòng rò mạnh',
+        'leak_current_soft': 'Dòng rò nhẹ'
+    };
+
+    // Format cơ bản cho tất cả loại email
+    const baseFormat = {
+        // Thông tin thiết bị
+        device_name: warningData.device_name || 'Thiết bị không xác định',
+        device_id: warningData.device_id || 'N/A',
+        device_type: warningData.device_type || 'unknown',
+        
+        // Thông tin cảnh báo  
+        warning_type: warningData.warning_type,
+        severity: severityMapping[warningData.warning_severity] || warningData.warning_severity || 'medium',
+        message: warningData.warning_message || 'Không có mô tả',
+        
+        // Giá trị và ngưỡng
+        current_value: warningData.measured_value,
+        threshold_value: warningData.threshold_value,
+        
+        // Thời gian
+        created_at: warningData.timestamp || new Date().toISOString(),
+        
+        // Trạng thái
+        status: warningData.status || 'active',
+        
+        // Mô tả dễ hiểu
+        template_description: warningTypeDescriptions[warningData.warning_type] || warningData.warning_type,
+        
+        // Metadata
+        notification_id: `WRN-${warningData.id}` || null,
+        priority: severityMapping[warningData.warning_severity] || 'medium'
+    };
+
+    // Format đặc biệt cho email resolution
+    if (emailType === 'resolution' && warningData.resolved_at) {
+        return {
+            ...baseFormat,
+            type: 'resolution',
+            resolution_time: warningData.resolved_at,
+            resolved_by: getResolvedByName(warningData.acknowledged_by),
+            resolution_notes: warningData.resolution_notes || 'Đã giải quyết thành công',
+            subject_prefix: '✅ ĐÃ GIẢI QUYẾT',
+            template_icon: '✅'
+        };
+    }
+
+    // Format cho email warning thông thường
+    if (emailType === 'warning') {
+        const severityConfig = getSeverityConfig(warningData.warning_severity);
+        
+        return {
+            ...baseFormat,
+            type: 'warning',
+            template_icon: severityConfig.icon,
+            template_color: severityConfig.color,
+            subject_prefix: severityConfig.subject_prefix,
+            
+            // Thông tin bổ sung
+            device_location: getDeviceLocation(warningData.device_type, warningData.device_name),
+            maintenance_contact: 'Phòng Kỹ thuật - Ext: 1234',
+            
+            // Ghi chú thêm dựa trên loại cảnh báo
+            additional_notes: getAdditionalNotes(warningData.warning_type, warningData.warning_severity),
+            
+            // Escalation level (nếu có)
+            escalation_level: 1 // Có thể tính toán dựa trên số lần cảnh báo
+        };
+    }
+
+    // Format cho digest email
+    if (emailType === 'digest') {
+        return {
+            type: 'digest',
+            warning_count: 1, // Sẽ được override khi gọi
+            critical_count: warningData.warning_severity === 'critical' ? 1 : 0,
+            high_count: warningData.warning_severity === 'major' ? 1 : 0,
+            warnings: [baseFormat],
+            subject_prefix: '📊 Tổng hợp cảnh báo'
+        };
+    }
+
+    return baseFormat;
+}
+
+/**
+ * Format multiple warnings for digest email
+ */
+export function formatWarningsDigestForEmail(warningsList) {
+    const severityMapping = {
+        'critical': 'critical',
+        'major': 'high',
+        'moderate': 'medium', 
+        'minor': 'low'
+    };
+
+    const formattedWarnings = warningsList.map(warning => ({
+        device_name: warning.device_name,
+        device_id: warning.device_id,
+        warning_type: warning.warning_type,
+        severity: severityMapping[warning.warning_severity] || warning.warning_severity,
+        current_value: warning.measured_value,
+        threshold_value: warning.threshold_value,
+        created_at: warning.timestamp,
+        message: warning.warning_message
+    }));
+
+    return {
+        type: 'digest',
+        warning_count: warningsList.length,
+        critical_count: warningsList.filter(w => w.warning_severity === 'critical').length,
+        high_count: warningsList.filter(w => w.warning_severity === 'major').length,
+        warnings: formattedWarnings,
+        subject_prefix: '📊 Tổng hợp cảnh báo',
+        template_icon: '📊'
+    };
+}
+
+/**
+ * Get severity configuration
+ */
+function getSeverityConfig(severity) {
+    switch (severity?.toLowerCase()) {
+        case 'critical':
+            return {
+                icon: '🚨',
+                color: '#d32f2f',
+                subject_prefix: '🚨 KHẨN CẤP'
+            };
+        case 'major':
+            return {
+                icon: '⚠️',
+                color: '#f57c00',
+                subject_prefix: '⚠️ Cảnh báo nghiêm trọng'
+            };
+        case 'moderate':
+            return {
+                icon: '⚠️',
+                color: '#fbc02d',
+                subject_prefix: '⚠️ Cảnh báo thiết bị'
+            };
+        case 'minor':
+            return {
+                icon: 'ℹ️',
+                color: '#388e3c',
+                subject_prefix: 'ℹ️ Thông báo thiết bị'
+            };
+        default:
+            return {
+                icon: '⚪',
+                color: '#757575',
+                subject_prefix: '⚠️ Cảnh báo thiết bị'
+            };
+    }
+}
+
+/**
+ * Get device location based on type and name
+ */
+function getDeviceLocation(deviceType, deviceName) {
+    const locationMapping = {
+        'auo_display': 'Phòng khám A1-A5',
+        'camera_control_unit': 'Phòng nội soi',
+        'electronic_endoflator': 'Phòng phẫu thuật nội soi',
+        'led_nova_100': 'Phòng phẫu thuật nội soi',
+        'iot_environment_status': 'Khu vực giám sát môi trường'
+    };
+    
+    return locationMapping[deviceType] || `${deviceName} - Vị trí không xác định`;
+}
+
+/**
+ * Get additional notes based on warning type and severity
+ */
+function getAdditionalNotes(warningType, severity) {
+    const notes = {
+        'voltage_high': 'Kiểm tra nguồn điện và hệ thống ổn áp. Có thể gây hỏng thiết bị.',
+        'voltage_low': 'Kiểm tra nguồn điện, có thể thiết bị không hoạt động ổn định.',
+        'current_high': 'Kiểm tra tải thiết bị, có thể quá tải hoặc sự cố nội bộ.',
+        'power_high': 'Thiết bị tiêu thụ điện năng cao bất thường, cần kiểm tra ngay.',
+        'temperature_high': 'Nhiệt độ cao có thể làm hỏng linh kiện, kiểm tra hệ thống làm mát.',
+        'humidity_high': 'Độ ẩm cao có thể gây chập mạch, kiểm tra hệ thống thông gió.',
+        'leak_current_shutdown': 'RẤT NGUY HIỂM! Ngắt điện thiết bị ngay lập tức.',
+        'leak_current_strong': 'Dòng rò mạnh, cần kiểm tra cách điện thiết bị.',
+        'leak_current_soft': 'Dòng rò nhẹ, theo dõi và lên lịch bảo trì.'
+    };
+    
+    let note = notes[warningType] || 'Kiểm tra thiết bị và thực hiện biện pháp khắc phục phù hợp.';
+    
+    if (severity === 'critical') {
+        note += ' **ƯU TIÊN KHẨN CẤP - XỬ LÝ NGAY!**';
+    }
+    
+    return note;
+}
+
+/**
+ * Get resolved by name (có thể truy vấn từ bảng users)
+ */
+function getResolvedByName(userId) {
+    // TODO: Có thể truy vấn từ database để lấy tên thật
+    // Hiện tại return placeholder
+    return userId ? `Người dùng #${userId}` : 'Hệ thống tự động';
+}
+
+/**
+ * Example usage:
+ * 
+ * const warningFromDB = {
+ *   "id": 8220,
+ *   "device_type": "camera_control_unit", 
+ *   "device_name": "Module xử lý hình ảnh",
+ *   "device_id": null,
+ *   "warning_type": "power_warning",
+ *   "warning_severity": "moderate",
+ *   "measured_value": 100,
+ *   "threshold_value": 96,
+ *   "warning_message": "Công suất vượt ngưỡng",
+ *   "status": "resolved",
+ *   "resolved_at": "2025-09-11T15:48:32.523Z",
+ *   "acknowledged_by": 56,
+ *   "resolution_notes": "Đã xử lý xong từ giao diện người dùng",
+ *   "timestamp": "2025-09-11T15:46:13.083Z"
+ * };
+ * 
+ * // Để gửi email warning
+ * const emailData = formatWarningDataForEmail(warningFromDB, 'warning');
+ * await mailService.sendWarningEmail(emailData);
+ * 
+ * // Để gửi email resolution
+ * const resolutionEmailData = formatWarningDataForEmail(warningFromDB, 'resolution');
+ * await mailService.sendResolutionEmail(resolutionEmailData);
+ */

@@ -215,7 +215,7 @@ class MailService {
         <div class="container">
             <div class="header">
                 <h1>${templateIcon} CẢNH BÁO THIẾT BỊ IoT</h1>
-                <p>Hệ thống giám sát - Bệnh viện Đa khoa Thái Phương</p>
+                <p>Hệ thống giám sát</p>
                 ${data.escalation_level > 1 ? `<span class="escalation-badge">LEVEL ${data.escalation_level} ESCALATION</span>` : ''}
             </div>
             
@@ -441,7 +441,7 @@ Email tự động - Không trả lời
         <div class="container">
             <div class="header">
                 <h1>📊 TỔNG HỢP CẢNH BÁO IoT</h1>
-                <p>Hệ thống giám sát - Bệnh viện Đa khoa Thái Phương</p>
+                <p>Hệ thống giám sát</p>
                 <p><strong>${data.warning_count} cảnh báo</strong> trong khoảng thời gian qua</p>
             </div>
             
@@ -563,7 +563,7 @@ Tổng hợp tự động - Không trả lời
         <div class="container">
             <div class="header">
                 <h1>✅ ĐÃ GIẢI QUYẾT CẢNH BÁO</h1>
-                <p>Hệ thống giám sát - Bệnh viện Đa khoa Thái Phương</p>
+                <p>Hệ thống giám sát</p>
             </div>
             
             <div class="content">

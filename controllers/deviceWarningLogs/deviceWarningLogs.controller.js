@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import mailService from '../../services/mailService.js';
-import { emailNotificationManager } from './emailNotificationManager.js';
+import { simpleEmailNotificationManager } from './simpleEmailNotificationManager.js';
 
 const prisma = new PrismaClient();
 
@@ -266,7 +266,7 @@ export const resolveWarning = async (req, res) => {
 };
 
 // Check device data and create warnings if thresholds are exceeded
-export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = null) => {
+export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifier = null) => {
     try {
         const thresholds = WARNING_THRESHOLDS[deviceType];
         if (!thresholds) {
@@ -441,7 +441,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
         // Chống spam: chỉ insert nếu chưa có cảnh báo active cùng loại trong 5 phút
         const WARNING_COOLDOWN_SECONDS = 300; // 5 phút
         for (const warning of warnings) { 
-            // Kiểm tra cảnh báo active cùng loại, cùng thiết bị
+            // Kiểm tra cảnh báo active cùng loại, cùng thiết bị (dựa trên device_type và device_name)
             const existing = await prisma.device_warning_logs.findFirst({
                 where: {
                     device_type: deviceType,
@@ -457,6 +457,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                 const now = Date.now();
                 if ((now - lastTimestamp) / 1000 < WARNING_COOLDOWN_SECONDS) {
                     // Bỏ qua, không insert mới
+                    console.log(`⏳ Cooldown active for ${warning.warning_type} - skipping`);
                     continue;
                 }
             }
@@ -477,7 +478,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                 ) VALUES (
                     ${deviceType},
                     ${thresholds.device_name},
-                    ${deviceId},
+                    ${deviceIdentifier ? parseInt(deviceIdentifier) : null},
                     ${warning.warning_type},
                     ${warning.warning_severity},
                     ${warning.measured_value}::real,
@@ -488,12 +489,12 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                 )
             `;
 
-            // Gửi mail cảnh báo với Enhanced Email Manager
+            // Gửi mail cảnh báo với Simple Email Manager
             try {
-                await emailNotificationManager.processWarningEmail({
+                await simpleEmailNotificationManager.processWarningEmail({
                     id: null, // Will be set after DB insert
                     device_name: thresholds.device_name,
-                    device_id: deviceId,
+                    device_id: deviceIdentifier,
                     warning_type: warning.warning_type,
                     severity: warning.warning_severity,
                     message: warning.warning_message,
@@ -502,18 +503,18 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
                     created_at: new Date().toISOString(),
                     status: 'active',
                     device_type: deviceType,
-                    device_location: `Room ${Math.floor(Math.random() * 100)}`, // Example
+                    device_location: `${thresholds.device_name} - ${deviceType}`,
                     maintenance_contact: 'Phòng Kỹ thuật - Ext: 1234'
                 });
-                console.log(`📧 Enhanced mail notification processed for ${warning.warning_type}`);
+                console.log(`📧 Simple mail notification processed for ${warning.warning_type}`);
             } catch (mailError) {
                 console.error('Lỗi gửi mail cảnh báo:', mailError);
                 
-                // Fallback to simple mail service
+                // Fallback to basic mail service
                 try {
                     await mailService.sendWarningEmail({
                         device_name: thresholds.device_name,
-                        device_id: deviceId,
+                        device_id: deviceIdentifier,
                         warning_type: warning.warning_type,
                         severity: warning.warning_severity,
                         message: warning.warning_message,
