@@ -3,10 +3,14 @@
  * 
  * @param {Object} warningData - Dữ liệu cảnh báo từ database
  * @param {string} emailType - Loại email: 'warning', 'resolution', 'digest'
+ * @param {Object} userInfo - Thông tin user (optional, để tránh query thêm)
  * @returns {Object} - Dữ liệu đã format cho mailService
  */
 
-export function formatWarningDataForEmail(warningData, emailType = 'warning') {
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+
+export async function formatWarningDataForEmail(warningData, emailType = 'warning', userInfo = null) {
     // Mapping severity từ database sang format chuẩn
     const severityMapping = {
         'critical': 'critical',
@@ -65,11 +69,21 @@ export function formatWarningDataForEmail(warningData, emailType = 'warning') {
 
     // Format đặc biệt cho email resolution
     if (emailType === 'resolution' && warningData.resolved_at) {
+        // Lấy thông tin người xử lý nếu chưa có
+        let resolvedByName = 'Hệ thống tự động';
+        if (warningData.acknowledged_by) {
+            if (userInfo) {
+                resolvedByName = userInfo.full_name || userInfo.username || `Người dùng #${warningData.acknowledged_by}`;
+            } else {
+                resolvedByName = await getResolvedByName(warningData.acknowledged_by);
+            }
+        }
+
         return {
             ...baseFormat,
             type: 'resolution',
             resolution_time: warningData.resolved_at,
-            resolved_by: getResolvedByName(warningData.acknowledged_by),
+            resolved_by: resolvedByName,
             resolution_notes: warningData.resolution_notes || 'Đã giải quyết thành công',
             subject_prefix: '✅ ĐÃ GIẢI QUYẾT',
             template_icon: '✅'
@@ -226,12 +240,94 @@ function getAdditionalNotes(warningType, severity) {
 }
 
 /**
- * Get resolved by name (có thể truy vấn từ bảng users)
+ * Get user information for email
  */
-function getResolvedByName(userId) {
-    // TODO: Có thể truy vấn từ database để lấy tên thật
-    // Hiện tại return placeholder
-    return userId ? `Người dùng #${userId}` : 'Hệ thống tự động';
+export async function getUserInfoForEmail(userId) {
+    try {
+        if (!userId) return null;
+        
+        const user = await prisma.users.findUnique({
+            where: { id: parseInt(userId) },
+            select: {
+                id: true,
+                username: true,
+                full_name: true,
+                roles: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        id_role: true
+                    }
+                }
+            }
+        });
+        
+        if (!user) return null;
+        
+        return {
+            id: user.id,
+            username: user.username,
+            full_name: user.full_name,
+            display_name: user.full_name || user.username,
+            role_name: user.roles?.name || 'N/A',
+            role_description: user.roles?.description || '',
+            role_id: user.roles?.id_role || '',
+            formatted_name: `${user.full_name || user.username} (${user.roles?.name || 'N/A'})`
+        };
+        
+    } catch (error) {
+        console.error('Error getting user info:', error);
+        return null;
+    }
+}
+
+/**
+ * Format warning data for email with enhanced user info
+ */
+export async function formatWarningDataWithUserInfo(warningData, emailType = 'warning') {
+    let userInfo = null;
+    
+    // Lấy thông tin user nếu có acknowledged_by
+    if (warningData.acknowledged_by) {
+        userInfo = await getUserInfoForEmail(warningData.acknowledged_by);
+    }
+    
+    return await formatWarningDataForEmail(warningData, emailType, userInfo);
+}
+async function getResolvedByName(userId) {
+    try {
+        if (!userId) return 'Hệ thống tự động';
+        
+        const user = await prisma.users.findUnique({
+            where: { id: parseInt(userId) },
+            select: {
+                id: true,
+                username: true,
+                full_name: true,
+                roles: {
+                    select: {
+                        name: true,
+                        description: true
+                    }
+                }
+            }
+        });
+        
+        if (!user) {
+            return `Người dùng #${userId} (không tìm thấy)`;
+        }
+        
+        // Ưu tiên full_name, fallback về username
+        const displayName = user.full_name || user.username;
+        const roleName = user.roles?.name || 'N/A';
+        
+        return `${displayName} (${roleName})`;
+        
+    } catch (error) {
+        console.error('Error getting user info for email:', error);
+        return `Người dùng #${userId}`;
+    }
 }
 
 /**

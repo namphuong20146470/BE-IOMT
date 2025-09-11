@@ -1,5 +1,5 @@
 import mailService from '../../services/mailService.js';
-import { formatWarningDataForEmail } from '../../utils/emailFormatter.js';
+import { formatWarningDataForEmail, formatWarningDataWithUserInfo } from '../../utils/emailFormatter.js';
 
 /**
  * Simplified Email Notification Manager
@@ -44,8 +44,8 @@ export class SimpleEmailNotificationManager {
             // Xác định rule dựa trên severity
             const rule = this.determineNotificationRule(warningData.severity);
             
-            // Format dữ liệu cho email sử dụng formatter
-            const emailData = formatWarningDataForEmail(warningData, 'warning');
+            // Format dữ liệu cho email sử dụng formatter (với user info nếu có)
+            const emailData = await formatWarningDataWithUserInfo(warningData, 'warning');
 
             // Gửi email ngay lập tức
             await mailService.sendWarningEmail(emailData);
@@ -64,8 +64,8 @@ export class SimpleEmailNotificationManager {
      */
     async processResolutionEmail(warningData) {
         try {
-            // Format dữ liệu cho email resolution
-            const emailData = formatWarningDataForEmail(warningData, 'resolution');
+            // Format dữ liệu cho email resolution (với user info)
+            const emailData = await formatWarningDataWithUserInfo(warningData, 'resolution');
             
             // Gửi email resolution
             await mailService.sendResolutionEmail(emailData);
