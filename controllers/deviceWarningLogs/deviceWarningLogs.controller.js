@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { sendWarningMail } from '../../services/mailService.js';
+import mailService from '../../services/mailService.js';
 
 const prisma = new PrismaClient();
 
@@ -489,13 +489,13 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceId = nul
 
             // Gửi mail cảnh báo
             try {
-                await sendWarningMail({
+                await mailService.sendWarningEmail({
                     device_name: thresholds.device_name,
                     device_id: deviceId,
                     warning_type: warning.warning_type,
-                    warning_severity: warning.warning_severity,
-                    warning_message: warning.warning_message,
-                    timestamp: new Date().toISOString()
+                    severity: warning.warning_severity,
+                    message: warning.warning_message,
+                    created_at: new Date().toISOString()
                 });
                 console.log(`📧 Mail cảnh báo đã được gửi cho ${warning.warning_type}`);
             } catch (mailError) {

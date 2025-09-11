@@ -7,6 +7,138 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model device_categories {
+  id          String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String              @db.VarChar(255)
+  description String?
+  parent_id   String?             @db.Uuid
+  parent      device_categories?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onUpdate: NoAction)
+  children    device_categories[] @relation("CategoryHierarchy")
+  models      device_models[]
+
+  @@index([parent_id], map: "idx_device_categories_parent")
+  @@index([name], map: "idx_device_categories_name")
+}
+
+model device_models {
+  id             String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  category_id    String            @db.Uuid
+  name           String            @db.VarChar(255)
+  manufacturer   String            @db.VarChar(255)
+  specifications String?
+  devices        device[]
+  category       device_categories @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+
+  @@unique([name, manufacturer], map: "idx_device_models_name_manufacturer")
+  @@index([category_id], map: "idx_device_models_category")
+  @@index([manufacturer], map: "idx_device_models_manufacturer")
+}
+
+model device {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  model_id              String                  @db.Uuid
+  organization_id       String                  @db.Uuid
+  department_id         String?                 @db.Uuid
+  serial_number         String                  @unique(map: "idx_device_serial") @db.VarChar(255)
+  asset_tag             String?                 @db.VarChar(100)
+  status                device_status           @default(active)
+  purchase_date         DateTime?               @db.Date
+  installation_date     DateTime?               @db.Date
+  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?               @default(now()) @updatedAt @db.Timestamptz(6)
+  alert_rules           alert_rules[]
+  alert_suppressions    alert_suppressions[]
+  alerts                alerts[]
+  department            departments?            @relation(fields: [department_id], references: [id], onUpdate: NoAction)
+  model                 device_models           @relation(fields: [model_id], references: [id], onUpdate: NoAction)
+  organization          organizations           @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  device_connectivity   device_connectivity[]
+  device_data           device_data[]
+  device_latest_data    device_latest_data[]
+  maintenance_schedules maintenance_schedules[]
+  warranty_info         warranty_info[]
+
+  @@index([model_id], map: "idx_device_model")
+  @@index([organization_id], map: "idx_device_organization")
+  @@index([department_id], map: "idx_device_department")
+  @@index([status], map: "idx_device_status")
+}
+
+model warranty_info {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id      String   @db.Uuid
+  warranty_start DateTime @db.Date
+  warranty_end   DateTime @db.Date
+  provider       String   @db.VarChar(255)
+  device         device   @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([device_id], map: "idx_warranty_info_device")
+  @@index([warranty_end], map: "idx_warranty_info_end_date")
+}
+
+model device_connectivity {
+  id                 String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id          String    @db.Uuid
+  mqtt_user          String?   @db.VarChar(100)
+  mqtt_pass          String?   @db.VarChar(255)
+  mqtt_topic         String?   @db.VarChar(255)
+  broker_host        String?   @db.VarChar(255)
+  broker_port        Int?      @default(1883)
+  ssl_enabled        Boolean?  @default(false)
+  heartbeat_interval Int?      @default(300)
+  last_connected     DateTime? @db.Timestamptz(6)
+  is_active          Boolean   @default(true)
+  created_at         DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
+  device             device    @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([device_id], map: "idx_device_connectivity_device")
+  @@index([is_active], map: "idx_device_connectivity_active")
+  @@index([last_connected], map: "idx_device_connectivity_last_connected")
+}
+
+model organizations {
+  id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name               String               @db.VarChar(255)
+  type               organization_type
+  address            String?
+  phone              String?              @db.VarChar(20)
+  email              String?              @db.VarChar(255)
+  license_number     String?              @db.VarChar(100)
+  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?            @default(now()) @updatedAt @db.Timestamptz(6)
+  is_active          Boolean              @default(true)
+  alert_metrics      alert_metrics[]
+  alert_rules        alert_rules[]
+  alert_suppressions alert_suppressions[]
+  dashboards         dashboards[]
+  departments        departments[]
+  devices            device[]
+  reports            reports[]
+  system_settings    system_settings[]
+  users_v2           users_v2[]
+
+  @@index([is_active], map: "idx_organizations_active")
+  @@index([name], map: "idx_organizations_name")
+  @@index([type], map: "idx_organizations_type")
+}
+
+model departments {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String        @db.Uuid
+  name            String        @db.VarChar(255)
+  description     String?
+  code            String?       @db.VarChar(20)
+  created_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?     @default(now()) @updatedAt @db.Timestamptz(6)
+  organization    organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  devices         device[]
+  users_v2        users_v2[]
+
+  @@index([code], map: "idx_departments_code")
+  @@index([organization_id], map: "idx_departments_organization")
+}
+
 model auo_display {
   id                      Int                      @id @default(autoincrement())
   voltage                 Float?                   @db.Real
@@ -88,27 +220,24 @@ model led_nova_100 {
   timestamp               DateTime?                @default(now()) @db.Timestamp(6)
 }
 
-// Add this to your schema.prisma file
-// In your device_warning_logs model
 model device_warning_logs {
-  id                 Int       @id @default(autoincrement())
-  device_type        String    
-  device_name        String?   
-  device_id          Int?      
-  warning_type       String    
-  warning_severity   String    
-  measured_value     Float?    
-  threshold_value    Float?    
-  warning_message    String    
-  status             String    @default("active") 
-  resolved_at        DateTime?
-  acknowledged_by    Int?      
-  resolution_notes   String?
-  timestamp          DateTime  @default(now()) @db.Timestamp(6)
-  
-  // Relation to users
-  users              users?    @relation(fields: [acknowledged_by], references: [id])
-  
+  id                    Int                     @id @default(autoincrement())
+  device_type           String
+  device_name           String?
+  device_id             Int?
+  warning_type          String
+  warning_severity      String
+  measured_value        Float?
+  threshold_value       Float?
+  warning_message       String
+  status                String                  @default("active")
+  resolved_at           DateTime?
+  acknowledged_by       Int?
+  resolution_notes      String?
+  timestamp             DateTime                @default(now()) @db.Timestamp(6)
+  users                 users?                  @relation(fields: [acknowledged_by], references: [id])
+  warning_notifications warning_notifications[]
+
   @@index([device_type, timestamp])
   @@index([warning_type, timestamp])
   @@index([status, timestamp])
@@ -132,15 +261,440 @@ model roles {
   users       users[]
 }
 
-// Update your users model to include the reverse relation
 model users {
-  id                  Int                  @id @default(autoincrement())
-  username            String               @unique @db.VarChar(50)
+  id                  Int                   @id @default(autoincrement())
+  username            String                @unique @db.VarChar(50)
   password_hash       String
-  full_name           String?              @db.VarChar(100)
+  full_name           String?               @db.VarChar(100)
   role_id             Int?
-  is_active           Boolean?             @default(true)
+  is_active           Boolean?              @default(true)
+  device_warning_logs device_warning_logs[]
   logs                logs[]
-  device_warning_logs device_warning_logs[] // Add this line for the reverse relation
-  roles               roles?               @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  roles               roles?                @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model alert_assignments {
+  id                                               String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  alert_id                                         String            @db.Uuid
+  user_id                                          String            @db.Uuid
+  assigned_by                                      String?           @db.Uuid
+  role                                             assignment_role   @default(assignee)
+  escalation_level                                 escalation_level? @default(L1)
+  priority                                         Int?              @default(1)
+  auto_escalate_minutes                            Int?              @default(30)
+  assigned_at                                      DateTime?         @default(now()) @db.Timestamptz(6)
+  acknowledged_at                                  DateTime?         @db.Timestamptz(6)
+  completed_at                                     DateTime?         @db.Timestamptz(6)
+  notes                                            String?
+  alerts                                           alerts            @relation(fields: [alert_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_v2_alert_assignments_assigned_byTousers_v2 users_v2?         @relation("alert_assignments_assigned_byTousers_v2", fields: [assigned_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_v2_alert_assignments_user_idTousers_v2     users_v2          @relation("alert_assignments_user_idTousers_v2", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([alert_id], map: "idx_alert_assignments_alert")
+  @@index([escalation_level], map: "idx_alert_assignments_escalation")
+  @@index([role], map: "idx_alert_assignments_role")
+  @@index([user_id], map: "idx_alert_assignments_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model alert_metrics {
+  id                              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id                 String        @db.Uuid
+  date                            DateTime      @db.Date
+  total_alerts                    Int?          @default(0)
+  critical_alerts                 Int?          @default(0)
+  high_alerts                     Int?          @default(0)
+  medium_alerts                   Int?          @default(0)
+  low_alerts                      Int?          @default(0)
+  resolved_alerts                 Int?          @default(0)
+  average_resolution_time_minutes Int?          @default(0)
+  false_positive_rate             Decimal?      @default(0.00) @db.Decimal(5, 2)
+  created_at                      DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at                      DateTime?     @default(now()) @db.Timestamptz(6)
+  organizations                   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([organization_id, date])
+  @@index([date(sort: Desc)], map: "idx_alert_metrics_date")
+  @@index([organization_id, date(sort: Desc)], map: "idx_alert_metrics_org_date")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model alert_rules {
+  id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id    String               @db.Uuid
+  device_id          String?              @db.Uuid
+  measurement_id     String               @db.Uuid
+  name               String               @db.VarChar(255)
+  description        String?
+  condition          condition_type
+  threshold_value    Float?
+  threshold_min      Float?
+  threshold_max      Float?
+  severity           alert_severity       @default(medium)
+  is_active          Boolean              @default(true)
+  cooldown_minutes   Int?                 @default(15)
+  created_by         String               @db.Uuid
+  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  users_v2           users_v2             @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  device             device?              @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  measurements       measurements         @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations      organizations        @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  alert_suppressions alert_suppressions[]
+  alerts             alerts[]
+
+  @@index([is_active], map: "idx_alert_rules_active")
+  @@index([device_id], map: "idx_alert_rules_device")
+  @@index([measurement_id], map: "idx_alert_rules_measurement")
+  @@index([organization_id], map: "idx_alert_rules_organization")
+  @@index([severity], map: "idx_alert_rules_severity")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model alert_suppressions {
+  id              String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String           @db.Uuid
+  device_id       String?          @db.Uuid
+  measurement_id  String?          @db.Uuid
+  rule_id         String?          @db.Uuid
+  type            suppression_type @default(manual)
+  reason          String
+  start_time      DateTime         @default(now()) @db.Timestamptz(6)
+  end_time        DateTime?        @db.Timestamptz(6)
+  created_by      String           @db.Uuid
+  is_active       Boolean          @default(true)
+  created_at      DateTime?        @default(now()) @db.Timestamptz(6)
+  users_v2        users_v2         @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  device          device?          @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  measurements    measurements?    @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations   organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  alert_rules     alert_rules?     @relation(fields: [rule_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([is_active], map: "idx_alert_suppressions_active")
+  @@index([device_id], map: "idx_alert_suppressions_device")
+  @@index([organization_id], map: "idx_alert_suppressions_org")
+  @@index([rule_id], map: "idx_alert_suppressions_rule")
+  @@index([start_time, end_time], map: "idx_alert_suppressions_time")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model alerts {
+  id                                        String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id                                 String              @db.Uuid
+  measurement_id                            String              @db.Uuid
+  rule_id                                   String              @db.Uuid
+  device_data_id                            String?             @db.Uuid
+  severity                                  alert_severity
+  status                                    alert_status        @default(active)
+  title                                     String              @db.VarChar(255)
+  message                                   String
+  current_value                             Float?
+  threshold_info                            Json?
+  triggered_at                              DateTime            @default(now()) @db.Timestamptz(6)
+  acknowledged_at                           DateTime?           @db.Timestamptz(6)
+  acknowledged_by                           String?             @db.Uuid
+  resolved_at                               DateTime?           @db.Timestamptz(6)
+  resolved_by                               String?             @db.Uuid
+  resolution_notes                          String?
+  alert_assignments                         alert_assignments[]
+  users_v2_alerts_acknowledged_byTousers_v2 users_v2?           @relation("alerts_acknowledged_byTousers_v2", fields: [acknowledged_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  device_data                               device_data?        @relation(fields: [device_data_id], references: [id], onUpdate: NoAction)
+  device                                    device              @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  measurements                              measurements        @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_v2_alerts_resolved_byTousers_v2     users_v2?           @relation("alerts_resolved_byTousers_v2", fields: [resolved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  alert_rules                               alert_rules         @relation(fields: [rule_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  notification_logs                         notification_logs[]
+
+  @@index([device_id], map: "idx_alerts_device")
+  @@index([measurement_id], map: "idx_alerts_measurement")
+  @@index([rule_id], map: "idx_alerts_rule")
+  @@index([severity], map: "idx_alerts_severity")
+  @@index([status], map: "idx_alerts_status")
+  @@index([triggered_at(sort: Desc)], map: "idx_alerts_triggered_at")
+}
+
+model dashboards {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String        @db.Uuid
+  name            String        @db.VarChar(255)
+  layout_config   String?
+  widget_config   String?
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organization_id], map: "idx_dashboards_organization")
+}
+
+model data_values {
+  id             String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_data_id String      @db.Uuid
+  value_numeric  Float?
+  value_text     String?
+  recorded_at    DateTime    @default(now()) @db.Timestamptz(6)
+  device_data    device_data @relation(fields: [device_data_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([device_data_id], map: "idx_data_values_device_data")
+  @@index([recorded_at(sort: Desc)], map: "idx_data_values_recorded_at")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model device_data {
+  id             String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id      String        @db.Uuid
+  measurement_id String        @db.Uuid
+  data_payload   Json
+  timestamp      DateTime      @default(now()) @db.Timestamptz(6)
+  alerts         alerts[]
+  data_values    data_values[]
+  device         device        @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  measurements   measurements  @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([device_id, timestamp(sort: Desc)], map: "idx_device_data_device_time")
+  @@index([measurement_id, timestamp(sort: Desc)], map: "idx_device_data_measurement_time")
+  @@index([data_payload], map: "idx_device_data_payload_gin", type: Gin)
+  @@index([timestamp(sort: Desc)], map: "idx_device_data_timestamp")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model device_latest_data {
+  device_id      String       @db.Uuid
+  measurement_id String       @db.Uuid
+  latest_value   Float?
+  updated_at     DateTime     @default(now()) @db.Timestamptz(6)
+  device         device       @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  measurements   measurements @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([device_id, measurement_id])
+  @@index([updated_at(sort: Desc)], map: "idx_device_latest_data_updated")
+}
+
+model maintenance_schedules {
+  id            String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id     String           @db.Uuid
+  schedule_type maintenance_type
+  due_date      DateTime         @db.Date
+  status        schedule_status  @default(pending)
+  device        device           @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([device_id], map: "idx_maintenance_schedules_device")
+  @@index([due_date], map: "idx_maintenance_schedules_due_date")
+  @@index([status], map: "idx_maintenance_schedules_status")
+}
+
+model measurements {
+  id                 String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name               String                @unique @db.VarChar(100)
+  unit               String?               @db.VarChar(20)
+  data_type          measurement_data_type @default(numeric)
+  validation_rules   String?
+  alert_rules        alert_rules[]
+  alert_suppressions alert_suppressions[]
+  alerts             alerts[]
+  device_data        device_data[]
+  device_latest_data device_latest_data[]
+
+  @@index([data_type], map: "idx_measurements_data_type")
+  @@index([name], map: "idx_measurements_name")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model notification_logs {
+  id            String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  alert_id      String               @db.Uuid
+  user_id       String?              @db.Uuid
+  channel       notification_channel
+  recipient     String               @db.VarChar(255)
+  status        notification_status  @default(pending)
+  attempt_count Int?                 @default(1)
+  max_attempts  Int?                 @default(3)
+  error_message String?
+  response_data Json?
+  sent_at       DateTime?            @db.Timestamptz(6)
+  created_at    DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime?            @default(now()) @db.Timestamptz(6)
+  alerts        alerts               @relation(fields: [alert_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_v2      users_v2?            @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([alert_id], map: "idx_notification_logs_alert")
+  @@index([channel], map: "idx_notification_logs_channel")
+  @@index([created_at(sort: Desc)], map: "idx_notification_logs_created_at")
+  @@index([status], map: "idx_notification_logs_status")
+  @@index([user_id], map: "idx_notification_logs_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model permissions {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String  @unique @db.VarChar(100)
+  description String?
+  resource    String  @db.VarChar(50)
+  action      String  @db.VarChar(50)
+}
+
+model reports {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String        @db.Uuid
+  name            String        @db.VarChar(255)
+  query_config    String
+  output_format   report_format @default(pdf)
+  generated_at    DateTime?     @default(now()) @db.Timestamptz(6)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([generated_at(sort: Desc)], map: "idx_reports_generated_at")
+  @@index([organization_id], map: "idx_reports_organization")
+}
+
+model system_settings {
+  id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String?        @db.Uuid
+  key             String         @db.VarChar(255)
+  value           String?
+  organizations   organizations? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([organization_id, key])
+  @@index([key], map: "idx_system_settings_key")
+  @@index([organization_id], map: "idx_system_settings_organization")
+}
+
+model users_v2 {
+  id                                                        String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id                                           String?              @db.Uuid
+  department_id                                             String?              @db.Uuid
+  username                                                  String               @unique @db.VarChar(50)
+  password_hash                                             String               @db.VarChar(255)
+  full_name                                                 String               @db.VarChar(255)
+  email                                                     String?              @unique(map: "idx_users_v2_email") @db.VarChar(255)
+  phone                                                     String?              @db.VarChar(20)
+  is_active                                                 Boolean              @default(true)
+  created_at                                                DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at                                                DateTime?            @default(now()) @db.Timestamptz(6)
+  alert_assignments_alert_assignments_assigned_byTousers_v2 alert_assignments[]  @relation("alert_assignments_assigned_byTousers_v2")
+  alert_assignments_alert_assignments_user_idTousers_v2     alert_assignments[]  @relation("alert_assignments_user_idTousers_v2")
+  alert_rules                                               alert_rules[]
+  alert_suppressions                                        alert_suppressions[]
+  alerts_alerts_acknowledged_byTousers_v2                   alerts[]             @relation("alerts_acknowledged_byTousers_v2")
+  alerts_alerts_resolved_byTousers_v2                       alerts[]             @relation("alerts_resolved_byTousers_v2")
+  notification_logs                                         notification_logs[]
+  departments                                               departments?         @relation(fields: [department_id], references: [id], onUpdate: NoAction)
+  organizations                                             organizations?       @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([is_active], map: "idx_users_v2_active")
+  @@index([department_id], map: "idx_users_v2_department")
+  @@index([full_name], map: "idx_users_v2_full_name")
+  @@index([organization_id], map: "idx_users_v2_organization")
+}
+
+model warning_notifications {
+  id                  Int                 @id @default(autoincrement())
+  warning_id          Int
+  send_time           DateTime            @default(now()) @db.Timestamp(6)
+  level               Int
+  device_warning_logs device_warning_logs @relation(fields: [warning_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+enum device_status {
+  active
+  inactive
+  maintenance
+  decommissioned
+}
+
+enum access_level {
+  read
+  write
+  admin
+  none
+}
+
+enum alert_severity {
+  low
+  medium
+  high
+  critical
+}
+
+enum alert_status {
+  active
+  acknowledged
+  resolved
+  suppressed
+}
+
+enum assignment_role {
+  assignee
+  reviewer
+  escalation
+}
+
+enum condition_type {
+  greater_than
+  less_than
+  equal
+  between
+  not_equal
+}
+
+enum escalation_level {
+  L1
+  L2
+  L3
+  executive
+}
+
+enum maintenance_type {
+  preventive
+  corrective
+  emergency
+  calibration
+}
+
+enum measurement_data_type {
+  numeric
+  text
+  boolean
+  json
+}
+
+enum notification_channel {
+  email
+  sms
+  webhook
+  push
+  slack
+  telegram
+}
+
+enum notification_status {
+  pending
+  sent
+  failed
+  retry
+}
+
+enum organization_type {
+  hospital
+  factory
+  school
+  office
+  laboratory
+}
+
+enum report_format {
+  pdf
+  excel
+  csv
+  json
+}
+
+enum schedule_status {
+  pending
+  completed
+  overdue
+  cancelled
+}
+
+enum suppression_type {
+  manual
+  scheduled
+  maintenance
 }
