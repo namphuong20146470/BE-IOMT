@@ -7,8 +7,10 @@ import dotenv from 'dotenv';
 import iot from './routes/iotRoutes.js';
 
 import actLog from './routes/actLog.js';
-// import '../BE-DX/controllers/MQTT/mqtt-client.js'; // Add this line to import MQTT client
-import './Database/mqtt.database.js'; // Ensure this is the correct path to your MQTT database file
+// Legacy MQTT system (keep existing)
+import './Database/mqtt.database.js';
+// New Dynamic MQTT system (parallel)
+import './Database/mqtt.dynamic.js';
 import { configureSSL } from './config/ssl.js';
 
 
