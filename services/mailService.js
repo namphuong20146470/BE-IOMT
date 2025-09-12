@@ -253,9 +253,9 @@ class MailService {
                     <h3>📋 Khuyến nghị xử lý:</h3>
                     <ul>
                         <li>Kiểm tra ngay thiết bị <strong>${data.device_name}</strong></li>
-                        <li>Xác minh các thông số kỹ thuật</li>
-                        <li>Ghi lại hành động khắc phục trong hệ thống</li>
-                        ${data.maintenance_contact ? `<li>Liên hệ bảo trì: <strong>${data.maintenance_contact}</strong></li>` : '<li>Liên hệ kỹ thuật nếu cần hỗ trợ</li>'}
+                        <li>Xác minh các thông số kỹ thuật và đối chiếu với ngưỡng vận hành cho phép.</li>
+                        <li>Ghi nhận kết quả kiểm tra và hành động khắc phục vào hệ thống quản lý</li>
+                        <li>Liên hệ bộ phận kỹ thuật để được hỗ trợ khi phát hiện bất thường không thể xử lý tại chỗ</li>
                         ${data.escalation_level > 1 ? '<li><strong>⚠️ Đây là cảnh báo leo thang - cần xử lý ngay lập tức</strong></li>' : ''}
                     </ul>
                     ${data.additional_notes ? `<p><strong>Ghi chú thêm:</strong> ${data.additional_notes}</p>` : ''}
@@ -263,7 +263,7 @@ class MailService {
             </div>
             
             <div class="footer">
-                <p>Email tự động từ Hệ thống giám sát IoT</p>
+                <p>Email tự động từ Hệ thống giám sát IoMT</p>
                 <p>Thời gian: ${now} | Không trả lời email này</p>
                 ${data.notification_id ? `<p>Notification ID: ${data.notification_id}</p>` : ''}
             </div>
