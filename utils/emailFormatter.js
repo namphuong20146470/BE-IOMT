@@ -313,18 +313,21 @@ function getSeverityConfig(warning_severity) {
                 subject_prefix: '🚨 KHẨN CẤP'
             };
         case 'major':
+        case 'high':
             return {
                 icon: '⚠️',
                 color: '#f57c00',
                 subject_prefix: '⚠️ Cảnh báo nghiêm trọng'
             };
         case 'moderate':
+        case 'medium':
             return {
                 icon: '⚠️',
                 color: '#fbc02d',
                 subject_prefix: '⚠️ Cảnh báo thiết bị'
             };
         case 'minor':
+        case 'low':
             return {
                 icon: 'ℹ️',
                 color: '#388e3c',

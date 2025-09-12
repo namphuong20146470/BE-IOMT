@@ -228,7 +228,7 @@ class MailService {
         <div class="container">
             <div class="header">
                 <h1>${templateIcon} CẢNH BÁO THIẾT BỊ IoMT</h1>
-                <p>Hệ thống giám sát thiết bị y tế </p>
+                <p>Hệ thống giám sát thiết bị y tế thông minh </p>
                 ${data.escalation_level > 1 ? `<span class="escalation-badge">LEVEL ${data.escalation_level} ESCALATION</span>` : ''}
             </div>
             
@@ -346,6 +346,7 @@ Email tự động - Không trả lời
           bgColor: '#ffebee',
           icon: '🔴'
         };
+      case 'major':
       case 'high':
         return {
           text: 'CAO',
@@ -353,6 +354,7 @@ Email tự động - Không trả lời
           bgColor: '#fff3e0',
           icon: '🟠'
         };
+      case 'moderate':
       case 'medium':
         return {
           text: 'TRUNG BÌNH',
@@ -360,6 +362,7 @@ Email tự động - Không trả lời
           bgColor: '#fffde7',
           icon: '🟡'
         };
+      case 'minor':
       case 'low':
         return {
           text: 'THẤP',
