@@ -252,7 +252,7 @@ class MailService {
                 <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 4px;">
                     <h3>📋 Khuyến nghị xử lý:</h3>
                     <ul>
-                        <li>Kiểm tra ngay thiết bị <strong>${data.device_name}</strong></li>
+                        <li>Kiểm tra tình trạng thiết bị/cảm biến ngay khi nhận cảnh báo</strong></li>
                         <li>Xác minh các thông số kỹ thuật và đối chiếu với ngưỡng vận hành cho phép.</li>
                         <li>Ghi nhận kết quả kiểm tra và hành động khắc phục vào hệ thống quản lý</li>
                         <li>Liên hệ bộ phận kỹ thuật để được hỗ trợ khi phát hiện bất thường không thể xử lý tại chỗ</li>
