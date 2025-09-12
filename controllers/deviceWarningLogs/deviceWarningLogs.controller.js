@@ -294,7 +294,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                     threshold_value: thresholds.voltage_max,
                     warning_message: `Điện áp vượt ngưỡng cao`
                 });
-            } else if (deviceData.voltage < thresholds.voltage_min * 0.8 && deviceData.statusOperating != false) {
+            } else if (deviceData.voltage < thresholds.voltage_min * 0.8 && deviceData.statusOperating === true) {
                 warnings.push({
                     warning_type: 'voltage_low',
                     warning_severity: 'major',
@@ -302,7 +302,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                     threshold_value: thresholds.voltage_min * 0.8,
                     warning_message: `Điện áp thấp nghiêm trọng`
                 });
-            } else if (deviceData.voltage < thresholds.voltage_min && deviceData.statusOperating != false) {
+            } else if (deviceData.voltage < thresholds.voltage_min && deviceData.statusOperating === true) {
                 warnings.push({
                     warning_type: 'voltage_warning',
                     warning_severity: 'moderate',
@@ -492,17 +492,21 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
             // Gửi mail cảnh báo với Simple Email Manager
             try {
                 await simpleEmailNotificationManager.processWarningEmail({
-                    id: null, // Will be set after DB insert
+                    id: insertResult[0]?.id || null, // Sử dụng ID từ database insert
                     device_name: thresholds.device_name,
                     device_id: deviceIdentifier,
+                    device_type: deviceType,
                     warning_type: warning.warning_type,
+                    warning_severity: warning.warning_severity, // Fix: thêm warning_severity
                     severity: warning.warning_severity,
+                    measured_value: warning.measured_value, // Fix: thêm measured_value
+                    threshold_value: warning.threshold_value, // Fix: thêm threshold_value
+                    warning_message: warning.warning_message, // Fix: thêm warning_message
                     message: warning.warning_message,
                     current_value: warning.measured_value,
-                    threshold_value: warning.threshold_value,
+                    timestamp: new Date().toISOString(), // Fix: thêm timestamp
                     created_at: new Date().toISOString(),
                     status: 'active',
-                    device_type: deviceType,
                     device_location: `${thresholds.device_name} - ${deviceType}`,
                     maintenance_contact: 'Phòng Kỹ thuật - Ext: 1234'
                 });
@@ -510,15 +514,23 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
             } catch (mailError) {
                 console.error('Lỗi gửi mail cảnh báo:', mailError);
                 
-                // Fallback to basic mail service
+                // Fallback to basic mail service với FULL DATA
                 try {
                     await mailService.sendWarningEmail({
                         device_name: thresholds.device_name,
                         device_id: deviceIdentifier,
+                        device_type: deviceType,
                         warning_type: warning.warning_type,
+                        warning_severity: warning.warning_severity,
                         severity: warning.warning_severity,
+                        measured_value: warning.measured_value, // ✅ FIX: Thêm measured_value
+                        threshold_value: warning.threshold_value, // ✅ FIX: Thêm threshold_value
+                        warning_message: warning.warning_message, // ✅ FIX: Thêm warning_message
                         message: warning.warning_message,
-                        created_at: new Date().toISOString()
+                        current_value: warning.measured_value,
+                        timestamp: new Date().toISOString(),
+                        created_at: new Date().toISOString(),
+                        status: 'active'
                     });
                     console.log(`📧 Fallback mail sent for ${warning.warning_type}`);
                 } catch (fallbackError) {

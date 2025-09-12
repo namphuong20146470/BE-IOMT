@@ -153,7 +153,7 @@ CREATE TRIGGER update_email_recipients_updated_at
 INSERT INTO email_templates (name, template_type, subject_template, html_template, text_template) 
 VALUES 
 ('default_warning', 'warning', '{{severity_icon}} Cảnh báo thiết bị: {{device_name}} - {{warning_type}}', 
- '<h1>{{severity_icon}} CẢNH BÁO THIẾT BỊ IoT</h1><p>{{warning_type}} tại {{device_name}}</p>', 
+ '<h1>{{severity_icon}} CẢNH BÁO THIẾT BỊ IoMT</h1><p>{{warning_type}} tại {{device_name}}</p>', 
  '{{severity_icon}} CẢNH BÁO: {{warning_type}} tại {{device_name}}'),
 
 ('default_digest', 'digest', '📊 Tổng hợp cảnh báo: {{warning_count}} cảnh báo', 

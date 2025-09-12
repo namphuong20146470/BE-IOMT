@@ -46,27 +46,31 @@ export async function formatWarningDataForEmail(warningData, emailType = 'warnin
         
         // Thông tin cảnh báo  
         warning_type: warningData.warning_type,
+        warning_message: warningData.warning_message || 'Không có mô tả',
         severity: severityMapping[warningData.warning_severity] || warningData.warning_severity || 'medium',
+        warning_severity: warningData.warning_severity || 'medium',
         message: warningData.warning_message || 'Không có mô tả',
         
-        // Giá trị và ngưỡng - Format chuẩn
+        // Giá trị và ngưỡng - Đảm bảo có cả raw values và formatted values
+        measured_value: warningData.measured_value,
+        threshold_value: warningData.threshold_value,
         current_value: formatMeasuredValue(warningData.measured_value, warningData.warning_type),
-        threshold_value: formatThresholdValue(warningData.threshold_value, warningData.warning_type),
+        formatted_threshold: formatThresholdValue(warningData.threshold_value, warningData.warning_type),
         raw_current_value: warningData.measured_value,
         raw_threshold_value: warningData.threshold_value,
         value_comparison: getValueComparisonText(warningData.measured_value, warningData.threshold_value, warningData.warning_type),
         
-        // Thời gian
-        created_at: warningData.timestamp || new Date().toISOString(),
+        // Thời gian - FIX: sử dụng timestamp thay vì created_at
+        created_at: warningData.timestamp || warningData.created_at || new Date().toISOString(),
         
         // Trạng thái
         status: warningData.status || 'active',
         
         // Mô tả dễ hiểu
-        template_description: warningTypeDescriptions[warningData.warning_type] || warningData.warning_type,
+        template_description: warningTypeDescriptions[warningData.warning_type] || warningData.warning_message || warningData.warning_type,
         
-        // Metadata
-        notification_id: `WRN-${warningData.id}` || null,
+        // Metadata - FIX: đảm bảo có ID
+        notification_id: warningData.id ? `WRN-${warningData.id}` : `WRN-${Date.now()}`,
         priority: severityMapping[warningData.warning_severity] || 'medium'
     };
 
@@ -300,8 +304,8 @@ function getValueComparisonText(measuredValue, thresholdValue, warningType) {
 /**
  * Get severity configuration
  */
-function getSeverityConfig(severity) {
-    switch (severity?.toLowerCase()) {
+function getSeverityConfig(warning_severity) {
+    switch (warning_severity?.toLowerCase()) {
         case 'critical':
             return {
                 icon: '🚨',

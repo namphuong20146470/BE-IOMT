@@ -177,15 +177,28 @@ class MailService {
   getRecipients() {
     const recipients = [];
     
-    if (process.env.ALERT_EMAIL_1) recipients.push(process.env.ALERT_EMAIL_1);
-    if (process.env.ALERT_EMAIL_2) recipients.push(process.env.ALERT_EMAIL_2);
-    if (process.env.ALERT_EMAIL_3) recipients.push(process.env.ALERT_EMAIL_3);
+    // Collect all ALERT_EMAIL_* environment variables
+    for (let i = 1; i <= 20; i++) {
+      const emailKey = `ALERT_EMAIL_${i}`;
+      const email = process.env[emailKey];
+      if (email && email.trim() && email.includes('@')) {
+        recipients.push(email.trim());
+      }
+    }
     
-    return recipients.filter(email => email && email.includes('@'));
+    console.log(`📧 Found ${recipients.length} alert email recipients:`, recipients);
+    
+    // Fallback if no recipients found
+    if (recipients.length === 0) {
+      console.warn('⚠️ No valid alert email recipients found in environment variables');
+      recipients.push(process.env.MAIL_FROM_ADDRESS || 'admin@example.com');
+    }
+    
+    return recipients;
   }
 
   generateWarningEmailHTML(data) {
-    const severity = this.getSeverityInfo(data.severity);
+    const severity = this.getSeverityInfo(data.severity || data.warning_severity);
     const templateIcon = data.template_icon || severity.icon;
     const templateColor = data.template_color || severity.color;
     const now = new Date().toLocaleString('vi-VN');
@@ -195,7 +208,7 @@ class MailService {
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Cảnh báo thiết bị IoT</title>
+        <title>CẢNH BÁO THIẾT BỊ IoMT</title>
         <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
             .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -214,31 +227,26 @@ class MailService {
     <body>
         <div class="container">
             <div class="header">
-                <h1>${templateIcon} CẢNH BÁO THIẾT BỊ IoT</h1>
-                <p>Hệ thống giám sát</p>
+                <h1>${templateIcon} CẢNH BÁO THIẾT BỊ IoMT</h1>
+                <p>Hệ thống giám sát thiết bị y tế </p>
                 ${data.escalation_level > 1 ? `<span class="escalation-badge">LEVEL ${data.escalation_level} ESCALATION</span>` : ''}
             </div>
             
             <div class="content">
                 <div class="warning-box">
                     <h2>⚠️ ${data.warning_type}</h2>
-                    <p><strong>Thiết bị:</strong> ${data.device_name} ${data.device_model ? `(${data.device_model})` : ''} (ID: ${data.device_id})</p>
-                    <p><strong>Mức độ:</strong> <span class="status-badge" style="background: ${templateColor}; color: white;">${severity.text}</span></p>
-                    ${data.device_location ? `<p><strong>Vị trí:</strong> ${data.device_location}</p>` : ''}
-                    ${data.template_description ? `<p><strong>Mô tả:</strong> ${data.template_description}</p>` : ''}
+                    <p><strong>Thiết bị:</strong> ${data.device_name} ${data.device_model ? `(${data.device_model})` : ''} </p>
                 </div>
                 
                 <table class="info-table">
-                    <tr><th>Thông tin</th><th>Chi tiết</th></tr>
+                    <tr><th>Thông tin</th><th>Nội dung</th></tr>
                     <tr><td>Thời gian phát hiện</td><td>${new Date(data.created_at).toLocaleString('vi-VN')}</td></tr>
-                    <tr><td>Giá trị hiện tại</td><td>${data.current_value || 'N/A'}</td></tr>
-                    <tr><td>Ngưỡng cảnh báo</td><td>${data.threshold_value || 'N/A'}</td></tr>
-                    <tr><td>Mô tả</td><td>${data.message || 'Không có mô tả'}</td></tr>
-                    <tr><td>Trạng thái</td><td>${data.status === 'active' ? '🔴 Đang hoạt động' : '✅ Đã giải quyết'}</td></tr>
-                    <tr><td>Độ ưu tiên</td><td>${this.getPriorityText(data.priority || data.severity)}</td></tr>
+                    <tr><td>Giá trị đo được</td><td><strong>${data.measured_value !== undefined ? data.measured_value : (data.current_value || 'N/A')}</strong></td></tr>
+                    <tr><td>Ngưỡng cảnh báo</td><td><strong>${data.threshold_value !== undefined ? data.threshold_value : (data.formatted_threshold || 'N/A')}</strong></td></tr>
+                    <tr><td>Mô tả</td><td>${data.warning_message || data.message || data.template_description || 'Không có mô tả'}</td></tr>
+                    <tr><td>Độ nghiêm trọng</td><td><strong>${this.getPriorityText(data.warning_severity || data.severity)}</strong></td></tr>
                     ${data.escalation_level > 1 ? `<tr><td>Mức leo thang</td><td>Level ${data.escalation_level}</td></tr>` : ''}
                     ${data.notification_id ? `<tr><td>Mã thông báo</td><td><span class="notification-id">${data.notification_id}</span></td></tr>` : ''}
-                    <tr><td>Thời gian gửi email</td><td>${now}</td></tr>
                 </table>
                 
                 <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 4px;">
@@ -266,9 +274,9 @@ class MailService {
   }
 
   generateWarningEmailText(data) {
-    const severity = this.getSeverityInfo(data.severity);
+    const severity = this.getSeverityInfo(data.severity || data.warning_severity);
     return `
-🚨 CẢNH BÁO THIẾT BỊ IoT - BVĐKTP
+🚨 CẢNH BÁO THIẾT BỊ IoMT
 
 ⚠️ Loại cảnh báo: ${data.warning_type}
 📱 Thiết bị: ${data.device_name} (ID: ${data.device_id})
@@ -276,10 +284,11 @@ class MailService {
 ⏰ Thời gian: ${new Date(data.created_at).toLocaleString('vi-VN')}
 
 📊 Chi tiết:
-- Giá trị hiện tại: ${data.current_value || 'N/A'}
-- Ngưỡng cảnh báo: ${data.threshold_value || 'N/A'}
-- Mô tả: ${data.message || 'Không có mô tả'}
+- Giá trị đo được: ${data.measured_value !== undefined ? data.measured_value : (data.current_value || 'N/A')}
+- Ngưỡng cảnh báo: ${data.threshold_value !== undefined ? data.threshold_value : (data.formatted_threshold || 'N/A')}
+- Mô tả: ${data.warning_message || data.message || 'Không có mô tả'}
 - Trạng thái: ${data.status === 'active' ? 'Đang hoạt động' : 'Đã giải quyết'}
+- Độ nghiêm trọng: ${this.getPriorityText(data.warning_severity || data.severity)}
 
 🔧 Khuyến nghị:
 1. Kiểm tra ngay thiết bị
@@ -288,7 +297,7 @@ class MailService {
 4. Liên hệ kỹ thuật nếu cần
 
 ---
-Hệ thống giám sát IoT - BVĐKTP
+Hệ thống giám sát IoMT
 Email tự động - Không trả lời
     `;
   }
@@ -320,7 +329,7 @@ Email tự động - Không trả lời
                 <p><strong>Mô tả:</strong> ${data.description}</p>
             </div>
             <div class="footer">
-                <p>Hệ thống giám sát IoT - BVĐKTP</p>
+                <p>Hệ thống giám sát IoMT</p>
             </div>
         </div>
     </body>
@@ -423,7 +432,7 @@ Email tự động - Không trả lời
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Tổng hợp cảnh báo thiết bị IoT</title>
+        <title>Tổng hợp CẢNH BÁO THIẾT BỊ IoMT</title>
         <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
             .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -489,7 +498,7 @@ Email tự động - Không trả lời
             </div>
             
             <div class="footer">
-                <p>Tổng hợp tự động từ Hệ thống giám sát IoT - BVĐKTP</p>
+                <p>Tổng hợp tự động từ Hệ thống giám sát IoMT</p>
                 <p>Thời gian: ${now} | Không trả lời email này</p>
             </div>
         </div>
@@ -504,7 +513,7 @@ Email tự động - Không trả lời
   generateDigestEmailText(data) {
     const now = new Date().toLocaleString('vi-VN');
     return `
-📊 TỔNG HỢP CẢNH BÁO IoT - BVĐKTP
+📊 TỔNG HỢP CẢNH BÁO IoMT
 
 📈 Tổng quan:
 - Tổng số cảnh báo: ${data.warning_count}
@@ -529,7 +538,7 @@ ${data.warnings.filter(w => w.severity === 'high').slice(0, 5).map(w =>
 4. Cập nhật trạng thái xử lý
 
 ---
-Hệ thống giám sát IoT - BVĐKTP
+Hệ thống giám sát IoMT
 Tổng hợp tự động - Không trả lời
     `;
   }
@@ -546,7 +555,7 @@ Tổng hợp tự động - Không trả lời
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Đã giải quyết cảnh báo thiết bị IoT</title>
+        <title>Đã giải quyết CẢNH BÁO THIẾT BỊ IoMT</title>
         <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
             .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -580,7 +589,7 @@ Tổng hợp tự động - Không trả lời
                     <tr><td>Thời gian xử lý</td><td>${this.calculateDuration(data.created_at, data.resolution_time)}</td></tr>
                     <tr><td>Người xử lý</td><td>${data.resolved_by}</td></tr>
                     <tr><td>Ghi chú giải quyết</td><td>${data.resolution_notes}</td></tr>
-                    <tr><td>Giá trị hiện tại</td><td>${data.current_value || 'N/A'}</td></tr>
+                    <tr><td>Giá trị</td><td>${data.current_value || 'N/A'}</td></tr>
                     <tr><td>Ngưỡng cảnh báo</td><td>${data.threshold_value || 'N/A'}</td></tr>
                 </table>
                 
@@ -592,7 +601,7 @@ Tổng hợp tự động - Không trả lời
             </div>
             
             <div class="footer">
-                <p>Email tự động từ Hệ thống giám sát IoT - BVĐKTP</p>
+                <p>Email tự động từ Hệ thống giám sát IoMT</p>
                 <p>Thời gian: ${now} | Không trả lời email này</p>
             </div>
         </div>
@@ -609,7 +618,7 @@ Tổng hợp tự động - Không trả lời
     const resolutionTime = new Date(data.resolution_time).toLocaleString('vi-VN');
     
     return `
-✅ ĐÃ GIẢI QUYẾT CẢNH BÁO - BVĐKTP
+✅ ĐÃ GIẢI QUYẾT CẢNH BÁO
 
 🔧 Cảnh báo: ${data.warning_type}
 📱 Thiết bị: ${data.device_name} (ID: ${data.device_id})
@@ -628,7 +637,7 @@ Tổng hợp tự động - Không trả lời
 - Ngưỡng: ${data.threshold_value || 'N/A'}
 
 ---
-Hệ thống giám sát IoT - BVĐKTP
+Hệ thống giám sát IoMT
 Email tự động - Không trả lời
     `;
   }
@@ -680,10 +689,13 @@ Email tự động - Không trả lời
     switch(priority?.toLowerCase()) {
       case 'urgent':
       case 'critical': return '🔴 KHẨN CẤP';
-      case 'high': return '🟠 CAO';
+      case 'high': 
+      case 'major': return '🟠 CAO';
       case 'normal':
-      case 'medium': return '🟡 TRUNG BÌNH';
-      case 'low': return '🟢 THẤP';
+      case 'medium':
+      case 'moderate': return '🟡 TRUNG BÌNH';
+      case 'low':
+      case 'minor': return '🟢 THẤP';
       default: return '⚪ KHÔNG XÁC ĐỊNH';
     }
   }

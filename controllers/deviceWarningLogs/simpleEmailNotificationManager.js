@@ -41,16 +41,26 @@ export class SimpleEmailNotificationManager {
      */
     async processWarningEmail(warningData) {
         try {
-            // Xác định rule dựa trên severity
-            const rule = this.determineNotificationRule(warningData.severity);
+            console.log('📧 Processing warning email with RAW data:', JSON.stringify(warningData, null, 2));
             
-            // Format dữ liệu cho email sử dụng formatter (với user info nếu có)
-            const emailData = await formatWarningDataWithUserInfo(warningData, 'warning');
+            // Xác định rule dựa trên severity
+            const rule = this.determineNotificationRule(warningData.severity || warningData.warning_severity);
+            
+            // TEMPORARY FIX: Gửi RAW data trực tiếp (bỏ qua formatter để debug)
+            const emailData = {
+                ...warningData,
+                created_at: warningData.timestamp || warningData.created_at || new Date().toISOString(),
+                // Đảm bảo có các field cần thiết
+                device_id: warningData.device_id || 'N/A',
+                severity: warningData.warning_severity || warningData.severity || 'medium'
+            };
+
+            console.log('📧 Sending email with data:', JSON.stringify(emailData, null, 2));
 
             // Gửi email ngay lập tức
             await mailService.sendWarningEmail(emailData);
             
-            console.log(`📧 Simple email notification sent for ${warningData.warning_type} (${warningData.severity})`);
+            console.log(`📧 Simple email notification sent for ${warningData.warning_type} (${warningData.warning_severity})`);
             return { success: true, method: 'immediate' };
 
         } catch (error) {
