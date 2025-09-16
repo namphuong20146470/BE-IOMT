@@ -10,7 +10,6 @@ import deviceDataRoutes from './deviceDataRoutes.js';
 import {
     loginUser,
     getAllUsers,
-    getUsers,
     getUserById,
     createUser,
     updateUser,
@@ -18,15 +17,6 @@ import {
     deleteAllUsersExceptAdmin
 
 } from '../controllers/users/user.controller.js';
-
-// V2 User controllers
-import { 
-    createUserV2, 
-    loginV2, 
-    getAllUsersV2, 
-    getUserV2ById,
-    updateUserV2
-} from '../controllers/users/user_V2.controller.js';
 
 // Organizations controllers
 import {
@@ -68,13 +58,6 @@ router.post('/users', authMiddleware, createUser);
 router.put('/users/:id', authMiddleware, updateUser);
 router.delete('/users/:id', authMiddleware, deleteUser);
 router.post('/users/all-except-admin', authMiddleware, deleteAllUsersExceptAdmin);
-
-// V2 User routes with /v2 prefix
-router.post('/v2/users', createUserV2);
-router.post('/v2/login', loginV2);
-router.get('/v2/users', getAllUsersV2);
-router.get('/v2/users/:id', getUserV2ById);
-router.put('/v2/users/:id', updateUserV2);
 
 // Organizations routes
 router.post('/organizations', createOrganization);
@@ -135,7 +118,7 @@ router.get('/auth/decode', (req, res) => {
         res.json({
             success: true,
             decoded: decoded,
-            token_type: decoded.username ? 'users_v2' : 'users_v1',
+            token_type: 'users_v2', // All tokens are now users_v2
             expires_at: new Date(decoded.exp * 1000).toISOString(),
             issued_at: new Date(decoded.iat * 1000).toISOString()
         });

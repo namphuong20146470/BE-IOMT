@@ -244,7 +244,6 @@ class MailService {
                     <tr><td>Giá trị đo được</td><td><strong>${data.measured_value !== undefined ? data.measured_value : (data.current_value || 'N/A')}</strong></td></tr>
                     <tr><td>Ngưỡng cảnh báo</td><td><strong>${data.threshold_value !== undefined ? data.threshold_value : (data.formatted_threshold || 'N/A')}</strong></td></tr>
                     <tr><td>Mô tả</td><td>${data.warning_message || data.message || data.template_description || 'Không có mô tả'}</td></tr>
-                    <tr><td>Độ nghiêm trọng</td><td><strong>${this.getPriorityText(data.warning_severity || data.severity)}</strong></td></tr>
                     ${data.escalation_level > 1 ? `<tr><td>Mức leo thang</td><td>Level ${data.escalation_level}</td></tr>` : ''}
                     ${data.notification_id ? `<tr><td>Mã thông báo</td><td><span class="notification-id">${data.notification_id}</span></td></tr>` : ''}
                 </table>
@@ -288,7 +287,6 @@ class MailService {
 - Ngưỡng cảnh báo: ${data.threshold_value !== undefined ? data.threshold_value : (data.formatted_threshold || 'N/A')}
 - Mô tả: ${data.warning_message || data.message || 'Không có mô tả'}
 - Trạng thái: ${data.status === 'active' ? 'Đang hoạt động' : 'Đã giải quyết'}
-- Độ nghiêm trọng: ${this.getPriorityText(data.warning_severity || data.severity)}
 
 🔧 Khuyến nghị:
 1. Kiểm tra ngay thiết bị

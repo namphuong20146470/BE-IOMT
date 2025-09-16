@@ -32,9 +32,9 @@ async function testAuthSystem() {
             console.log('⚠️  No organizations found, proceeding without organization...');
         }
 
-        // Step 2: Create User V2 with bcrypt password
-        console.log('\n2️⃣ Creating User V2 (with bcrypt)...');
-        const createResponse = await fetch(`${BASE_URL}/v2/users`, {
+        // Step 2: Create User (now using main users table)
+        console.log('\n2️⃣ Creating User (with bcrypt)...');
+        const createResponse = await fetch(`${BASE_URL}/users`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(testUser)
@@ -49,9 +49,9 @@ async function testAuthSystem() {
             return;
         }
 
-        // Step 3: Login User V2
+        // Step 3: Login User
         console.log('\n3️⃣ Testing login...');
-        const loginResponse = await fetch(`${BASE_URL}/v2/login`, {
+        const loginResponse = await fetch(`${BASE_URL}/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

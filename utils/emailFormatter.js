@@ -389,30 +389,19 @@ export async function getUserInfoForEmail(userId) {
     try {
         if (!userId) return null;
         
-        const user = await prisma.users.findUnique({
-            where: { id: parseInt(userId) },
-            select: {
-                id: true,
-                username: true,
-                full_name: true,
-                roles: {
-                    select: {
-                        id: true,
-                        name: true,
-                        description: true,
-                        id_role: true
-                    }
-                }
-            }
-        });
+        const user = await prisma.$queryRaw`
+            SELECT id, username, full_name
+            FROM users 
+            WHERE id = ${userId}::uuid
+        `;
         
-        if (!user) return null;
+        if (!user || user.length === 0) return null;
         
         return {
-            id: user.id,
-            username: user.username,
-            full_name: user.full_name,
-            display_name: user.full_name || user.username,
+            id: user[0].id,
+            username: user[0].username,
+            full_name: user[0].full_name,
+            display_name: user[0].full_name || user[0].username,
             role_name: user.roles?.name || 'N/A',
             role_description: user.roles?.description || '',
             role_id: user.roles?.id_role || '',
@@ -442,30 +431,20 @@ async function getResolvedByName(userId) {
     try {
         if (!userId) return 'Hệ thống tự động';
         
-        const user = await prisma.users.findUnique({
-            where: { id: parseInt(userId) },
-            select: {
-                id: true,
-                username: true,
-                full_name: true,
-                roles: {
-                    select: {
-                        name: true,
-                        description: true
-                    }
-                }
-            }
-        });
+        const user = await prisma.$queryRaw`
+            SELECT id, username, full_name
+            FROM users 
+            WHERE id = ${userId}::uuid
+        `;
         
-        if (!user) {
+        if (!user || user.length === 0) {
             return `Người dùng #${userId} (không tìm thấy)`;
         }
         
         // Ưu tiên full_name, fallback về username
-        const displayName = user.full_name || user.username;
-        const roleName = user.roles?.name || 'N/A';
+        const displayName = user[0].full_name || user[0].username;
         
-        return `${displayName} (${roleName})`;
+        return `${displayName}`;
         
     } catch (error) {
         console.error('Error getting user info for email:', error);
