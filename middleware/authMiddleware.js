@@ -15,16 +15,17 @@ export default async function authMiddleware(req, res, next) {
         // Try to find user in users_v2 first (new system)
         let user = null;
         
-        try {
-            if (decoded.username) {
-                // This is a users_v2 token (has username field)
+        // Check if this is a users_v2 token (has username field and no role field)
+        if (decoded.username && !decoded.role) {
+            try {
+                console.log('🔍 Checking users_v2 for ID:', decoded.id);
                 const usersV2 = await prisma.$queryRaw`
                     SELECT 
                         u.id,
                         u.username,
                         u.email,
                         u.full_name,
-                        u.phone_number,
+                        u.phone,
                         u.organization_id,
                         u.department_id,
                         u.is_active,
@@ -43,15 +44,17 @@ export default async function authMiddleware(req, res, next) {
                         table: 'users_v2',
                         role: 'USER_V2' // Default role for V2 users
                     };
+                    console.log('✅ Found user in users_v2:', user.username);
                 }
+            } catch (v2Error) {
+                console.error('❌ Error checking users_v2:', v2Error.message);
             }
-        } catch (v2Error) {
-            console.log('Not a users_v2 token or error:', v2Error.message);
         }
 
         // If not found in users_v2, try users table (legacy system)
         if (!user) {
             try {
+                console.log('🔍 Checking users table for ID:', decoded.id);
                 const usersV1 = await prisma.users.findUnique({
                     where: { id: decoded.id },
                     include: { roles: true }
@@ -68,13 +71,15 @@ export default async function authMiddleware(req, res, next) {
                         table: 'users',
                         role: usersV1.roles?.role_name || 'UNKNOWN'
                     };
+                    console.log('✅ Found user in users:', user.username);
                 }
             } catch (v1Error) {
-                console.log('Error checking users table:', v1Error.message);
+                console.error('❌ Error checking users table:', v1Error.message);
             }
         }
 
         if (!user) {
+            console.log('❌ No user found in either table');
             return res.status(401).json({ 
                 success: false, 
                 message: 'User không tồn tại hoặc đã bị vô hiệu hóa' 

@@ -18,14 +18,14 @@ const WARNING_THRESHOLDS = {
         voltage_max: 240,
         current_max: 0.41,
         power_max: 96,
-        device_name: "Module xử lý hình ảnh"
+        device_name: "Bộ xử lý hình ảnh"
     },
     electronic_endoflator: {
         voltage_min: 200,
         voltage_max: 240,
         current_max: 1.05,
         power_max: 250,
-        device_name: "Bơm CO2"
+        device_name: "Máy Bơm CO2"
     },
     led_nova_100: {
         voltage_min: 200,
@@ -40,7 +40,7 @@ const WARNING_THRESHOLDS = {
         leak_current_soft: 3,
         leak_current_strong: 5,
         leak_current_shutdown: 10,
-        device_name: "Môi trường IoT"
+        device_name: "Cảm biến"
     }
 };
 

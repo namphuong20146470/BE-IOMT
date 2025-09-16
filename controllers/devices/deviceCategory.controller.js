@@ -13,7 +13,7 @@ export const getAllDeviceCategories = async (req, res) => {
             WITH RECURSIVE category_tree AS (
                 -- Base case: root categories
                 SELECT id, name, description, parent_id, 0 as level,
-                       ARRAY[name] as path
+                       ARRAY[name::varchar] as path
                 FROM device_categories 
                 WHERE parent_id IS NULL
                 
@@ -21,7 +21,7 @@ export const getAllDeviceCategories = async (req, res) => {
                 
                 -- Recursive case: child categories
                 SELECT dc.id, dc.name, dc.description, dc.parent_id, ct.level + 1,
-                       ct.path || dc.name
+                       ct.path || ARRAY[dc.name::varchar]
                 FROM device_categories dc
                 JOIN category_tree ct ON dc.parent_id = ct.id
             )
@@ -104,6 +104,14 @@ export const createDeviceCategory = async (req, res) => {
     try {
         const { name, description, parent_id } = req.body;
 
+        // Debug logging
+        console.log('🔍 Create category data:', {
+            name,
+            description,
+            parent_id,
+            parent_id_type: typeof parent_id
+        });
+
         if (!name) {
             return res.status(400).json({
                 success: false,
@@ -111,10 +119,14 @@ export const createDeviceCategory = async (req, res) => {
             });
         }
 
+        // Convert parent_id to string if it's a number (để tránh lỗi cast)
+        const parentId = parent_id ? String(parent_id) : null;
+        console.log('🎯 Converted parentId:', parentId, 'type:', typeof parentId);
+
         // Check if parent exists (if provided)
-        if (parent_id) {
+        if (parentId) {
             const parentExists = await prisma.$queryRaw`
-                SELECT id FROM device_categories WHERE id = ${parent_id}::uuid
+                SELECT id FROM device_categories WHERE id = ${parentId}::uuid
             `;
             if (parentExists.length === 0) {
                 return res.status(400).json({
@@ -124,11 +136,23 @@ export const createDeviceCategory = async (req, res) => {
             }
         }
 
-        const newCategory = await prisma.$queryRaw`
-            INSERT INTO device_categories (name, description, parent_id)
-            VALUES (${name}, ${description || null}, ${parent_id ? parent_id + '::uuid' : null})
-            RETURNING *
-        `;
+        let newCategory;
+        
+        if (parentId) {
+            console.log('📝 Creating category with parent:', parentId);
+            newCategory = await prisma.$queryRaw`
+                INSERT INTO device_categories (name, description, parent_id)
+                VALUES (${name}, ${description || null}, ${parentId}::uuid)
+                RETURNING *
+            `;
+        } else {
+            console.log('📝 Creating root category');
+            newCategory = await prisma.$queryRaw`
+                INSERT INTO device_categories (name, description, parent_id)
+                VALUES (${name}, ${description || null}, NULL)
+                RETURNING *
+            `;
+        }
 
         res.status(201).json({
             success: true,
@@ -170,14 +194,37 @@ export const updateDeviceCategory = async (req, res) => {
             });
         }
 
-        const updatedCategory = await prisma.$queryRaw`
-            UPDATE device_categories 
-            SET name = COALESCE(${name}, name),
-                description = COALESCE(${description}, description),
-                parent_id = ${parent_id ? parent_id + '::uuid' : 'parent_id'}
-            WHERE id = ${id}::uuid
-            RETURNING *
-        `;
+        let updatedCategory;
+        
+        if (parent_id !== undefined) {
+            if (parent_id === null) {
+                updatedCategory = await prisma.$queryRaw`
+                    UPDATE device_categories 
+                    SET name = COALESCE(${name}, name),
+                        description = COALESCE(${description}, description),
+                        parent_id = NULL
+                    WHERE id = ${id}::uuid
+                    RETURNING *
+                `;
+            } else {
+                updatedCategory = await prisma.$queryRaw`
+                    UPDATE device_categories 
+                    SET name = COALESCE(${name}, name),
+                        description = COALESCE(${description}, description),
+                        parent_id = ${parent_id}::uuid
+                    WHERE id = ${id}::uuid
+                    RETURNING *
+                `;
+            }
+        } else {
+            updatedCategory = await prisma.$queryRaw`
+                UPDATE device_categories 
+                SET name = COALESCE(${name}, name),
+                    description = COALESCE(${description}, description)
+                WHERE id = ${id}::uuid
+                RETURNING *
+            `;
+        }
 
         res.status(200).json({
             success: true,

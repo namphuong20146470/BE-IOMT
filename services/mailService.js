@@ -250,12 +250,12 @@ class MailService {
                 </table>
                 
                 <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 4px;">
-                    <h3>📋 Khuyến nghị xử lý:</h3>
+                    <h3>📋 Khuyến nghị:</h3>
                     <ul>
-                        <li>Kiểm tra tình trạng thiết bị/cảm biến ngay khi nhận cảnh báo</strong></li>
-                        <li>Xác minh các thông số kỹ thuật và đối chiếu với ngưỡng vận hành cho phép.</li>
-                        <li>Ghi nhận kết quả kiểm tra và hành động khắc phục vào hệ thống quản lý</li>
-                        <li>Liên hệ bộ phận kỹ thuật để được hỗ trợ khi phát hiện bất thường không thể xử lý tại chỗ</li>
+                        <li>Kiểm tra tình trạng thiết bị/cảm biến ngay khi nhận cảnh báo.</li>
+                        <li>Xác nhận giá trị đo và so sánh với ngưỡng cho phép.</li>
+                        <li>Ghi nhận kết quả và hành động khắc phục vào hệ thống.</li>
+                        <li>Liên hệ bộ phận kỹ thuật nếu sự cố vượt khả năng xử lý tại chỗ.</li>
                         ${data.escalation_level > 1 ? '<li><strong>⚠️ Đây là cảnh báo leo thang - cần xử lý ngay lập tức</strong></li>' : ''}
                     </ul>
                     ${data.additional_notes ? `<p><strong>Ghi chú thêm:</strong> ${data.additional_notes}</p>` : ''}
@@ -263,8 +263,8 @@ class MailService {
             </div>
             
             <div class="footer">
-                <p>Email tự động từ Hệ thống giám sát IoMT</p>
-                <p>Thời gian: ${now} | Không trả lời email này</p>
+                <p>Đây là email cảnh báo tự động từ hệ thống HOPT AIoMT.</p>
+                <p>Thời gian: ${now} | Vui lòng không trả lời email này.</p>
                 ${data.notification_id ? `<p>Notification ID: ${data.notification_id}</p>` : ''}
             </div>
         </div>

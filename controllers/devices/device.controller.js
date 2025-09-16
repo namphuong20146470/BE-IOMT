@@ -65,6 +65,10 @@ export const getAllDevices = async (req, res) => {
             : '';
 
         const offset = (parseInt(page) - 1) * parseInt(limit);
+        
+        // Add limit and offset parameters
+        const limitParamIndex = paramIndex;
+        const offsetParamIndex = paramIndex + 1;
         params.push(parseInt(limit), offset);
 
         const devices = await prisma.$queryRawUnsafe(`
@@ -74,8 +78,8 @@ export const getAllDevices = async (req, res) => {
                 d.model_id, d.organization_id, d.department_id,
                 dm.name as model_name, dm.manufacturer, dm.specifications,
                 dc.name as category_name,
-                o.org_name as organization_name,
-                dept.dept_name as department_name,
+                o.id as organization_id_ref, o.name as organization_name,
+                dept.id as department_id_ref, dept.name as department_name,
                 -- Warranty info
                 wi.warranty_end,
                 CASE 
@@ -94,13 +98,13 @@ export const getAllDevices = async (req, res) => {
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
-            LEFT JOIN departments dept ON d.department_id = dept.dept_id
+            LEFT JOIN organizations o ON d.organization_id = o.id
+            LEFT JOIN departments dept ON d.department_id = dept.id
             LEFT JOIN warranty_info wi ON d.id = wi.device_id
             LEFT JOIN device_connectivity conn ON d.id = conn.device_id
             ${whereClause}
             ORDER BY d.created_at DESC
-            LIMIT $${paramIndex - 1} OFFSET $${paramIndex}
+            LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
         `, ...params);
 
         // Get total count
@@ -110,8 +114,8 @@ export const getAllDevices = async (req, res) => {
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
-            LEFT JOIN departments dept ON d.department_id = dept.dept_id
+            LEFT JOIN organizations o ON d.organization_id = o.id
+            LEFT JOIN departments dept ON d.department_id = dept.id
             ${whereClause}
         `, ...countParams);
 
@@ -150,8 +154,8 @@ export const getDeviceById = async (req, res) => {
                 d.model_id, d.organization_id, d.department_id,
                 dm.name as model_name, dm.manufacturer, dm.specifications,
                 dc.name as category_name, dc.description as category_description,
-                o.org_name as organization_name,
-                dept.dept_name as department_name,
+                o.name as organization_name,
+                dept.name as department_name,
                 -- Warranty info
                 wi.warranty_start, wi.warranty_end, wi.provider as warranty_provider,
                 -- Connectivity info
@@ -160,8 +164,8 @@ export const getDeviceById = async (req, res) => {
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
-            LEFT JOIN departments dept ON d.department_id = dept.dept_id
+            LEFT JOIN organizations o ON d.organization_id = o.id
+            LEFT JOIN departments dept ON d.department_id = dept.id
             LEFT JOIN warranty_info wi ON d.id = wi.device_id
             LEFT JOIN device_connectivity conn ON d.id = conn.device_id
             WHERE d.id = ${id}::uuid
@@ -223,7 +227,7 @@ export const createDevice = async (req, res) => {
 
         // Check if organization exists
         const orgExists = await prisma.$queryRaw`
-            SELECT org_id FROM organizations WHERE org_id = ${organization_id}::uuid
+            SELECT id FROM organizations WHERE id = ${organization_id}::uuid
         `;
         if (orgExists.length === 0) {
             return res.status(400).json({
@@ -235,7 +239,7 @@ export const createDevice = async (req, res) => {
         // Check if department exists (if provided)
         if (department_id) {
             const deptExists = await prisma.$queryRaw`
-                SELECT dept_id FROM departments WHERE dept_id = ${department_id}::uuid
+                SELECT id FROM departments WHERE id = ${department_id}::uuid
             `;
             if (deptExists.length === 0) {
                 return res.status(400).json({
@@ -271,6 +275,11 @@ export const createDevice = async (req, res) => {
             }
         }
 
+        // Handle optional date fields
+        const purchaseDateValue = purchase_date ? new Date(purchase_date) : null;
+        const installationDateValue = installation_date ? new Date(installation_date) : null;
+        const departmentIdValue = department_id || null;
+
         const newDevice = await prisma.$queryRaw`
             INSERT INTO device (
                 model_id, organization_id, department_id, serial_number, 
@@ -278,12 +287,14 @@ export const createDevice = async (req, res) => {
                 created_at, updated_at
             )
             VALUES (
-                ${model_id}::uuid, ${organization_id}::uuid, 
-                ${department_id ? department_id + '::uuid' : null},
-                ${serial_number}, ${asset_tag || null}, 
+                ${model_id}::uuid, 
+                ${organization_id}::uuid, 
+                ${departmentIdValue}::uuid,
+                ${serial_number}, 
+                ${asset_tag || null}, 
                 ${status}::device_status,
-                ${purchase_date ? purchase_date + '::date' : null},
-                ${installation_date ? installation_date + '::date' : null},
+                ${purchaseDateValue}::date,
+                ${installationDateValue}::date,
                 ${getVietnamDate()}::timestamptz,
                 ${getVietnamDate()}::timestamptz
             )

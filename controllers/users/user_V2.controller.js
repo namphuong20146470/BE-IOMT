@@ -56,7 +56,7 @@ export const createUserV2 = async (req, res) => {
             });
         }
 
-        const hashedPassword = hashPassword(password);
+        const hashedPassword = await hashPasswordBcrypt(password);
         
         const newUser = await prisma.$queryRaw`
             INSERT INTO users_v2 (
@@ -101,20 +101,55 @@ export const loginV2 = async (req, res) => {
             });
         }
 
-        const hashedPassword = hashPassword(password);
-
+        // Hybrid password verification: support both SHA256 (legacy) and bcrypt (new)
         const user = await prisma.$queryRaw`
-            SELECT u.id, u.username, u.full_name, u.email, u.organization_id, u.department_id,
+            SELECT u.id, u.username, u.full_name, u.email, u.organization_id, u.department_id, u.password_hash,
                    o.name as organization_name,
                    d.name as department_name
             FROM users_v2 u
             LEFT JOIN organizations o ON u.organization_id = o.id
             LEFT JOIN departments d ON u.department_id = d.id
-            WHERE u.username = ${username} AND u.password_hash = ${hashedPassword}
+            WHERE u.username = ${username}
             AND u.is_active = true
         `;
 
         if (user.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid credentials'
+            });
+        }
+
+        let isValidPassword = false;
+        const storedHash = user[0].password_hash;
+
+        // Check if password is bcrypt format (starts with $2b$)
+        if (storedHash.startsWith('$2b$')) {
+            // New bcrypt verification
+            isValidPassword = await bcrypt.compare(password, storedHash);
+        } else {
+            // Legacy SHA256 verification
+            const sha256Hash = hashPassword(password);
+            isValidPassword = (sha256Hash === storedHash);
+            
+            // Auto-migrate to bcrypt on successful login
+            if (isValidPassword) {
+                try {
+                    const newBcryptHash = await hashPasswordBcrypt(password);
+                    await prisma.$queryRaw`
+                        UPDATE users_v2 
+                        SET password_hash = ${newBcryptHash},
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ${user[0].id}::uuid
+                    `;
+                    console.log(`🔄 Auto-migrated password for user: ${user[0].username}`);
+                } catch (migrationError) {
+                    console.error('Failed to auto-migrate password:', migrationError.message);
+                }
+            }
+        }
+
+        if (!isValidPassword) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid credentials'
@@ -134,11 +169,14 @@ export const loginV2 = async (req, res) => {
             { expiresIn: '1d' }
         );
 
+        // Remove password_hash from response
+        const { password_hash, ...userWithoutPassword } = user[0];
+
         res.status(200).json({
             success: true,
             data: {
                 token,
-                user: user[0]
+                user: userWithoutPassword
             },
             message: 'Login V2 successful'
         });

@@ -34,7 +34,7 @@ export const getAllDeviceModels = async (req, res) => {
                 dm.category_id,
                 dc.name as category_name,
                 dc.description as category_description,
-                COUNT(d.id) as devices_count
+                COUNT(d.id)::integer as devices_count
             FROM device_models dm
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
             LEFT JOIN device d ON dm.id = d.model_id
@@ -71,7 +71,7 @@ export const getDeviceModelById = async (req, res) => {
                 dm.category_id,
                 dc.name as category_name,
                 dc.description as category_description,
-                COUNT(d.id) as devices_count
+                COUNT(d.id)::integer as devices_count
             FROM device_models dm
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
             LEFT JOIN device d ON dm.id = d.model_id
@@ -286,7 +286,7 @@ export const getModelsByCategory = async (req, res) => {
         const models = await prisma.$queryRaw`
             SELECT 
                 dm.id, dm.name, dm.manufacturer, dm.specifications,
-                COUNT(d.id) as devices_count
+                COUNT(d.id)::integer as devices_count
             FROM device_models dm
             LEFT JOIN device d ON dm.id = d.model_id
             WHERE dm.category_id = ${categoryId}::uuid
@@ -314,7 +314,7 @@ export const getModelsByCategory = async (req, res) => {
 export const getManufacturers = async (req, res) => {
     try {
         const manufacturers = await prisma.$queryRaw`
-            SELECT DISTINCT manufacturer, COUNT(*) as models_count
+            SELECT DISTINCT manufacturer, COUNT(*)::integer as models_count
             FROM device_models 
             GROUP BY manufacturer
             ORDER BY manufacturer
