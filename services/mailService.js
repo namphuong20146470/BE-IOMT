@@ -253,7 +253,7 @@ class MailService {
         <div class="container">
             <div class="header">
                 <h1>${templateIcon} ${data.warning_message.toUpperCase()} CHO PHÉP</h1>
-                <p>Hệ thống giám sát thiết bị y tế thông minh </p>
+                <p>Hệ thống giám sát thiết bị y tế thông minh AIoMT </p>
                 ${data.escalation_level > 1 ? `<span class="escalation-badge">LEVEL ${data.escalation_level} ESCALATION</span>` : ''}
             </div>
             
