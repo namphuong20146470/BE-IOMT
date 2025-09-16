@@ -2,6 +2,11 @@ import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import { 
+  formatWarningDataForEmail, 
+  formatWarningDataWithUserInfo,
+  formatWarningsDigestForEmail 
+} from '../utils/emailFormatter.js';
 
 // Load environment variables
 dotenv.config();
@@ -80,23 +85,40 @@ class MailService {
       const recipients = this.getRecipients();
       const emailType = warningData.type || 'warning';
       
+      // Auto-format warning data using emailFormatter utilities
+      let formattedData;
+      if (warningData.acknowledged_by && emailType === 'resolution') {
+        formattedData = await formatWarningDataWithUserInfo(warningData, emailType);
+      } else {
+        formattedData = await formatWarningDataForEmail(warningData, emailType);
+      }
+      
+      // Merge original data with formatted data (formatted data takes precedence for formatting)
+      const enhancedData = {
+        ...warningData,
+        ...formattedData,
+        // Ensure proper unit formatting
+        formatted_measured_value: this.formatValueWithUnit(warningData.measured_value, warningData.warning_type),
+        formatted_threshold_value: this.formatValueWithUnit(warningData.threshold_value, warningData.warning_type)
+      };
+      
       let htmlContent, textContent, subject;
       
       switch(emailType) {
         case 'digest':
-          htmlContent = this.generateDigestEmailHTML(warningData);
-          textContent = this.generateDigestEmailText(warningData);
-          subject = `📊 Tổng hợp cảnh báo: ${warningData.warning_count} cảnh báo`;
+          htmlContent = this.generateDigestEmailHTML(enhancedData);
+          textContent = this.generateDigestEmailText(enhancedData);
+          subject = `📊 Tổng hợp cảnh báo: ${enhancedData.warning_count} cảnh báo`;
           break;
         case 'resolution':
-          htmlContent = this.generateResolutionEmailHTML(warningData);
-          textContent = this.generateResolutionEmailText(warningData);
-          subject = `✅ ĐÃ GIẢI QUYẾT: ${warningData.device_name} - ${warningData.warning_type}`;
+          htmlContent = this.generateResolutionEmailHTML(enhancedData);
+          textContent = this.generateResolutionEmailText(enhancedData);
+          subject = `✅ ĐÃ GIẢI QUYẾT: ${enhancedData.device_name} - ${enhancedData.warning_type}`;
           break;
         default:
-          htmlContent = this.generateWarningEmailHTML(warningData);
-          textContent = this.generateWarningEmailText(warningData);
-          subject = this.generateEmailSubject(warningData);
+          htmlContent = this.generateWarningEmailHTML(enhancedData);
+          textContent = this.generateWarningEmailText(enhancedData);
+          subject = this.generateEmailSubject(enhancedData);
       }
 
       const mailOptions = {
@@ -105,14 +127,14 @@ class MailService {
         subject: subject,
         text: textContent,
         html: htmlContent,
-        priority: this.getEmailPriority(warningData.priority || warningData.severity),
+        priority: this.getEmailPriority(enhancedData.priority || enhancedData.severity),
         headers: {
-          'X-Priority': this.getPriorityNumber(warningData.priority || warningData.severity),
-          'X-MSMail-Priority': this.getMSMailPriority(warningData.priority || warningData.severity),
-          'Importance': warningData.priority || 'normal',
-          'X-Warning-Type': warningData.warning_type,
-          'X-Device-ID': warningData.device_id,
-          'X-Notification-ID': warningData.notification_id || 'none'
+          'X-Priority': this.getPriorityNumber(enhancedData.priority || enhancedData.severity),
+          'X-MSMail-Priority': this.getMSMailPriority(enhancedData.priority || enhancedData.severity),
+          'Importance': enhancedData.priority || 'normal',
+          'X-Warning-Type': enhancedData.warning_type,
+          'X-Device-ID': enhancedData.device_id,
+          'X-Notification-ID': enhancedData.notification_id || 'none'
         }
       };
 
@@ -121,9 +143,11 @@ class MailService {
           type: emailType,
           to: recipients,
           subject: mailOptions.subject,
-          device: warningData.device_name,
-          warning: warningData.warning_type,
-          priority: warningData.priority || warningData.severity
+          device: enhancedData.device_name,
+          warning: enhancedData.warning_type,
+          priority: enhancedData.priority || enhancedData.severity,
+          measured_value: enhancedData.formatted_measured_value,
+          threshold_value: enhancedData.formatted_threshold_value
         });
       }
 
@@ -197,6 +221,7 @@ class MailService {
     return recipients;
   }
 
+
   generateWarningEmailHTML(data) {
     const severity = this.getSeverityInfo(data.severity || data.warning_severity);
     const templateIcon = data.template_icon || severity.icon;
@@ -227,25 +252,25 @@ class MailService {
     <body>
         <div class="container">
             <div class="header">
-                <h1>${templateIcon} CẢNH BÁO THIẾT BỊ IoMT</h1>
+                <h1>${templateIcon} ${data.warning_message.toUpperCase()} CHO PHÉP</h1>
                 <p>Hệ thống giám sát thiết bị y tế thông minh </p>
                 ${data.escalation_level > 1 ? `<span class="escalation-badge">LEVEL ${data.escalation_level} ESCALATION</span>` : ''}
             </div>
             
             <div class="content">
                 <div class="warning-box">
-                    <h2>⚠️ ${data.warning_type}</h2>
-                    <p><strong>Thiết bị:</strong> ${data.device_name} ${data.device_model ? `(${data.device_model})` : ''} </p>
+                    <h2>Giá trị vượt ngưỡng</h2>
+                    <p>${data.formatted_measured_value || this.formatValueWithUnit(data.measured_value )} </p>
                 </div>
                 
                 <table class="info-table">
-                    <tr><th>Thông tin</th><th>Nội dung</th></tr>
-                    <tr><td>Thời gian phát hiện</td><td>${new Date(data.created_at).toLocaleString('vi-VN')}</td></tr>
-                    <tr><td>Giá trị đo được</td><td><strong>${data.measured_value !== undefined ? data.measured_value : (data.current_value || 'N/A')}</strong></td></tr>
-                    <tr><td>Ngưỡng cảnh báo</td><td><strong>${data.threshold_value !== undefined ? data.threshold_value : (data.formatted_threshold || 'N/A')}</strong></td></tr>
-                    <tr><td>Mô tả</td><td>${data.warning_message || data.message || data.template_description || 'Không có mô tả'}</td></tr>
+                    <tr><th>Thông số</th><th>Nội dung</th></tr>
+                    ${data.device_name !== "Môi trường IoT" ? `<tr><td>Thiết bị</td><td>${data.device_name}</td></tr>` : ''}
+                    <tr><td>Giá trị đo được </td><td><strong>${data.formatted_measured_value || this.formatValueWithUnit(data.measured_value || data.current_value, data.warning_type) || 'N/A'}</strong></td></tr>
+                    <tr><td>Ngưỡng cảnh báo </td><td><strong>${data.formatted_threshold_value || this.formatValueWithUnit(data.threshold_value, data.warning_type) || 'N/A'}</strong></td></tr>
+                    <tr><td>Thời gian ghi nhận</td><td>${new Date(data.created_at).toLocaleString('vi-VN')}</td></tr>
+                    <tr><td>Vị trí</td><td>Tầng 2 - HOPT</td></tr>
                     ${data.escalation_level > 1 ? `<tr><td>Mức leo thang</td><td>Level ${data.escalation_level}</td></tr>` : ''}
-                    ${data.notification_id ? `<tr><td>Mã thông báo</td><td><span class="notification-id">${data.notification_id}</span></td></tr>` : ''}
                 </table>
                 
                 <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 4px;">
@@ -257,14 +282,12 @@ class MailService {
                         <li>Liên hệ bộ phận kỹ thuật nếu sự cố vượt khả năng xử lý tại chỗ.</li>
                         ${data.escalation_level > 1 ? '<li><strong>⚠️ Đây là cảnh báo leo thang - cần xử lý ngay lập tức</strong></li>' : ''}
                     </ul>
-                    ${data.additional_notes ? `<p><strong>Ghi chú thêm:</strong> ${data.additional_notes}</p>` : ''}
                 </div>
             </div>
             
             <div class="footer">
                 <p>Đây là email cảnh báo tự động từ hệ thống HOPT AIoMT.</p>
                 <p>Thời gian: ${now} | Vui lòng không trả lời email này.</p>
-                ${data.notification_id ? `<p>Notification ID: ${data.notification_id}</p>` : ''}
             </div>
         </div>
     </body>
@@ -274,17 +297,22 @@ class MailService {
 
   generateWarningEmailText(data) {
     const severity = this.getSeverityInfo(data.severity || data.warning_severity);
+    const formattedMeasured = data.formatted_measured_value || this.formatValueWithUnit(data.measured_value || data.current_value, data.warning_type) || 'N/A';
+    const formattedThreshold = data.formatted_threshold_value || this.formatValueWithUnit(data.threshold_value, data.warning_type) || 'N/A';
+    const valueComparison = data.value_comparison || this.getValueComparisonText(data.measured_value || data.current_value, data.threshold_value, data.warning_type);
+    
     return `
 🚨 CẢNH BÁO THIẾT BỊ IoMT
 
 ⚠️ Loại cảnh báo: ${data.warning_type}
-📱 Thiết bị: ${data.device_name} (ID: ${data.device_id})
+${data.device_name !== "Môi trường IoT" ? `📱 Thiết bị: ${data.device_name} (ID: ${data.device_id})` : ''}
 🔥 Mức độ: ${severity.text}
 ⏰ Thời gian: ${new Date(data.created_at).toLocaleString('vi-VN')}
 
 📊 Chi tiết:
-- Giá trị đo được: ${data.measured_value !== undefined ? data.measured_value : (data.current_value || 'N/A')}
-- Ngưỡng cảnh báo: ${data.threshold_value !== undefined ? data.threshold_value : (data.formatted_threshold || 'N/A')}
+- Giá trị đo được: ${formattedMeasured}
+- Ngưỡng cảnh báo: ${formattedThreshold}
+${valueComparison ? `- So sánh: ${valueComparison}` : ''}
 - Mô tả: ${data.warning_message || data.message || 'Không có mô tả'}
 - Trạng thái: ${data.status === 'active' ? 'Đang hoạt động' : 'Đã giải quyết'}
 
@@ -407,6 +435,130 @@ Email tự động - Không trả lời
     return await this.sendWarningEmail(warning);
   }
 
+  // =================== HELPER METHODS FOR VALUE FORMATTING ===================
+
+  /**
+   * Format value with appropriate unit based on warning type
+   */
+  formatValueWithUnit(value, warningType) {
+    if (value === null || value === undefined) return 'N/A';
+    
+    const units = this.getUnitForWarningType(warningType);
+    const formattedValue = this.formatNumberWithPrecision(value, warningType);
+    
+    // Thêm khoảng cách giữa giá trị và đơn vị nếu có đơn vị
+    return units ? `${formattedValue} ${units}` : formattedValue;
+  }
+
+  /**
+   * Get appropriate unit for warning type
+   */
+  getUnitForWarningType(warningType) {
+    const unitMapping = {
+      // Điện áp
+      'voltage_high': 'V',
+      'voltage_low': 'V', 
+      'voltage_warning': 'V',
+      
+      // Dòng điện
+      'current_high': 'A',
+      'current_warning': 'A',
+      'leak_current_shutdown': 'mA',
+      'leak_current_strong': 'mA',
+      'leak_current_soft': 'mA',
+      
+      // Công suất
+      'power_high': 'W',
+      'power_warning': 'W',
+      
+      // Nhiệt độ
+      'temperature_high': '°C',
+      'temperature_warning': '°C',
+      
+      // Độ ẩm
+      'humidity_high': '%',
+      'humidity_warning': '%',
+      
+      // Default
+      'default': ''
+    };
+    
+    return unitMapping[warningType] || unitMapping['default'];
+  }
+
+  /**
+   * Format number with appropriate precision based on warning type
+   */
+  formatNumberWithPrecision(value, warningType) {
+    if (value === null || value === undefined) return 'N/A';
+    
+    const num = parseFloat(value);
+    if (isNaN(num)) return value.toString();
+    
+    // Precision rules based on warning type
+    const precisionMapping = {
+      // Điện áp - 1 số thập phân
+      'voltage_high': 1,
+      'voltage_low': 1,
+      'voltage_warning': 1,
+      
+      // Dòng điện - 2 số thập phân cho A, 1 cho mA
+      'current_high': 2,
+      'current_warning': 2,
+      'leak_current_shutdown': 1,
+      'leak_current_strong': 1,
+      'leak_current_soft': 1,
+      
+      // Công suất - Không thập phân cho W
+      'power_high': 0,
+      'power_warning': 0,
+      
+      // Nhiệt độ - 1 số thập phân
+      'temperature_high': 1,
+      'temperature_warning': 1,
+      
+      // Độ ẩm - 1 số thập phân
+      'humidity_high': 1,
+      'humidity_warning': 1,
+      
+      // Default
+      'default': 1
+    };
+    
+    const precision = precisionMapping[warningType] !== undefined 
+      ? precisionMapping[warningType] 
+      : precisionMapping['default'];
+    
+    return num.toFixed(precision);
+  }
+
+  /**
+   * Get comparison text between measured and threshold values
+   */
+  getValueComparisonText(measuredValue, thresholdValue, warningType) {
+    if (!measuredValue || !thresholdValue) return '';
+    
+    const measured = parseFloat(measuredValue);
+    const threshold = parseFloat(thresholdValue);
+    
+    if (isNaN(measured) || isNaN(threshold)) return '';
+    
+    const difference = measured - threshold;
+    const percentageDiff = ((difference / threshold) * 100);
+    
+    const units = this.getUnitForWarningType(warningType);
+    const formattedDiff = this.formatNumberWithPrecision(Math.abs(difference), warningType);
+    const formattedPercent = Math.abs(percentageDiff).toFixed(1);
+    
+    if (difference > 0) {
+      return `Vượt ngưỡng ${formattedDiff}${units ? ' ' + units : ''} (${formattedPercent}%)`;
+    } else if (difference < 0) {
+      return `Thấp hơn ngưỡng ${formattedDiff}${units ? ' ' + units : ''} (${formattedPercent}%)`;
+    } else {
+      return `Đúng ngưỡng`;
+    }
+  }
+
   // =================== NEW METHODS FOR ENHANCED EMAIL ===================
 
   /**
@@ -471,7 +623,7 @@ Email tự động - Không trả lời
                 ${criticalWarnings.map(w => `
                     <div class="warning-item warning-critical">
                         <strong>${w.device_name}</strong> - ${w.warning_type}<br>
-                        <small>Giá trị: ${w.current_value} | Ngưỡng: ${w.threshold_value} | ${new Date(w.created_at).toLocaleString('vi-VN')}</small>
+                        <small>Giá trị: ${this.formatValueWithUnit(w.current_value, w.warning_type)} | Ngưỡng: ${this.formatValueWithUnit(w.threshold_value, w.warning_type)} | ${new Date(w.created_at).toLocaleString('vi-VN')}</small>
                     </div>
                 `).join('')}
                 ` : ''}
@@ -481,7 +633,7 @@ Email tự động - Không trả lời
                 ${highWarnings.slice(0, 5).map(w => `
                     <div class="warning-item warning-high">
                         <strong>${w.device_name}</strong> - ${w.warning_type}<br>
-                        <small>Giá trị: ${w.current_value} | Ngưỡng: ${w.threshold_value} | ${new Date(w.created_at).toLocaleString('vi-VN')}</small>
+                        <small>Giá trị: ${this.formatValueWithUnit(w.current_value, w.warning_type)} | Ngưỡng: ${this.formatValueWithUnit(w.threshold_value, w.warning_type)} | ${new Date(w.created_at).toLocaleString('vi-VN')}</small>
                     </div>
                 `).join('')}
                 ${highWarnings.length > 5 ? `<p><em>... và ${highWarnings.length - 5} cảnh báo khác</em></p>` : ''}
@@ -524,12 +676,12 @@ Email tự động - Không trả lời
 
 🔴 Cảnh báo nghiêm trọng:
 ${data.warnings.filter(w => w.severity === 'critical').map(w => 
-  `- ${w.device_name}: ${w.warning_type} (${w.current_value})`
+  `- ${w.device_name}: ${w.warning_type} (${this.formatValueWithUnit(w.current_value, w.warning_type)})`
 ).join('\n') || 'Không có'}
 
 🟠 Cảnh báo mức cao:
 ${data.warnings.filter(w => w.severity === 'high').slice(0, 5).map(w => 
-  `- ${w.device_name}: ${w.warning_type} (${w.current_value})`
+  `- ${w.device_name}: ${w.warning_type} (${this.formatValueWithUnit(w.current_value, w.warning_type)})`
 ).join('\n') || 'Không có'}
 
 📋 Hành động khuyến nghị:
@@ -579,7 +731,7 @@ Tổng hợp tự động - Không trả lời
             <div class="content">
                 <div class="resolution-box">
                     <h2>✅ ${data.warning_type}</h2>
-                    <p><strong>Thiết bị:</strong> ${data.device_name} (ID: ${data.device_id})</p>
+                    ${data.device_name !== "Môi trường IoT" ? `<p><strong>Thiết bị:</strong> ${data.device_name} (ID: ${data.device_id})</p>` : ''}
                     <p><strong>Trạng thái:</strong> <span style="color: #4caf50; font-weight: bold;">Đã giải quyết</span></p>
                 </div>
                 
@@ -590,13 +742,13 @@ Tổng hợp tự động - Không trả lời
                     <tr><td>Thời gian xử lý</td><td>${this.calculateDuration(data.created_at, data.resolution_time)}</td></tr>
                     <tr><td>Người xử lý</td><td>${data.resolved_by}</td></tr>
                     <tr><td>Ghi chú giải quyết</td><td>${data.resolution_notes}</td></tr>
-                    <tr><td>Giá trị</td><td>${data.current_value || 'N/A'}</td></tr>
-                    <tr><td>Ngưỡng cảnh báo</td><td>${data.threshold_value || 'N/A'}</td></tr>
+                    <tr><td>Giá trị đo được</td><td>${data.formatted_measured_value || this.formatValueWithUnit(data.current_value || data.measured_value, data.warning_type) || 'N/A'}</td></tr>
+                    <tr><td>Ngưỡng cảnh báo</td><td>${data.formatted_threshold_value || this.formatValueWithUnit(data.threshold_value, data.warning_type) || 'N/A'}</td></tr>
                 </table>
                 
                 <div style="margin-top: 20px; padding: 15px; background: #e8f5e8; border-radius: 4px;">
                     <h3>📋 Thông tin giải quyết:</h3>
-                    <p>Cảnh báo <strong>${data.warning_type}</strong> cho thiết bị <strong>${data.device_name}</strong> đã được giải quyết thành công.</p>
+                    <p>Cảnh báo <strong>${data.warning_type}</strong>${data.device_name !== "Môi trường IoT" ? ` cho thiết bị <strong>${data.device_name}</strong>` : ''} đã được giải quyết thành công.</p>
                     <p>Giá trị hiện tại đã trở về mức bình thường và hệ thống đang hoạt động ổn định.</p>
                 </div>
             </div>
@@ -617,12 +769,14 @@ Tổng hợp tự động - Không trả lời
   generateResolutionEmailText(data) {
     const now = new Date().toLocaleString('vi-VN');
     const resolutionTime = new Date(data.resolution_time).toLocaleString('vi-VN');
+    const formattedMeasured = data.formatted_measured_value || this.formatValueWithUnit(data.current_value || data.measured_value, data.warning_type) || 'N/A';
+    const formattedThreshold = data.formatted_threshold_value || this.formatValueWithUnit(data.threshold_value, data.warning_type) || 'N/A';
     
     return `
 ✅ ĐÃ GIẢI QUYẾT CẢNH BÁO
 
 🔧 Cảnh báo: ${data.warning_type}
-📱 Thiết bị: ${data.device_name} (ID: ${data.device_id})
+${data.device_name !== "Môi trường IoT" ? `📱 Thiết bị: ${data.device_name} (ID: ${data.device_id})` : ''}
 ✅ Trạng thái: Đã giải quyết
 
 ⏱️ Thời gian:
@@ -634,8 +788,8 @@ Tổng hợp tự động - Không trả lời
 📝 Ghi chú: ${data.resolution_notes}
 
 📊 Giá trị:
-- Hiện tại: ${data.current_value || 'N/A'}
-- Ngưỡng: ${data.threshold_value || 'N/A'}
+- Đo được: ${formattedMeasured}
+- Ngưỡng: ${formattedThreshold}
 
 ---
 Hệ thống giám sát IoMT
@@ -734,9 +888,19 @@ Email tự động - Không trả lời
   }
 
   /**
-   * Send warning digest email
+   * Send warning digest email with proper unit formatting
    */
   async sendWarningDigest(digestData) {
+    // Format warnings list with units
+    if (digestData.warnings && digestData.warnings.length > 0) {
+      const formattedDigestData = formatWarningsDigestForEmail(digestData.warnings);
+      return await this.sendWarningEmail({
+        ...digestData,
+        ...formattedDigestData,
+        type: 'digest'
+      });
+    }
+    
     return await this.sendWarningEmail({
       ...digestData,
       type: 'digest'
@@ -744,7 +908,7 @@ Email tự động - Không trả lời
   }
 
   /**
-   * Send resolution email
+   * Send resolution email with proper unit formatting
    */
   async sendResolutionEmail(resolutionData) {
     return await this.sendWarningEmail({

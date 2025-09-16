@@ -177,7 +177,8 @@ function formatMeasuredValue(value, warningType) {
     const units = getUnitForWarningType(warningType);
     const formattedValue = formatNumberWithPrecision(value, warningType);
     
-    return `${formattedValue}${units}`;
+    // Thêm khoảng cách giữa giá trị và đơn vị nếu có đơn vị
+    return units ? `${formattedValue} ${units}` : formattedValue;
 }
 
 /**
@@ -189,7 +190,8 @@ function formatThresholdValue(value, warningType) {
     const units = getUnitForWarningType(warningType);
     const formattedValue = formatNumberWithPrecision(value, warningType);
     
-    return `${formattedValue}${units}`;
+    // Thêm khoảng cách giữa giá trị và đơn vị nếu có đơn vị
+    return units ? `${formattedValue} ${units}` : formattedValue;
 }
 
 /**
@@ -293,9 +295,9 @@ function getValueComparisonText(measuredValue, thresholdValue, warningType) {
     const formattedPercent = Math.abs(percentageDiff).toFixed(1);
     
     if (difference > 0) {
-        return `Vượt ngưỡng ${formattedDiff}${units} (${formattedPercent}%)`;
+        return `Vượt ngưỡng ${formattedDiff}${units ? ' ' + units : ''} (${formattedPercent}%)`;
     } else if (difference < 0) {
-        return `Thấp hơn ngưỡng ${formattedDiff}${units} (${formattedPercent}%)`;
+        return `Thấp hơn ngưỡng ${formattedDiff}${units ? ' ' + units : ''} (${formattedPercent}%)`;
     } else {
         return `Đúng ngưỡng`;
     }

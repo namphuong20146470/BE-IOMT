@@ -40,7 +40,7 @@ const WARNING_THRESHOLDS = {
         leak_current_soft: 3,
         leak_current_strong: 5,
         leak_current_shutdown: 10,
-        device_name: "Cảm biến"
+        device_name: "Môi trường IoT"
     }
 };
 
@@ -281,7 +281,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                     warning_severity: 'major',
                     measured_value: deviceData.voltage,
                     threshold_value: thresholds.voltage_max * 1.2,
-                    warning_message: `Điện áp vượt ngưỡng cao nghiêm trọng`
+                    warning_message: `Điện áp vượt ngưỡng`
                 });
             } else if (deviceData.voltage > thresholds.voltage_max) {
                 warnings.push({
@@ -289,7 +289,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                     warning_severity: 'moderate',
                     measured_value: deviceData.voltage,
                     threshold_value: thresholds.voltage_max,
-                    warning_message: `Điện áp vượt ngưỡng cao`
+                    warning_message: `Điện áp vượt ngưỡng`
                 });
             } else if (deviceData.voltage < thresholds.voltage_min * 0.8 && deviceData.statusOperating === true) {
                 warnings.push({
@@ -297,7 +297,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                     warning_severity: 'major',
                     measured_value: deviceData.voltage,
                     threshold_value: thresholds.voltage_min * 0.8,
-                    warning_message: `Điện áp thấp nghiêm trọng`
+                    warning_message: `Điện áp dưới ngưỡng`
                 });
             } else if (deviceData.voltage < thresholds.voltage_min && deviceData.statusOperating === true) {
                 warnings.push({
@@ -305,7 +305,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                     warning_severity: 'moderate',
                     measured_value: deviceData.voltage,
                     threshold_value: thresholds.voltage_min,
-                    warning_message: `Điện áp thấp`
+                    warning_message: `Điện áp dưới ngưỡng`
                 });
             }
         }
@@ -318,7 +318,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                     warning_severity: 'major',
                     measured_value: deviceData.current,
                     threshold_value: thresholds.current_max * 1.2,
-                    warning_message: `Dòng điện vượt ngưỡng nghiêm trọng`
+                    warning_message: `Dòng điện vượt ngưỡng`
                 });
             } else if (deviceData.current > thresholds.current_max) {
                 warnings.push({
@@ -339,7 +339,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                     warning_severity: 'major',
                     measured_value: deviceData.power_operating,
                     threshold_value: thresholds.power_max * 1.2,
-                    warning_message: `Công suất vượt ngưỡng nghiêm trọng`
+                    warning_message: `Công suất vượt ngưỡng`
                 });
             } else if (deviceData.power_operating > thresholds.power_max) {
                 warnings.push({
@@ -362,7 +362,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                         warning_severity: 'critical',
                         measured_value: deviceData.temperature_c,
                         threshold_value: thresholds.temperature_max * 1.2,
-                        warning_message: `Nhiệt độ quá cao nguy hiểm`
+                        warning_message: `Nhiệt độ quá ngưỡng`
                     });
                 } else if (deviceData.temperature_c > thresholds.temperature_max) {
                     warnings.push({
@@ -383,7 +383,7 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
                         warning_severity: 'major',
                         measured_value: deviceData.humidity_percent,
                         threshold_value: thresholds.humidity_max * 1.2,
-                        warning_message: `Độ ẩm quá cao nghiêm trọng`
+                        warning_message: `Độ ẩm quá ngưỡng`
                     });
                 } else if (deviceData.humidity_percent > thresholds.humidity_max) {
                     warnings.push({
