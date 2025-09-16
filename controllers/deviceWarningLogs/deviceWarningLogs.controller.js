@@ -188,18 +188,14 @@ export const acknowledgeWarning = async (req, res) => {
         const { id } = req.params;
         const { acknowledged_by, resolution_notes } = req.body;
 
-        if (!acknowledged_by) {
-            return res.status(400).json({
-                success: false,
-                message: 'acknowledged_by field is required'
-            });
-        }
+        // Tạm thời bỏ qua validation và set acknowledged_by = NULL
+        // TODO: Cập nhật lại khi migration hoàn tất
 
         const result = await prisma.$queryRaw`
             UPDATE device_warning_logs 
             SET 
                 status = 'acknowledged',
-                acknowledged_by = ${acknowledged_by}::int,
+                acknowledged_by = NULL,
                 resolution_notes = ${resolution_notes || null}
             WHERE id = ${parseInt(id)}
             RETURNING id, status, acknowledged_by
@@ -215,7 +211,8 @@ export const acknowledgeWarning = async (req, res) => {
         return res.status(200).json({
             success: true,
             data: result[0],
-            message: 'Warning acknowledged successfully'
+            message: 'Warning acknowledged successfully',
+            note: 'acknowledged_by được set NULL tạm thời do migration'
         });
     } catch (error) {
         console.error('Error acknowledging warning:', error);
@@ -628,38 +625,46 @@ export const deleteAllWarningLogs = async (req, res) => {
         try {
             const { id } = req.params;
             const { status, acknowledged_by, resolution_notes } = req.body;
-            // Tự động lấy user id từ xác thực nếu không truyền lên
-            let userId = acknowledged_by;
-            if (userId === undefined && req.user && req.user.id) {
-                userId = req.user.id;
-            }
+            
             if (!status || !['active', 'in_progress', 'resolved', 'ignored'].includes(status)) {
                 return res.status(400).json({
                     success: false,
                     message: 'Trạng thái không hợp lệ. Chỉ chấp nhận: active, in_progress, resolved, ignored.'
                 });
             }
+
             let setClause = `status = '${status}'`;
+            
             if (status === 'resolved') {
                 setClause += `, resolved_at = CURRENT_TIMESTAMP`;
             }
-            if (userId !== undefined) {
-                setClause += `, acknowledged_by = ${parseInt(userId)}`;
+            
+            // Tạm thời set acknowledged_by = NULL để tránh foreign key constraint
+            // TODO: Cập nhật sau khi hoàn thành migration users
+            if (acknowledged_by !== undefined) {
+                setClause += `, acknowledged_by = NULL`;
             }
+            
             if (resolution_notes !== undefined) {
-                setClause += `, resolution_notes = '${resolution_notes}'`;
+                const escapedNotes = resolution_notes?.replace(/'/g, "''") || '';
+                setClause += `, resolution_notes = '${escapedNotes}'`;
             }
+
             const query = `UPDATE device_warning_logs SET ${setClause} WHERE id = ${parseInt(id)} RETURNING *`;
             const result = await prisma.$queryRawUnsafe(query);
+
             if (!result || result.length === 0) {
                 return res.status(404).json({
                     success: false,
                     message: 'Không tìm thấy cảnh báo với id này.'
                 });
             }
+
             return res.status(200).json({
                 success: true,
-                updated_warning: result[0]
+                message: 'Cập nhật trạng thái cảnh báo thành công',
+                updated_warning: result[0],
+                note: 'acknowledged_by được set NULL tạm thời do migration'
             });
         } catch (error) {
             console.error('Error updating warning status:', error);
