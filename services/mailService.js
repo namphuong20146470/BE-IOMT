@@ -98,8 +98,8 @@ class MailService {
         ...warningData,
         ...formattedData,
         // Ensure proper unit formatting
-        formatted_measured_value: this.formatValueWithUnit(warningData.measured_value, warningData.warning_type),
-        formatted_threshold_value: this.formatValueWithUnit(warningData.threshold_value, warningData.warning_type)
+        formatted_measured_value: this.formatValueWithUnit(warningData.measured_value, warningData.warning_type, warningData.device_type),
+        formatted_threshold_value: this.formatValueWithUnit(warningData.threshold_value, warningData.warning_type, warningData.device_type)
       };
       
       let htmlContent, textContent, subject;
@@ -299,7 +299,7 @@ class MailService {
     const severity = this.getSeverityInfo(data.severity || data.warning_severity);
     const formattedMeasured = data.formatted_measured_value || this.formatValueWithUnit(data.measured_value || data.current_value, data.warning_type) || 'N/A';
     const formattedThreshold = data.formatted_threshold_value || this.formatValueWithUnit(data.threshold_value, data.warning_type) || 'N/A';
-    const valueComparison = data.value_comparison || this.getValueComparisonText(data.measured_value || data.current_value, data.threshold_value, data.warning_type);
+    const valueComparison = data.value_comparison || this.getValueComparisonText(data.measured_value || data.current_value, data.threshold_value, data.warning_type, data.device_type);
     
     return `
 🚨 CẢNH BÁO THIẾT BỊ IoMT
@@ -440,10 +440,10 @@ Email tự động - Không trả lời
   /**
    * Format value with appropriate unit based on warning type
    */
-  formatValueWithUnit(value, warningType) {
+  formatValueWithUnit(value, warningType, deviceType = null) {
     if (value === null || value === undefined) return 'N/A';
     
-    const units = this.getUnitForWarningType(warningType);
+    const units = this.getUnitForWarningType(warningType, deviceType);
     const formattedValue = this.formatNumberWithPrecision(value, warningType);
     
     // Thêm khoảng cách giữa giá trị và đơn vị nếu có đơn vị
@@ -453,7 +453,7 @@ Email tự động - Không trả lời
   /**
    * Get appropriate unit for warning type
    */
-  getUnitForWarningType(warningType) {
+  getUnitForWarningType(warningType, deviceType = null) {
     const unitMapping = {
       // Điện áp
       'voltage_high': 'V',
@@ -467,9 +467,9 @@ Email tự động - Không trả lời
       'leak_current_strong': 'mA',
       'leak_current_soft': 'mA',
       
-      // Công suất
-      'power_high': 'W',
-      'power_warning': 'W',
+      // Công suất - phụ thuộc vào device_type
+      'power_high': this.getPowerUnit(deviceType),
+      'power_warning': this.getPowerUnit(deviceType),
       
       // Nhiệt độ
       'temperature_high': '°C',
@@ -484,6 +484,23 @@ Email tự động - Không trả lời
     };
     
     return unitMapping[warningType] || unitMapping['default'];
+  }
+
+  /**
+   * Get power unit based on device type
+   * Only auo_display uses W (Watt), others use VA (Volt-Ampere)
+   */
+  getPowerUnit(deviceType) {
+    switch(deviceType) {
+      case 'auo_display':
+        return 'W';  // Watt cho màn hình AUO
+      case 'camera_control_unit':
+      case 'electronic_endoflator':
+      case 'led_nova_100':
+      case 'iot_environment_status':
+      default:
+        return 'VA'; // Volt-Ampere cho các thiết bị khác
+    }
   }
 
   /**
@@ -535,7 +552,7 @@ Email tự động - Không trả lời
   /**
    * Get comparison text between measured and threshold values
    */
-  getValueComparisonText(measuredValue, thresholdValue, warningType) {
+  getValueComparisonText(measuredValue, thresholdValue, warningType, deviceType = null) {
     if (!measuredValue || !thresholdValue) return '';
     
     const measured = parseFloat(measuredValue);
@@ -546,7 +563,7 @@ Email tự động - Không trả lời
     const difference = measured - threshold;
     const percentageDiff = ((difference / threshold) * 100);
     
-    const units = this.getUnitForWarningType(warningType);
+    const units = this.getUnitForWarningType(warningType, deviceType);
     const formattedDiff = this.formatNumberWithPrecision(Math.abs(difference), warningType);
     const formattedPercent = Math.abs(percentageDiff).toFixed(1);
     
