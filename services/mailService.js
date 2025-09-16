@@ -260,14 +260,14 @@ class MailService {
             <div class="content">
                 <div class="warning-box">
                     <h2>Giá trị vượt ngưỡng</h2>
-                    <p>${data.formatted_measured_value || this.formatValueWithUnit(data.measured_value )} </p>
+                    <h1>${data.formatted_measured_value || this.formatValueWithUnit(data.measured_value )} </h1>
                 </div>
                 
                 <table class="info-table">
                     <tr><th>Thông số</th><th>Nội dung</th></tr>
                     ${data.device_name !== "Môi trường IoT" ? `<tr><td>Thiết bị</td><td>${data.device_name}</td></tr>` : ''}
-                    <tr><td>Giá trị đo được </td><td><strong>${data.formatted_measured_value || this.formatValueWithUnit(data.measured_value || data.current_value, data.warning_type) || 'N/A'}</strong></td></tr>
-                    <tr><td>Ngưỡng cảnh báo </td><td><strong>${data.formatted_threshold_value || this.formatValueWithUnit(data.threshold_value, data.warning_type) || 'N/A'}</strong></td></tr>
+                    <tr><td>Giá trị đo </td><td><strong>${data.formatted_measured_value || this.formatValueWithUnit(data.measured_value || data.current_value, data.warning_type) || 'N/A'}</strong></td></tr>
+                    <tr><td>Ngưỡng cho phép </td><td><strong>${data.formatted_threshold_value || this.formatValueWithUnit(data.threshold_value, data.warning_type) || 'N/A'}</strong></td></tr>
                     <tr><td>Thời gian ghi nhận</td><td>${new Date(data.created_at).toLocaleString('vi-VN')}</td></tr>
                     <tr><td>Vị trí</td><td>Tầng 2 - HOPT</td></tr>
                     ${data.escalation_level > 1 ? `<tr><td>Mức leo thang</td><td>Level ${data.escalation_level}</td></tr>` : ''}

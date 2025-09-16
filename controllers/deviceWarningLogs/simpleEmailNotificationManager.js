@@ -104,7 +104,7 @@ export class SimpleEmailNotificationManager {
             name: 'default',
             severities: [severity],
             delay: 0,
-            subject: '⚠️ Thông báo thiết bị',
+            subject: ' Thông báo thiết bị',
             priority: 'normal'
         };
     }
