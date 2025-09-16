@@ -416,8 +416,8 @@ Email tự động - Không trả lời
     const severityIcon = this.getSeverityIcon(data.severity);
     const templateIcon = data.template_icon || severityIcon;
     const escalation = data.escalation_level > 1 ? ` [LEVEL ${data.escalation_level}]` : '';
-    
-    return `${templateIcon} ${data.subject_prefix || 'Cảnh báo thiết bị'}: ${data.device_name} - ${data.warning_type}${escalation}`;
+
+    return `${templateIcon} Cảnh báo ${data.warning_message.toLowerCase()} tại Tầng 2 HOPT`;
   }
 
   /**
@@ -433,7 +433,7 @@ Email tự động - Không trả lời
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Tổng hợp CẢNH BÁO THIẾT BỊ IoMT</title>
+        <title>Tổng hợp ${data.warning_message.toUpperCase()} CHO PHÉP</title>
         <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
             .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -602,8 +602,8 @@ Tổng hợp tự động - Không trả lời
             </div>
             
             <div class="footer">
-                <p>Email tự động từ Hệ thống giám sát IoMT</p>
-                <p>Thời gian: ${now} | Không trả lời email này</p>
+                <p>Đây là email cảnh báo tự động từ hệ thống HOPT AIoMT.</p>
+                <p>Thời gian: ${now} | Vui lòng không trả lời email này.</p>
             </div>
         </div>
     </body>

@@ -69,6 +69,7 @@ import {
     getWarningStatistics,
     checkDeviceWarnings,
     deleteAllWarningLogs,
+    deleteWarningById,
     testCheckWarnings
 } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 import { updateWarningStatus } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
@@ -148,7 +149,6 @@ router.post('/warnings/delete-all', deleteAllWarningLogs);
 router.post('/warnings/test', testCheckWarnings);
 
 // DELETE endpoint xóa cảnh báo theo id
-import { deleteWarningById } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 router.delete('/warnings/:id', deleteWarningById);
 
 

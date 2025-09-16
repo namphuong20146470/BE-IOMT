@@ -34,8 +34,8 @@ import {
     updateDepartment
 } from '../controllers/departments/departments.controller.js';
 
-// Import các controller cần thiết cho logs
-import { getAllLogs, createLog, deleteLog, deleteAllLogs } from '../controllers/logs/log.controller.js';
+// Import các controller cần thiết cho audit logs
+import { getAllLogs, createLog, deleteLog, deleteAllLogs, createTestWarning } from '../controllers/auditLogs/auditLogs.controller.js';
 
 //Logout route
 import { logoutUser } from '../controllers/users/user.controller.js';
@@ -71,12 +71,14 @@ router.get('/departments', getAllDepartments);
 router.get('/departments/organization/:organization_id', getDepartmentsByOrganization);
 router.put('/departments/:id', updateDepartment);
 
-// Lấy tất cả logs (chỉ trưởng phòng TBYT, BGĐ BV, NCC GP)
+// Lấy tất cả audit logs (chỉ trưởng phòng TBYT, BGĐ BV, NCC GP)
 router.get('/logs', getAllLogs);
 router.post('/logs', authMiddleware, createLog);
 router.delete('/logs/:id', authMiddleware, deleteLog);
-// Xóa toàn bộ logs (chỉ trưởng phòng TBYT, BGĐ BV, NCC GP)
+// Xóa toàn bộ audit logs (chỉ trưởng phòng TBYT, BGĐ BV, NCC GP)
 router.post('/logs/all', deleteAllLogs);
+// Tạo test warning để kiểm tra hệ thống cảnh báo
+router.post('/logs/test-warning', authMiddleware, createTestWarning);
 
 // Đăng nhập
 router.post('/login', loginUser);

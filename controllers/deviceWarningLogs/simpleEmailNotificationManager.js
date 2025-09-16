@@ -18,19 +18,19 @@ export class SimpleEmailNotificationManager {
             standard: {
                 severities: ['high', 'major'],
                 delay: 0, // Gửi ngay lập tức
-                subject: '⚠️ Cảnh báo thiết bị',
+                subject: 'Cảnh báo',
                 priority: 'high'
             },
             moderate: {
                 severities: ['medium', 'moderate'],
                 delay: 0,
-                subject: '⚠️ Thông báo thiết bị',
+                subject: 'Thông báo',
                 priority: 'normal'
             },
             low: {
                 severities: ['low', 'minor'],
                 delay: 0,
-                subject: 'ℹ️ Thông tin thiết bị',
+                subject: 'ℹ️ Thông tin',
                 priority: 'low'
             }
         };
