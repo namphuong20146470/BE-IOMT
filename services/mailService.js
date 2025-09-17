@@ -286,7 +286,7 @@ class MailService {
             </div>
             
             <div class="footer">
-                <p>Đây là email cảnh báo tự động từ hệ thống HOPT AIoMT.</p>
+                <p>Đây là email cảnh báo tự động từ hệ thống OpticareX - HOPT.</p>
                 <p>Thời gian: ${now} | Vui lòng không trả lời email này.</p>
             </div>
         </div>
@@ -771,7 +771,7 @@ Tổng hợp tự động - Không trả lời
             </div>
             
             <div class="footer">
-                <p>Đây là email cảnh báo tự động từ hệ thống HOPT AIoMT.</p>
+                <p>Đây là email cảnh báo tự động từ hệ thống OpticareX - HOPT.</p>
                 <p>Thời gian: ${now} | Vui lòng không trả lời email này.</p>
             </div>
         </div>
