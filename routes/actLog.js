@@ -47,7 +47,7 @@ import jwt from 'jsonwebtoken';
 const router = express.Router();
 
 // Xem dashboard theo quyền ROLES
-router.get('/roles', getAllRoles);
+router.get('/roles', authMiddleware, getAllRoles);
 router.post('/roles', authMiddleware, createRole);
 router.put('/roles/:id_role', authMiddleware, updateRole);
 router.delete('/roles/:id_role', authMiddleware, deleteRole);
@@ -120,7 +120,7 @@ router.get('/auth/decode', (req, res) => {
         res.json({
             success: true,
             decoded: decoded,
-            token_type: 'users_v2', // All tokens are now users_v2
+            token_type: 'users', // All tokens are now users
             expires_at: new Date(decoded.exp * 1000).toISOString(),
             issued_at: new Date(decoded.iat * 1000).toISOString()
         });

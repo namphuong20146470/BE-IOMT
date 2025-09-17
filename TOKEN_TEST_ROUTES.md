@@ -36,7 +36,7 @@ router.get('/auth/decode', (req, res) => {
         res.json({
             success: true,
             decoded: decoded,
-            token_type: decoded.username ? 'users_v2' : 'users_v1',
+            token_type: decoded.username ? 'users' : 'users_v1',
             expires_at: new Date(decoded.exp * 1000).toISOString(),
             issued_at: new Date(decoded.iat * 1000).toISOString()
         });

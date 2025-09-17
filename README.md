@@ -72,7 +72,7 @@ docker-compose logs -f | ForEach-Object {
 <!-- dữ liệu test dưới nhé  -->
 
 netstat -ano | findstr :3030
-Stop-Process -Id 3424 -Force
+Stop-Process -Id 6468 -Force
 <!-- chạy docker nhé  -->
 docker-compose up -d
 <!-- #check log nhé như là chạy npm start  -->

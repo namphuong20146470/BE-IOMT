@@ -132,7 +132,7 @@ export const loginUser = async (req, res) => {
                 try {
                     const newBcryptHash = await hashPasswordBcrypt(password);
                     await prisma.$queryRaw`
-                        UPDATE users_v2 
+                        UPDATE users 
                         SET password_hash = ${newBcryptHash},
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ${user[0].id}::uuid
