@@ -400,7 +400,7 @@ export const getLedNovaByDateRange = async (req, res) => {
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
             FROM led_nova_100
             WHERE timestamp >= ${startDate}::timestamp 
-            AND timestamp <= ${endDate}::timestamp + INTERVAL '1 day'
+            AND timestamp <= ${endDate}::timestamp
             ORDER BY timestamp DESC
         `;
 

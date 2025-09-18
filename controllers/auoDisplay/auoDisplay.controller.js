@@ -3,6 +3,30 @@ import { checkDeviceWarnings } from '../deviceWarningLogs/deviceWarningLogs.cont
 
 const prisma = new PrismaClient();
 
+/**
+ * Helper function to convert groupBy parameter to PostgreSQL date_trunc interval
+ * @param {string} groupBy - Time grouping parameter
+ * @returns {string} - PostgreSQL interval string or null if invalid
+ */
+function getTimeGroupInterval(groupBy) {
+    const intervalMap = {
+        // Friendly names
+        'minute': 'minute',
+        'hour': 'hour', 
+        'day': 'day',
+        
+        // Technical intervals
+        '1m': 'minute',
+        '5m': 'minute',  // Will need special handling for 5-minute groups
+        '15m': 'minute', // Will need special handling for 15-minute groups  
+        '1h': 'hour',
+        '6h': 'hour',    // Will need special handling for 6-hour groups
+        '1d': 'day'
+    };
+    
+    return intervalMap[groupBy] || null;
+}
+
 // Get all auo_display records
 export const getAllAuoDisplay = async (req, res) => {
     try {
@@ -384,7 +408,7 @@ export const getAuoDisplay30Days = async (req, res) => {
 // Get AUO display data by date range
 export const getAuoDisplayByDateRange = async (req, res) => {
     try {
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, groupBy, aggregation = 'avg' } = req.query;
 
         if (!startDate || !endDate) {
             return res.status(400).json({
@@ -393,34 +417,83 @@ export const getAuoDisplayByDateRange = async (req, res) => {
             });
         }
 
-        const auoDisplayData = await prisma.$queryRaw`
-            SELECT 
-                id,
-                voltage,
-                current,
-                power_operating,
-                frequency,
-                power_factor,
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
-                timestamp,
-                to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM auo_display a
-            WHERE timestamp >= ${startDate}::timestamp 
-            AND timestamp <= ${endDate}::timestamp + INTERVAL '1 day'
-            ORDER BY timestamp DESC
-        `;
+        // Handle groupBy parameter (support both 'groupBy' and 'interval')
+        const timeGroup = groupBy || req.query.interval;
+        
+        let auoDisplayData;
+        
+        if (timeGroup) {
+            // Build aggregated query based on groupBy parameter
+            const groupByInterval = getTimeGroupInterval(timeGroup);
+            
+            if (!groupByInterval) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid groupBy value. Supported: minute, hour, day, 1m, 5m, 15m, 1h, 6h, 1d'
+                });
+            }
+
+            // Aggregated query with time grouping
+            auoDisplayData = await prisma.$queryRaw`
+                SELECT 
+                    date_trunc(${groupByInterval}, timestamp) as timestamp,
+                    COUNT(*) as record_count,
+                    AVG(voltage)::numeric(10,2) as voltage,
+                    AVG(current)::numeric(10,3) as current,
+                    AVG(power_operating)::numeric(10,2) as power_operating,
+                    AVG(frequency)::numeric(10,2) as frequency,
+                    AVG(power_factor)::numeric(10,2) as power_factor,
+                    MIN(timestamp) as period_start,
+                    MAX(timestamp) as period_end,
+                    to_char(date_trunc(${groupByInterval}, timestamp), 'YYYY-MM-DD HH24:MI:SS') as formatted_time
+                FROM auo_display 
+                WHERE timestamp >= ${startDate}::timestamp 
+                AND timestamp <= ${endDate}::timestamp 
+                GROUP BY date_trunc(${groupByInterval}, timestamp)
+                ORDER BY date_trunc(${groupByInterval}, timestamp) DESC
+            `;
+        } else {
+            // Original non-aggregated query
+            auoDisplayData = await prisma.$queryRaw`
+                SELECT 
+                    id,
+                    voltage,
+                    current,
+                    power_operating,
+                    frequency,
+                    power_factor,
+                    CAST(operating_time AS TEXT) as operating_time,
+                    over_voltage_operating,
+                    over_current_operating,
+                    over_power_operating,
+                    status_operating,
+                    under_voltage_operating,
+                    power_socket_status,
+                    timestamp,
+                    to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
+                FROM auo_display
+                WHERE timestamp >= ${startDate}::timestamp 
+                AND timestamp <= ${endDate}::timestamp 
+                ORDER BY timestamp DESC
+            `;
+        }
 
         return res.status(200).json({
             success: true,
             data: auoDisplayData,
-            message: `Successfully retrieved AUO display data from ${startDate} to ${endDate}`,
-            count: auoDisplayData.length
+            metadata: {
+                total: auoDisplayData.length,
+                timeRange: {
+                    start: startDate,
+                    end: endDate
+                },
+                groupBy: timeGroup || null,
+                aggregation: timeGroup ? aggregation : null,
+                isAggregated: !!timeGroup
+            },
+            message: timeGroup ? 
+                `Successfully retrieved aggregated AUO display data (${timeGroup})` :
+                `Successfully retrieved AUO display data from ${startDate} to ${endDate}`
         });
     } catch (error) {
         console.error('Error fetching AUO display data by date range:', error);

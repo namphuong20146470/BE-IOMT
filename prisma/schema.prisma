@@ -21,17 +21,19 @@ model device_categories {
 }
 
 model device_models {
-  id             String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  category_id    String            @db.Uuid
-  name           String            @db.VarChar(255)
-  manufacturer   String            @db.VarChar(255)
-  specifications String?
-  devices        device[]
-  category       device_categories @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  category_id     String            @db.Uuid
+  name            String            @db.VarChar(255)
+  specifications  String?
+  device_code     String?           @unique(map: "device_models_model_id_key") @db.VarChar(100)
+  manufacturer_id String?           @db.Uuid
+  supplier_id     String?           @db.Uuid
+  devices         device[]
+  category        device_categories @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  manufacturers   manufacturers?    @relation(fields: [manufacturer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  suppliers       suppliers?        @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@unique([name, manufacturer], map: "idx_device_models_name_manufacturer")
   @@index([category_id], map: "idx_device_models_category")
-  @@index([manufacturer], map: "idx_device_models_manufacturer")
 }
 
 model device {
@@ -46,6 +48,8 @@ model device {
   installation_date     DateTime?               @db.Date
   created_at            DateTime?               @default(now()) @db.Timestamptz(6)
   updated_at            DateTime?               @default(now()) @updatedAt @db.Timestamptz(6)
+  location              String?                 @db.VarChar(255)
+  notes                 String?
   alert_rules           alert_rules[]
   alert_suppressions    alert_suppressions[]
   alerts                alerts[]
@@ -98,31 +102,30 @@ model device_connectivity {
 }
 
 model organizations {
-  id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name               String               @db.VarChar(255)
-  type               organization_type
-  address            String?
-  phone              String?              @db.VarChar(20)
-  email              String?              @db.VarChar(255)
-  license_number     String?              @db.VarChar(100)
-  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime?            @default(now()) @updatedAt @db.Timestamptz(6)
-  is_active          Boolean              @default(true)
-  alert_metrics      alert_metrics[]
-  alert_rules        alert_rules[]
-  alert_suppressions alert_suppressions[]
-  dashboards         dashboards[]
-  departments        departments[]
-  devices            device[]
-  reports            reports[]
-  system_settings    system_settings[]
-  users           users[]
-  
-  // New permission system relations
-  audit_logs         audit_logs[]
-  roles              roles[]
-  user_roles         user_roles[]
-  organization_settings organization_settings[]
+  id                    String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                  String                 @db.VarChar(255)
+  type                  organization_type
+  address               String?
+  phone                 String?                @db.VarChar(20)
+  email                 String?                @db.VarChar(255)
+  license_number        String?                @db.VarChar(100)
+  created_at            DateTime?              @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
+  is_active             Boolean                @default(true)
+  access_policies       access_policies[]
+  alert_metrics         alert_metrics[]
+  alert_rules           alert_rules[]
+  alert_suppressions    alert_suppressions[]
+  audit_logs            audit_logs[]
+  dashboards            dashboards[]
+  departments           departments[]
+  devices               device[]
+  organization_settings organization_settings?
+  reports               reports[]
+  roles                 roles[]
+  system_settings       system_settings[]
+  user_roles            user_roles[]
+  users                 users[]
 
   @@index([is_active], map: "idx_organizations_active")
   @@index([name], map: "idx_organizations_name")
@@ -139,10 +142,8 @@ model departments {
   updated_at      DateTime?     @default(now()) @updatedAt @db.Timestamptz(6)
   organization    organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   devices         device[]
-  users           users[]
-  
-  // New permission system relations
   user_roles      user_roles[]
+  users           users[]
 
   @@index([code], map: "idx_departments_code")
   @@index([organization_id], map: "idx_departments_organization")
@@ -241,10 +242,10 @@ model device_warning_logs {
   warning_message       String
   status                String                  @default("active")
   resolved_at           DateTime?
-  acknowledged_by       String?                 @db.Uuid
+  acknowledged_by       Int?
   resolution_notes      String?
   timestamp             DateTime                @default(now()) @db.Timestamp(6)
-  acknowledged_by_user  users?                  @relation("DeviceWarningLogAcknowledgedBy", fields: [acknowledged_by], references: [id])
+  acknowledged_by_user  users_backup?           @relation("DeviceWarningLogAcknowledgedBy", fields: [acknowledged_by], references: [id])
   warning_notifications warning_notifications[]
 
   @@index([device_type, timestamp])
@@ -253,34 +254,32 @@ model device_warning_logs {
 }
 
 model logs {
-  id         Int       @id @default(autoincrement())
-  user_id    String?   @db.Uuid
-  action     String    @db.VarChar(50)
-  target     String?   @db.VarChar(100)
-  details    String?
-  created_at DateTime? @default(now()) @db.Timestamp(6)
-  created_by_user users?    @relation("LogCreatedBy", fields: [user_id], references: [id])
+  id              Int           @id @default(autoincrement())
+  user_id         Int?
+  action          String        @db.VarChar(50)
+  target          String?       @db.VarChar(100)
+  details         String?
+  created_at      DateTime?     @default(now()) @db.Timestamp(6)
+  created_by_user users_backup? @relation("LogCreatedBy", fields: [user_id], references: [id])
 }
-
-
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model alert_assignments {
-  id                                               String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  alert_id                                         String            @db.Uuid
-  user_id                                          String            @db.Uuid
-  assigned_by                                      String?           @db.Uuid
-  role                                             assignment_role   @default(assignee)
-  escalation_level                                 escalation_level? @default(L1)
-  priority                                         Int?              @default(1)
-  auto_escalate_minutes                            Int?              @default(30)
-  assigned_at                                      DateTime?         @default(now()) @db.Timestamptz(6)
-  acknowledged_at                                  DateTime?         @db.Timestamptz(6)
-  completed_at                                     DateTime?         @db.Timestamptz(6)
-  notes                                            String?
-  alerts                                           alerts            @relation(fields: [alert_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_alert_assignments_assigned_byTousers users?         @relation("alert_assignments_assigned_byTousers", fields: [assigned_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_alert_assignments_user_idTousers     users          @relation("alert_assignments_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                                         String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  alert_id                                   String            @db.Uuid
+  user_id                                    String            @db.Uuid
+  assigned_by                                String?           @db.Uuid
+  role                                       assignment_role   @default(assignee)
+  escalation_level                           escalation_level? @default(L1)
+  priority                                   Int?              @default(1)
+  auto_escalate_minutes                      Int?              @default(30)
+  assigned_at                                DateTime?         @default(now()) @db.Timestamptz(6)
+  acknowledged_at                            DateTime?         @db.Timestamptz(6)
+  completed_at                               DateTime?         @db.Timestamptz(6)
+  notes                                      String?
+  alerts                                     alerts            @relation(fields: [alert_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_alert_assignments_assigned_byTousers users?            @relation("alert_assignments_assigned_byTousers", fields: [assigned_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_alert_assignments_user_idTousers     users             @relation("alert_assignments_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([alert_id], map: "idx_alert_assignments_alert")
   @@index([escalation_level], map: "idx_alert_assignments_escalation")
@@ -328,7 +327,7 @@ model alert_rules {
   created_by         String               @db.Uuid
   created_at         DateTime?            @default(now()) @db.Timestamptz(6)
   updated_at         DateTime?            @default(now()) @db.Timestamptz(6)
-  users           users             @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users              users                @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   device             device?              @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   measurements       measurements         @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   organizations      organizations        @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -356,7 +355,7 @@ model alert_suppressions {
   created_by      String           @db.Uuid
   is_active       Boolean          @default(true)
   created_at      DateTime?        @default(now()) @db.Timestamptz(6)
-  users        users         @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users           users            @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   device          device?          @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   measurements    measurements?    @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   organizations   organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -371,31 +370,31 @@ model alert_suppressions {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model alerts {
-  id                                        String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  device_id                                 String              @db.Uuid
-  measurement_id                            String              @db.Uuid
-  rule_id                                   String              @db.Uuid
-  device_data_id                            String?             @db.Uuid
-  severity                                  alert_severity
-  status                                    alert_status        @default(active)
-  title                                     String              @db.VarChar(255)
-  message                                   String
-  current_value                             Float?
-  threshold_info                            Json?
-  triggered_at                              DateTime            @default(now()) @db.Timestamptz(6)
-  acknowledged_at                           DateTime?           @db.Timestamptz(6)
-  acknowledged_by                           String?             @db.Uuid
-  resolved_at                               DateTime?           @db.Timestamptz(6)
-  resolved_by                               String?             @db.Uuid
-  resolution_notes                          String?
-  alert_assignments                         alert_assignments[]
-  users_alerts_acknowledged_byTousers users?           @relation("alerts_acknowledged_byTousers", fields: [acknowledged_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  device_data                               device_data?        @relation(fields: [device_data_id], references: [id], onUpdate: NoAction)
-  device                                    device              @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  measurements                              measurements        @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_alerts_resolved_byTousers     users?           @relation("alerts_resolved_byTousers", fields: [resolved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  alert_rules                               alert_rules         @relation(fields: [rule_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  notification_logs                         notification_logs[]
+  id                                  String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id                           String              @db.Uuid
+  measurement_id                      String              @db.Uuid
+  rule_id                             String              @db.Uuid
+  device_data_id                      String?             @db.Uuid
+  severity                            alert_severity
+  status                              alert_status        @default(active)
+  title                               String              @db.VarChar(255)
+  message                             String
+  current_value                       Float?
+  threshold_info                      Json?
+  triggered_at                        DateTime            @default(now()) @db.Timestamptz(6)
+  acknowledged_at                     DateTime?           @db.Timestamptz(6)
+  acknowledged_by                     String?             @db.Uuid
+  resolved_at                         DateTime?           @db.Timestamptz(6)
+  resolved_by                         String?             @db.Uuid
+  resolution_notes                    String?
+  alert_assignments                   alert_assignments[]
+  users_alerts_acknowledged_byTousers users?              @relation("alerts_acknowledged_byTousers", fields: [acknowledged_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  device_data                         device_data?        @relation(fields: [device_data_id], references: [id], onUpdate: NoAction)
+  device                              device              @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  measurements                        measurements        @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_alerts_resolved_byTousers     users?              @relation("alerts_resolved_byTousers", fields: [resolved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  alert_rules                         alert_rules         @relation(fields: [rule_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  notification_logs                   notification_logs[]
 
   @@index([device_id], map: "idx_alerts_device")
   @@index([measurement_id], map: "idx_alerts_measurement")
@@ -504,7 +503,7 @@ model notification_logs {
   created_at    DateTime?            @default(now()) @db.Timestamptz(6)
   updated_at    DateTime?            @default(now()) @db.Timestamptz(6)
   alerts        alerts               @relation(fields: [alert_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users      users?            @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  users         users?               @relation(fields: [user_id], references: [id], onUpdate: NoAction)
 
   @@index([alert_id], map: "idx_notification_logs_alert")
   @@index([channel], map: "idx_notification_logs_channel")
@@ -512,9 +511,6 @@ model notification_logs {
   @@index([status], map: "idx_notification_logs_status")
   @@index([user_id], map: "idx_notification_logs_user")
 }
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-
 
 model reports {
   id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
@@ -542,46 +538,41 @@ model system_settings {
 }
 
 model users {
-  id                                                        String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id                                           String?              @db.Uuid
-  department_id                                             String?              @db.Uuid
-  username                                                  String               @unique @db.VarChar(50)
-  password_hash                                             String               @db.VarChar(255)
-  full_name                                                 String               @db.VarChar(255)
-  email                                                     String?              @unique(map: "idx_users_email") @db.VarChar(255)
-  phone                                                     String?              @db.VarChar(20)
-  is_active                                                 Boolean              @default(true)
-  created_at                                                DateTime?            @default(now()) @db.Timestamptz(6)
-  updated_at                                                DateTime?            @default(now()) @db.Timestamptz(6)
+  id                                                     String               @id(map: "users_v2_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id                                        String?              @db.Uuid
+  department_id                                          String?              @db.Uuid
+  username                                               String               @unique(map: "users_v2_username_key") @db.VarChar(50)
+  password_hash                                          String               @db.VarChar(255)
+  full_name                                              String               @db.VarChar(255)
+  email                                                  String?              @unique(map: "idx_users_v2_email") @db.VarChar(255)
+  phone                                                  String?              @db.VarChar(20)
+  is_active                                              Boolean              @default(true)
+  created_at                                             DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at                                             DateTime?            @default(now()) @db.Timestamptz(6)
+  access_policies                                        access_policies[]
   alert_assignments_alert_assignments_assigned_byTousers alert_assignments[]  @relation("alert_assignments_assigned_byTousers")
   alert_assignments_alert_assignments_user_idTousers     alert_assignments[]  @relation("alert_assignments_user_idTousers")
-  alert_rules                                               alert_rules[]
-  alert_suppressions                                        alert_suppressions[]
+  alert_rules                                            alert_rules[]
+  alert_suppressions                                     alert_suppressions[]
   alerts_alerts_acknowledged_byTousers                   alerts[]             @relation("alerts_acknowledged_byTousers")
   alerts_alerts_resolved_byTousers                       alerts[]             @relation("alerts_resolved_byTousers")
-  notification_logs                                         notification_logs[]
-  departments                                               departments?         @relation(fields: [department_id], references: [id], onUpdate: NoAction)
-  organizations                                             organizations?       @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  
-  // New permission system relations
-  user_sessions                                             user_sessions[]
-  audit_logs                                                audit_logs[]
+  audit_logs                                             audit_logs[]
+  notification_logs                                      notification_logs[]
+  resource_access                                        resource_access[]
+  role_templates                                         role_templates[]
   roles_created                                          roles[]
-  user_roles                                                user_roles[]
-  user_permissions                                          user_permissions[]
-  user_roles_assigned                                       user_roles[]         @relation("UserRoleAssignedBy")
-  user_permissions_granted                                  user_permissions[]   @relation("UserPermissionGrantedBy")
-  resource_access                                           resource_access[]
-  role_templates                                            role_templates[]
-  
-  // Legacy table relations
-  device_warning_logs_acknowledged                         device_warning_logs[] @relation("DeviceWarningLogAcknowledgedBy")
-  logs_created                                              logs[]               @relation("LogCreatedBy")
+  user_permissions_granted                               user_permissions[]   @relation("UserPermissionGrantedBy")
+  user_permissions                                       user_permissions[]
+  user_roles_assigned                                    user_roles[]         @relation("UserRoleAssignedBy")
+  user_roles                                             user_roles[]
+  user_sessions                                          user_sessions[]
+  departments                                            departments?         @relation(fields: [department_id], references: [id], onUpdate: NoAction, map: "users_v2_department_id_fkey")
+  organizations                                          organizations?       @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "users_v2_organization_id_fkey")
 
-  @@index([is_active], map: "idx_users_active")
-  @@index([department_id], map: "idx_users_department")
-  @@index([full_name], map: "idx_users_full_name")
-  @@index([organization_id], map: "idx_users_organization")
+  @@index([is_active], map: "idx_users_v2_active")
+  @@index([department_id], map: "idx_users_v2_department")
+  @@index([full_name], map: "idx_users_v2_full_name")
+  @@index([organization_id], map: "idx_users_v2_organization")
 }
 
 model warning_notifications {
@@ -592,20 +583,18 @@ model warning_notifications {
   device_warning_logs device_warning_logs @relation(fields: [warning_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
-// =================== NEW PERMISSION SYSTEM MODELS ===================
-
 model user_sessions {
-  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id          String    @db.Uuid
-  session_token    String    @unique @db.VarChar(255)
-  refresh_token    String?   @db.VarChar(255)
-  device_info      String?
-  ip_address       String?   @db.Inet
-  expires_at       DateTime  @db.Timestamptz(6)
-  created_at       DateTime? @default(now()) @db.Timestamptz(6)
-  last_activity    DateTime? @default(now()) @db.Timestamptz(6)
-  is_active        Boolean   @default(true)
-  users         users  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id       String    @db.Uuid
+  session_token String    @unique @db.VarChar(255)
+  refresh_token String?   @db.VarChar(255)
+  device_info   String?
+  ip_address    String?   @db.Inet
+  expires_at    DateTime  @db.Timestamptz(6)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  last_activity DateTime? @default(now()) @db.Timestamptz(6)
+  is_active     Boolean   @default(true)
+  users         users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_user_sessions_user")
   @@index([session_token], map: "idx_user_sessions_token")
@@ -615,21 +604,21 @@ model user_sessions {
 }
 
 model audit_logs {
-  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id         String?       @db.Uuid
-  organization_id String?       @db.Uuid
+  id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id         String?        @db.Uuid
+  organization_id String?        @db.Uuid
   action          audit_action
-  resource_type   String?       @db.VarChar(50)
-  resource_id     String?       @db.Uuid
+  resource_type   String?        @db.VarChar(50)
+  resource_id     String?        @db.Uuid
   old_values      Json?
   new_values      Json?
-  ip_address      String?       @db.Inet
+  ip_address      String?        @db.Inet
   user_agent      String?
-  success         Boolean?      @default(true)
+  success         Boolean?       @default(true)
   error_message   String?
-  created_at      DateTime?     @default(now()) @db.Timestamptz(6)
-  users        users?     @relation(fields: [user_id], references: [id], onDelete: SetNull)
-  organizations   organizations? @relation(fields: [organization_id], references: [id], onDelete: SetNull)
+  created_at      DateTime?      @default(now()) @db.Timestamptz(6)
+  organizations   organizations? @relation(fields: [organization_id], references: [id], onUpdate: NoAction)
+  users           users?         @relation(fields: [user_id], references: [id], onUpdate: NoAction)
 
   @@index([user_id], map: "idx_audit_logs_user")
   @@index([organization_id], map: "idx_audit_logs_org")
@@ -656,19 +645,19 @@ model permission_groups {
 }
 
 model permissions {
-  id                String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name              String              @unique @db.VarChar(100)
+  id                String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name              String             @unique @db.VarChar(100)
   description       String?
-  resource          String              @db.VarChar(50)
-  action            String              @db.VarChar(50)
-  group_id          String?             @db.Uuid
-  depends_on        String[]            @default([])
-  conditions        Json?               @default("{}")
-  priority          Int?                @default(0)
-  is_active         Boolean             @default(true)
-  created_at        DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime?           @default(now()) @updatedAt @db.Timestamptz(6)
-  permission_groups permission_groups?  @relation(fields: [group_id], references: [id], onDelete: SetNull)
+  resource          String             @db.VarChar(50)
+  action            String             @db.VarChar(50)
+  group_id          String?            @db.Uuid
+  depends_on        String[]           @default([]) @db.Uuid
+  conditions        Json?              @default("{}")
+  priority          Int?               @default(0)
+  is_active         Boolean?           @default(true)
+  created_at        DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?          @default(now()) @updatedAt @db.Timestamptz(6)
+  permission_groups permission_groups? @relation(fields: [group_id], references: [id], onUpdate: NoAction)
   role_permissions  role_permissions[]
   user_permissions  user_permissions[]
 
@@ -678,39 +667,39 @@ model permissions {
 }
 
 model roles {
-  id              String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name            String             @db.VarChar(100)
-  description     String?
-  organization_id String?            @db.Uuid
-  is_system_role  Boolean            @default(false)
-  is_custom       Boolean            @default(true)
-  color           String?            @db.VarChar(7)
-  icon            String?            @db.VarChar(50)
-  sort_order      Int?               @default(0)
-  is_active       Boolean            @default(true)
-  created_by      String?            @db.Uuid
-  created_at      DateTime?          @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime?          @default(now()) @updatedAt @db.Timestamptz(6)
-  organizations   organizations?     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  users        users?          @relation(fields: [created_by], references: [id])
-  role_permissions role_permissions[]
-  user_roles      user_roles[]
-  role_hierarchy_parent role_hierarchy[] @relation("RoleHierarchyParent")
-  role_hierarchy_child  role_hierarchy[] @relation("RoleHierarchyChild")
+  id                    String             @id(map: "roles_pkey1") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                  String             @unique(map: "roles_name_key1") @db.VarChar(100)
+  description           String?
+  is_system_role        Boolean            @default(false)
+  organization_id       String?            @db.Uuid
+  is_custom             Boolean?           @default(true)
+  color                 String?            @db.VarChar(7)
+  icon                  String?            @db.VarChar(50)
+  sort_order            Int?               @default(0)
+  is_active             Boolean?           @default(true)
+  created_by            String?            @db.Uuid
+  created_at            DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?          @default(now()) @updatedAt @db.Timestamptz(6)
+  role_hierarchy_child  role_hierarchy[]   @relation("RoleHierarchyChild")
+  role_hierarchy_parent role_hierarchy[]   @relation("RoleHierarchyParent")
+  role_permissions      role_permissions[]
+  users                 users?             @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  organizations         organizations?     @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_roles            user_roles[]
 
-  @@unique([name, organization_id], map: "idx_roles_name_org")
   @@index([organization_id], map: "idx_roles_organization")
   @@index([is_custom], map: "idx_roles_custom")
   @@index([is_active], map: "idx_roles_active")
   @@index([sort_order], map: "idx_roles_sort")
+  @@index([is_system_role], map: "idx_roles_system")
 }
 
 model role_permissions {
-  id            String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  role_id       String        @db.Uuid
-  permission_id String        @db.Uuid
-  roles      roles      @relation(fields: [role_id], references: [id], onDelete: Cascade)
-  permissions permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  role_id       String      @db.Uuid
+  permission_id String      @db.Uuid
+  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roles         roles       @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([role_id, permission_id])
   @@index([role_id], map: "idx_role_permissions_role")
@@ -718,22 +707,22 @@ model role_permissions {
 }
 
 model user_roles {
-  id             String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id        String     @db.Uuid
-  role_id        String     @db.Uuid
-  organization_id String    @db.Uuid
-  department_id  String?    @db.Uuid
-  valid_from     DateTime?  @default(now()) @db.Timestamptz(6)
-  valid_until    DateTime?  @db.Timestamptz(6)
-  assigned_by    String?    @db.Uuid
-  assigned_at    DateTime?  @default(now()) @db.Timestamptz(6)
-  is_active      Boolean    @default(true)
-  notes          String?
-  users       users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  roles       roles   @relation(fields: [role_id], references: [id], onDelete: Cascade)
-  organizations  organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  departments    departments?  @relation(fields: [department_id], references: [id], onDelete: Cascade)
-  assigned_by_user users?  @relation("UserRoleAssignedBy", fields: [assigned_by], references: [id])
+  id               String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id          String        @db.Uuid
+  role_id          String        @db.Uuid
+  organization_id  String        @db.Uuid
+  department_id    String?       @db.Uuid
+  valid_from       DateTime?     @default(now()) @db.Timestamptz(6)
+  valid_until      DateTime?     @db.Timestamptz(6)
+  assigned_by      String?       @db.Uuid
+  assigned_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  is_active        Boolean?      @default(true)
+  notes            String?
+  assigned_by_user users?        @relation("UserRoleAssignedBy", fields: [assigned_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  departments      departments?  @relation(fields: [department_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations    organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roles            roles         @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users            users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_id, role_id, organization_id, department_id])
   @@index([user_id], map: "idx_user_roles_user")
@@ -746,18 +735,18 @@ model user_roles {
 }
 
 model user_permissions {
-  id            String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id       String        @db.Uuid
-  permission_id String        @db.Uuid
-  granted_by    String?       @db.Uuid
-  granted_at    DateTime?     @default(now()) @db.Timestamptz(6)
-  valid_from    DateTime?     @default(now()) @db.Timestamptz(6)
-  valid_until   DateTime?     @db.Timestamptz(6)
-  is_active     Boolean       @default(true)
-  notes         String?
-  users      users      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  permissions permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade)
-  granted_by_user users?   @relation("UserPermissionGrantedBy", fields: [granted_by], references: [id])
+  id              String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id         String      @db.Uuid
+  permission_id   String      @db.Uuid
+  granted_by      String?     @db.Uuid
+  granted_at      DateTime?   @default(now()) @db.Timestamptz(6)
+  valid_from      DateTime?   @default(now()) @db.Timestamptz(6)
+  valid_until     DateTime?   @db.Timestamptz(6)
+  is_active       Boolean?    @default(true)
+  notes           String?
+  granted_by_user users?      @relation("UserPermissionGrantedBy", fields: [granted_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  permissions     permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_id, permission_id])
   @@index([user_id], map: "idx_user_permissions_user")
@@ -768,12 +757,12 @@ model user_permissions {
 }
 
 model role_hierarchy {
-  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  parent_role_id  String   @db.Uuid
-  child_role_id   String   @db.Uuid
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  parent_role     roles  @relation("RoleHierarchyParent", fields: [parent_role_id], references: [id], onDelete: Cascade)
-  child_role      roles  @relation("RoleHierarchyChild", fields: [child_role_id], references: [id], onDelete: Cascade)
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parent_role_id String    @db.Uuid
+  child_role_id  String    @db.Uuid
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
+  child_role     roles     @relation("RoleHierarchyChild", fields: [child_role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  parent_role    roles     @relation("RoleHierarchyParent", fields: [parent_role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([parent_role_id, child_role_id])
   @@index([parent_role_id], map: "idx_role_hierarchy_parent")
@@ -781,32 +770,32 @@ model role_hierarchy {
 }
 
 model organization_settings {
-  id                       String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id          String        @unique @db.Uuid
+  id                      String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id         String        @unique @db.Uuid
   max_users               Int?          @default(1000)
   session_timeout_minutes Int?          @default(480)
-  password_policy         Json?         @default("{\"min_length\": 8, \"require_uppercase\": true, \"require_lowercase\": true, \"require_numbers\": true, \"require_special\": false, \"max_age_days\": 90}")
-  allowed_permissions     String[]      @default([])
-  two_factor_required     Boolean       @default(false)
-  ip_whitelist            String[]      @default([])
+  password_policy         Json?         @default("{\"min_length\": 8, \"max_age_days\": 90, \"require_numbers\": true, \"require_special\": false, \"require_lowercase\": true, \"require_uppercase\": true}")
+  allowed_permissions     String[]
+  two_factor_required     Boolean?      @default(false)
+  ip_whitelist            String[]      @db.Inet
   settings                Json?         @default("{}")
   created_at              DateTime?     @default(now()) @db.Timestamptz(6)
   updated_at              DateTime?     @default(now()) @updatedAt @db.Timestamptz(6)
-  organizations           organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  organizations           organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model role_templates {
-  id                String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name              String             @db.VarChar(100)
-  description       String?
+  id                 String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name               String              @db.VarChar(100)
+  description        String?
   organization_types organization_type[]
-  permission_ids    String[]           @default([])
-  is_default        Boolean            @default(false)
-  is_active         Boolean            @default(true)
-  created_by        String?            @db.Uuid
-  created_at        DateTime?          @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime?          @default(now()) @updatedAt @db.Timestamptz(6)
-  users          users?          @relation(fields: [created_by], references: [id])
+  permission_ids     String[]            @db.Uuid
+  is_default         Boolean?            @default(false)
+  is_active          Boolean?            @default(true)
+  created_by         String?             @db.Uuid
+  created_at         DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?           @default(now()) @updatedAt @db.Timestamptz(6)
+  users              users?              @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([is_active], map: "idx_role_templates_active")
   @@index([is_default], map: "idx_role_templates_default")
@@ -814,16 +803,80 @@ model role_templates {
 }
 
 model resource_access {
-  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id       String      @db.Uuid
-  resource_type String      @db.VarChar(50)
-  resource_id   String      @db.Uuid
+  id            String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id       String       @db.Uuid
+  resource_type String       @db.VarChar(50)
+  resource_id   String       @db.Uuid
   access_level  access_level @default(read)
-  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  users         users        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([user_id, resource_type, resource_id])
+  @@unique([user_id, resource_type, resource_id], map: "idx_resource_access_unique")
   @@index([user_id], map: "idx_resource_access_user")
   @@index([resource_type, resource_id], map: "idx_resource_access_resource")
+}
+
+model access_policies {
+  id                  String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                String         @db.VarChar(100)
+  description         String?
+  organization_id     String?        @db.Uuid
+  conditions          Json           @default("{}")
+  permission_ids      String[]       @db.Uuid
+  deny_permission_ids String[]       @db.Uuid
+  is_active           Boolean?       @default(true)
+  priority            Int?           @default(0)
+  valid_from          DateTime?      @default(now()) @db.Timestamptz(6)
+  valid_until         DateTime?      @db.Timestamptz(6)
+  created_by          String?        @db.Uuid
+  created_at          DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?      @default(now()) @db.Timestamptz(6)
+  users               users?         @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  organizations       organizations? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([is_active], map: "idx_access_policies_active")
+  @@index([organization_id], map: "idx_access_policies_org")
+  @@index([priority], map: "idx_access_policies_priority")
+  @@index([valid_from, valid_until], map: "idx_access_policies_validity")
+}
+
+model manufacturers {
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name          String          @unique @db.VarChar(255)
+  country       String?         @db.VarChar(100)
+  website       String?         @db.VarChar(255)
+  contact_info  Json?
+  device_models device_models[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model roles_backup {
+  id           Int            @id(map: "roles_pkey") @default(autoincrement())
+  name         String         @unique(map: "roles_name_key") @db.VarChar(50)
+  description  String?
+  id_role      String?        @unique(map: "unique_id_role") @db.VarChar(20)
+  users_backup users_backup[]
+}
+
+model suppliers {
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name          String          @unique @db.VarChar(255)
+  country       String?         @db.VarChar(100)
+  website       String?         @db.VarChar(255)
+  contact_info  Json?
+  device_models device_models[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model users_backup {
+  id                               Int                   @id(map: "users_pkey") @default(autoincrement())
+  username                         String                @unique(map: "users_username_key") @db.VarChar(50)
+  password_hash                    String
+  full_name                        String?               @db.VarChar(100)
+  role_id                          Int?
+  is_active                        Boolean?              @default(true)
+  device_warning_logs_acknowledged device_warning_logs[] @relation("DeviceWarningLogAcknowledgedBy")
+  logs_created                     logs[]                @relation("LogCreatedBy")
+  roles_backup                     roles_backup?         @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_role_id_fkey")
 }
 
 enum device_status {

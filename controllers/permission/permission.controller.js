@@ -1,10 +1,8 @@
-import RoleService from '../../services/RoleService.js';
-import PermissionService from '../../services/PermissionService.js';
-import AuditService from '../../services/AuditService.js';
+import roleService from '../../services/RoleService.js';
+import permissionService from '../../services/PermissionService.js';
+import auditService from '../../services/AuditService.js';
 
-const roleService = new RoleService();
-const permissionService = new PermissionService();
-const auditService = new AuditService();
+// Services are already instantiated, no need to create new instances
 
 // ====================================================================
 // ROLE-PERMISSION MANAGEMENT CONTROLLERS
