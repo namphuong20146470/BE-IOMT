@@ -241,10 +241,10 @@ model device_warning_logs {
   warning_message       String
   status                String                  @default("active")
   resolved_at           DateTime?
-  acknowledged_by       String?                 @db.Uuid
+  acknowledged_by       Int?
   resolution_notes      String?
   timestamp             DateTime                @default(now()) @db.Timestamp(6)
-  acknowledged_by_user  users?                  @relation("DeviceWarningLogAcknowledgedBy", fields: [acknowledged_by], references: [id])
+  users                 users?                  @relation(fields: [acknowledged_by], references: [id])
   warning_notifications warning_notifications[]
 
   @@index([device_type, timestamp])
@@ -254,15 +254,33 @@ model device_warning_logs {
 
 model logs {
   id         Int       @id @default(autoincrement())
-  user_id    String?   @db.Uuid
+  user_id    Int?
   action     String    @db.VarChar(50)
   target     String?   @db.VarChar(100)
   details    String?
   created_at DateTime? @default(now()) @db.Timestamp(6)
-  created_by_user users?    @relation("LogCreatedBy", fields: [user_id], references: [id])
+  users      users?    @relation(fields: [user_id], references: [id])
 }
 
+model roles {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique @db.VarChar(50)
+  description String?
+  id_role     String? @unique(map: "unique_id_role") @db.VarChar(20)
+  users       users[]
+}
 
+model users {
+  id                  Int                   @id @default(autoincrement())
+  username            String                @unique @db.VarChar(50)
+  password_hash       String
+  full_name           String?               @db.VarChar(100)
+  role_id             Int?
+  is_active           Boolean?              @default(true)
+  device_warning_logs device_warning_logs[]
+  logs                logs[]
+  roles               roles?                @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model alert_assignments {
@@ -514,7 +532,13 @@ model notification_logs {
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-
+model permissions {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String  @unique @db.VarChar(100)
+  description String?
+  resource    String  @db.VarChar(50)
+  action      String  @db.VarChar(50)
+}
 
 model reports {
   id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
@@ -573,10 +597,6 @@ model users {
   user_permissions_granted                                  user_permissions[]   @relation("UserPermissionGrantedBy")
   resource_access                                           resource_access[]
   role_templates                                            role_templates[]
-  
-  // Legacy table relations
-  device_warning_logs_acknowledged                         device_warning_logs[] @relation("DeviceWarningLogAcknowledgedBy")
-  logs_created                                              logs[]               @relation("LogCreatedBy")
 
   @@index([is_active], map: "idx_users_active")
   @@index([department_id], map: "idx_users_department")

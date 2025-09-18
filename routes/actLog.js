@@ -37,6 +37,21 @@ import {
 // Import các controller cần thiết cho audit logs
 import { getAllLogs, createLog, deleteLog, deleteAllLogs, createTestWarning } from '../controllers/auditLogs/auditLogs.controller.js';
 
+// Import permission controllers
+import {
+    assignPermissionToRole,
+    removePermissionFromRole,
+    getRolePermissions,
+    updateRolePermissions,
+    getAllPermissions,
+    createPermission,
+    getPermissionById,
+    updatePermission,
+    deletePermission,
+    getAllPermissionGroups,
+    createPermissionGroup
+} from '../controllers/permission/permission.controller.js';
+
 //Logout route
 import { logoutUser } from '../controllers/users/user.controller.js';
 
@@ -70,6 +85,31 @@ router.post('/departments', createDepartment);
 router.get('/departments', getAllDepartments);
 router.get('/departments/organization/:organization_id', getDepartmentsByOrganization);
 router.put('/departments/:id', updateDepartment);
+
+// ====================================================================
+// PERMISSION MANAGEMENT ROUTES
+// ====================================================================
+
+// Role-Permission Management
+router.post('/roles/:roleId/permissions', authMiddleware, assignPermissionToRole);
+router.delete('/roles/:roleId/permissions/:permissionId', authMiddleware, removePermissionFromRole);
+router.get('/roles/:roleId/permissions', authMiddleware, getRolePermissions);
+router.put('/roles/:roleId/permissions', authMiddleware, updateRolePermissions);
+
+// Permission CRUD
+router.get('/permissions', authMiddleware, getAllPermissions);
+router.post('/permissions', authMiddleware, createPermission);
+router.get('/permissions/:permissionId', authMiddleware, getPermissionById);
+router.put('/permissions/:permissionId', authMiddleware, updatePermission);
+router.delete('/permissions/:permissionId', authMiddleware, deletePermission);
+
+// Permission Groups
+router.get('/permission-groups', authMiddleware, getAllPermissionGroups);
+router.post('/permission-groups', authMiddleware, createPermissionGroup);
+
+// ====================================================================
+// AUDIT LOGS ROUTES
+// ====================================================================
 
 // Lấy tất cả audit logs (chỉ trưởng phòng TBYT, BGĐ BV, NCC GP)
 router.get('/logs', getAllLogs);
