@@ -52,6 +52,13 @@ import {
     createPermissionGroup
 } from '../controllers/permission/permission.controller.js';
 
+// Add this import at the top with the other imports
+import {
+    debugUserPermissions,
+    assignPermissionToUser,
+    getUserPermissions
+} from '../controllers/users/userPermission.controller.js';
+
 //Logout route
 import { logoutUser } from '../controllers/users/user.controller.js';
 
@@ -95,7 +102,11 @@ router.post('/roles/:roleId/permissions', authMiddleware, assignPermissionToRole
 router.delete('/roles/:roleId/permissions/:permissionId', authMiddleware, removePermissionFromRole);
 router.get('/roles/:roleId/permissions', authMiddleware, getRolePermissions);
 router.put('/roles/:roleId/permissions', authMiddleware, updateRolePermissions);
-
+// Add these routes in the appropriate section
+// User Permission Management routes
+router.get('/users/:userId/permissions/debug', debugUserPermissions);
+router.get('/users/:userId/permissions', getUserPermissions);
+router.post('/users/:userId/permissions', assignPermissionToUser);
 // Permission CRUD
 router.get('/permissions', authMiddleware, getAllPermissions);
 router.post('/permissions', authMiddleware, createPermission);

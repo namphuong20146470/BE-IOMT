@@ -395,6 +395,7 @@ export const getAllPermissions = async (req, res) => {
             total: Array.isArray(formattedData) ? formattedData.length : 
                    Object.values(formattedData).flat().length,
             format: format || 'array',
+            bypass_used: isSuperAdmin,
             filters: {
                 group_id: group_id || null,
                 search: search || null,
@@ -503,7 +504,7 @@ export const getPermissionById = async (req, res) => {
             });
         }
 
-        const hasPermission = await permissionService.hasPermission(userId, 'permission.read');
+        const hasPermission = await permissionService.hasPermission(userId, 'permission.read' );
         if (!hasPermission) {
             return res.status(403).json({ 
                 success: false, 
