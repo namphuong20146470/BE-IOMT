@@ -14,8 +14,12 @@ import {
     createUser,
     updateUser,
     deleteUser,
-    deleteAllUsersExceptAdmin
-
+    deleteAllUsersExceptAdmin,
+    refreshToken,
+    logoutAllSessions,
+    getUserSessions,
+    terminateSession,
+    getSessionStatistics
 } from '../controllers/users/user.controller.js';
 
 // Organizations controllers
@@ -80,6 +84,19 @@ router.post('/users', authMiddleware, createUser);
 router.put('/users/:id', authMiddleware, updateUser);
 router.delete('/users/:id', authMiddleware, deleteUser);
 router.post('/users/all-except-admin', authMiddleware, deleteAllUsersExceptAdmin);
+
+// ====================================================================
+// SESSION MANAGEMENT ROUTES
+// ====================================================================
+
+// Authentication & Token Management
+router.post('/auth/refresh', refreshToken);                          // Refresh access token
+router.post('/auth/logout-all', authMiddleware, logoutAllSessions);  // Logout all user sessions
+
+// Session Management (requires authentication)
+router.get('/sessions', authMiddleware, getUserSessions);                    // Get user's active sessions
+router.delete('/sessions/:sessionId', authMiddleware, terminateSession);    // Terminate specific session
+router.get('/sessions/statistics', authMiddleware, getSessionStatistics);   // Get session statistics
 
 // Organizations routes
 router.post('/organizations', createOrganization);

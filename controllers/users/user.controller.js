@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import sessionService from '../../services/SessionService.js';
 
 const prisma = new PrismaClient();
 
@@ -151,18 +152,33 @@ export const loginUser = async (req, res) => {
             });
         }
 
-        // Generate JWT token
-        const token = jwt.sign(
-            {
-                id: user[0].id,
-                username: user[0].username,
-                email: user[0].email,
-                organization_id: user[0].organization_id,
-                department_id: user[0].department_id
-            },
-            process.env.JWT_SECRET || 'secret_key',
-            { expiresIn: '1d' }
-        );
+        // Get device info from request
+        const deviceInfo = {
+            user_agent: req.get('User-Agent') || 'Unknown',
+            platform: req.get('sec-ch-ua-platform') || 'Unknown',
+            browser: req.get('sec-ch-ua') || 'Unknown'
+        };
+
+        // Get client IP
+        const ipAddress = req.ip || req.connection.remoteAddress || '127.0.0.1';
+
+        // Check for suspicious activity
+        const securityCheck = await sessionService.detectSuspiciousActivity(user[0].id, ipAddress);
+        
+        if (securityCheck.is_suspicious) {
+            console.log(`⚠️ Suspicious login detected for user: ${user[0].username}`, securityCheck.analysis);
+            // Could implement additional security measures here (email notification, 2FA, etc.)
+        }
+
+        // Create session using SessionService
+        const sessionResult = await sessionService.createSession(user[0].id, deviceInfo, ipAddress);
+
+        if (!sessionResult.success) {
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to create session'
+            });
+        }
 
         // Remove password_hash from response
         const { password_hash, ...userWithoutPassword } = user[0];
@@ -170,10 +186,19 @@ export const loginUser = async (req, res) => {
         res.status(200).json({
             success: true,
             data: {
-                token,
-                user: userWithoutPassword
+                access_token: sessionResult.data.access_token,
+                refresh_token: sessionResult.data.refresh_token,
+                expires_in: sessionResult.data.expires_in,
+                token_type: sessionResult.data.token_type,
+                user: userWithoutPassword,
+                session_id: sessionResult.data.session_id
             },
-            message: 'Login successful'
+            message: 'Login successful',
+            security_info: securityCheck.is_suspicious ? {
+                new_ip: securityCheck.new_ip,
+                risk_level: securityCheck.analysis.risk_level,
+                recommendations: securityCheck.analysis.recommendations
+            } : null
         });
     } catch (error) {
         console.error('Error during login:', error);
@@ -314,31 +339,179 @@ export const updateUser = async (req, res) => {
 // Logout user
 export const logoutUser = async (req, res) => {
     try {
-        // Lấy user từ token hoặc session (giả sử đã xác thực)
         const user = req.user;
-        if (!user) {
-            return res.status(401).json({ message: 'Chưa đăng nhập' });
+        const sessionInfo = req.sessionInfo;
+        
+        if (!user || !sessionInfo) {
+            return res.status(401).json({ 
+                success: false,
+                message: 'Not authenticated' 
+            });
         }
         
-        // Log activity (optional - if you have logging system)
-        // await prisma.logs.create({
-        //     data: {
-        //         user_id: user.id,
-        //         action: 'logout',
-        //         details: 'Đăng xuất thành công',
-        //         target: user.username,
-        //         created_at: getVietnamDate()
-        //     }
-        // });
+        // Logout using SessionService
+        const logoutResult = await sessionService.logout(sessionInfo.session_id);
+        
+        if (!logoutResult.success) {
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to logout'
+            });
+        }
 
-        return res.json({ 
+        res.json({ 
             success: true,
-            message: 'Đăng xuất thành công' 
+            message: 'Logged out successfully'
         });
-    } catch (err) {
-        return res.status(500).json({ 
+    } catch (error) {
+        console.error('Error during logout:', error);
+        res.status(500).json({
+            success: false, 
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Refresh access token using refresh token
+ */
+export const refreshToken = async (req, res) => {
+    try {
+        const { refresh_token } = req.body;
+        
+        if (!refresh_token) {
+            return res.status(400).json({
+                success: false,
+                message: 'Refresh token is required'
+            });
+        }
+
+        const ipAddress = req.ip || req.connection.remoteAddress || '127.0.0.1';
+        
+        const refreshResult = await sessionService.refreshAccessToken(refresh_token, ipAddress);
+        
+        if (!refreshResult.success) {
+            return res.status(401).json(refreshResult);
+        }
+
+        res.json(refreshResult);
+    } catch (error) {
+        console.error('Error refreshing token:', error);
+        res.status(500).json({
             success: false,
-            error: err.message 
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Logout all sessions for current user
+ */
+export const logoutAllSessions = async (req, res) => {
+    try {
+        const user = req.user;
+        
+        if (!user) {
+            return res.status(401).json({ 
+                success: false,
+                message: 'Not authenticated' 
+            });
+        }
+        
+        const logoutResult = await sessionService.logoutAllSessions(user.id);
+        
+        res.json(logoutResult);
+    } catch (error) {
+        console.error('Error logging out all sessions:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Get user's active sessions
+ */
+export const getUserSessions = async (req, res) => {
+    try {
+        const user = req.user;
+        
+        if (!user) {
+            return res.status(401).json({ 
+                success: false,
+                message: 'Not authenticated' 
+            });
+        }
+        
+        const sessions = await sessionService.getUserActiveSessions(user.id);
+        
+        res.json({
+            success: true,
+            data: sessions,
+            total: sessions.length
+        });
+    } catch (error) {
+        console.error('Error getting user sessions:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Terminate specific session
+ */
+export const terminateSession = async (req, res) => {
+    try {
+        const user = req.user;
+        const { sessionId } = req.params;
+        
+        if (!user) {
+            return res.status(401).json({ 
+                success: false,
+                message: 'Not authenticated' 
+            });
+        }
+        
+        const terminateResult = await sessionService.terminateSession(sessionId, user.id);
+        
+        res.json(terminateResult);
+    } catch (error) {
+        console.error('Error terminating session:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Get session statistics
+ */
+export const getSessionStatistics = async (req, res) => {
+    try {
+        const user = req.user;
+        
+        if (!user) {
+            return res.status(401).json({ 
+                success: false,
+                message: 'Not authenticated' 
+            });
+        }
+        
+        const stats = await sessionService.getSessionStatistics(user.id);
+        
+        res.json({
+            success: true,
+            data: stats
+        });
+    } catch (error) {
+        console.error('Error getting session statistics:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
         });
     }
 };
