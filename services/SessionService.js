@@ -36,7 +36,7 @@ class SessionService {
       const session = await prisma.user_sessions.create({
         data: {
           user_id: userId,
-          session_token: sessionToken,
+          access_token: sessionToken,
           refresh_token: refreshToken,
           device_info: JSON.stringify(deviceInfo),
           ip_address: ipAddress,
@@ -143,7 +143,7 @@ class SessionService {
       });
 
       // Generate new access token
-      const accessToken = this.generateAccessToken(session.users, session.session_token);
+      const accessToken = this.generateAccessToken(session.users, session.access_token);
 
       console.log(`✅ Refreshed access token for user: ${session.users.username}`);
 
@@ -175,10 +175,10 @@ class SessionService {
       // Verify JWT
       const decoded = jwt.verify(accessToken, process.env.JWT_SECRET);
       
-      // Find session by session_token (jti in JWT)
+      // Find session by access_token (jti in JWT)
       const session = await prisma.user_sessions.findFirst({
         where: {
-          session_token: decoded.jti,
+          access_token: decoded.jti,
           is_active: true,
           expires_at: {
             gt: new Date()
@@ -238,11 +238,11 @@ class SessionService {
    */
   async logout(sessionToken) {
     try {
-      // Find session by session_token or refresh_token
+      // Find session by access_token or refresh_token
       const session = await prisma.user_sessions.findFirst({
         where: {
           OR: [
-            { session_token: sessionToken },
+            { access_token: sessionToken },
             { refresh_token: sessionToken }
           ],
           is_active: true

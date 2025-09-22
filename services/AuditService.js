@@ -470,6 +470,28 @@ class AuditService {
   }
 
   /**
+   * Log an activity with audit trail (Legacy method for backward compatibility)
+   * @param {string} userId - User UUID
+   * @param {string} action - Action type
+   * @param {string} resourceType - Resource type
+   * @param {string} resourceId - Resource UUID
+   * @param {Object} details - Additional details
+   * @param {string} organizationId - Organization UUID (optional)
+   * @returns {Promise<Object>} Created audit log
+   */
+  async logActivity(userId, action, resourceType, resourceId, details = {}, organizationId = null) {
+    return await this.log({
+      userId,
+      organizationId,
+      action,
+      resourceType,
+      resourceId,
+      newValues: details,
+      success: true
+    });
+  }
+
+  /**
    * Get request context from Express request
    * @param {Object} req - Express request object
    * @returns {Object} Context data

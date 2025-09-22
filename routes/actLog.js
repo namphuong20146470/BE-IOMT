@@ -39,7 +39,16 @@ import {
 } from '../controllers/departments/departments.controller.js';
 
 // Import các controller cần thiết cho audit logs
-import { getAllLogs, createLog, deleteLog, deleteAllLogs, createTestWarning } from '../controllers/auditLogs/auditLogs.controller.js';
+import { 
+    getAllLogs, 
+    getLogById,
+    createLog, 
+    deleteLog, 
+    deleteBulkLogs,
+    deleteAllLogs, 
+    getLogStats,
+    exportLogs
+} from '../controllers/auditLogs/auditLogs.controller.js';
 
 // Import permission controllers
 import {
@@ -139,14 +148,19 @@ router.post('/permission-groups', authMiddleware, createPermissionGroup);
 // AUDIT LOGS ROUTES
 // ====================================================================
 
-// Lấy tất cả audit logs (chỉ trưởng phòng TBYT, BGĐ BV, NCC GP)
-router.get('/logs', getAllLogs);
-router.post('/logs', authMiddleware, createLog);
-router.delete('/logs/:id', authMiddleware, deleteLog);
-// Xóa toàn bộ audit logs (chỉ trưởng phòng TBYT, BGĐ BV, NCC GP)
-router.post('/logs/all', deleteAllLogs);
-// Tạo test warning để kiểm tra hệ thống cảnh báo
-router.post('/logs/test-warning', authMiddleware, createTestWarning);
+// Basic CRUD operations
+router.get('/logs', authMiddleware, getAllLogs);                    // Get all logs with filters and pagination
+router.get('/logs/stats', authMiddleware, getLogStats);             // Get audit log statistics
+router.get('/logs/export', authMiddleware, exportLogs);             // Export logs (CSV/JSON)
+router.get('/logs/:id', authMiddleware, getLogById);                // Get specific log by ID
+router.post('/logs', authMiddleware, createLog);                    // Create new audit log
+router.delete('/logs/:id', authMiddleware, deleteLog);              // Delete specific log
+router.delete('/logs/bulk', authMiddleware, deleteBulkLogs);        // Delete multiple logs
+router.delete('/logs/all', authMiddleware, deleteAllLogs);          // Delete all logs (super admin only)
+
+// ====================================================================
+// AUTHENTICATION & TOKEN ROUTES
+
 
 // Đăng nhập
 router.post('/login', loginUser);
