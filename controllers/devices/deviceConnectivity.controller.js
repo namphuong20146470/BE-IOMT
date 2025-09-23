@@ -47,7 +47,7 @@ export const getDeviceConnectivity = async (req, res) => {
                 dc.heartbeat_interval, dc.last_connected, dc.is_active,
                 dc.created_at, dc.updated_at,
                 d.serial_number, d.asset_tag,
-                dm.name as model_name, dm.manufacturer
+                dm.name as model_name, dm.manufacturer_id
             FROM device_connectivity dc
             LEFT JOIN device d ON dc.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
@@ -118,6 +118,10 @@ export const getAllDeviceConnectivities = async (req, res) => {
             : '';
 
         const offset = (parseInt(page) - 1) * parseInt(limit);
+        
+        // Add limit and offset parameters
+        const limitParamIndex = paramIndex;
+        const offsetParamIndex = paramIndex + 1;
         params.push(parseInt(limit), offset);
 
         const connectivities = await prisma.$queryRawUnsafe(`
@@ -127,8 +131,8 @@ export const getAllDeviceConnectivities = async (req, res) => {
                 dc.heartbeat_interval, dc.last_connected, dc.is_active,
                 dc.created_at, dc.updated_at,
                 d.serial_number, d.asset_tag, d.status as device_status,
-                dm.name as model_name, dm.manufacturer,
-                o.org_name as organization_name,
+                dm.name as model_name, m.name as manufacturer,
+                o.name as organization_name,
                 CASE 
                     WHEN dc.last_connected IS NULL THEN 'never_connected'
                     WHEN dc.last_connected < NOW() - INTERVAL '1 hour' THEN 'offline'
@@ -137,10 +141,11 @@ export const getAllDeviceConnectivities = async (req, res) => {
             FROM device_connectivity dc
             LEFT JOIN device d ON dc.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
+            LEFT JOIN organizations o ON d.organization_id = o.id
             ${whereClause}
             ORDER BY dc.last_connected DESC NULLS LAST
-            LIMIT $${paramIndex - 1} OFFSET $${paramIndex}
+            LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
         `, ...params);
 
         // Get total count
@@ -149,7 +154,7 @@ export const getAllDeviceConnectivities = async (req, res) => {
             SELECT COUNT(*)::integer as total
             FROM device_connectivity dc
             LEFT JOIN device d ON dc.device_id = d.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
+            LEFT JOIN organizations o ON d.organization_id = o.id
             ${whereClause}
         `, ...countParams);
 

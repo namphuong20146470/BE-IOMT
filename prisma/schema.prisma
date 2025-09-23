@@ -586,7 +586,7 @@ model warning_notifications {
 model user_sessions {
   id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   user_id       String    @db.Uuid
-  session_token String    @unique @db.VarChar(255)
+  access_token  String    @unique(map: "user_sessions_session_token_key") @db.VarChar(255)
   refresh_token String?   @db.VarChar(255)
   device_info   String?
   ip_address    String?   @db.Inet
@@ -597,10 +597,10 @@ model user_sessions {
   users         users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_user_sessions_user")
-  @@index([session_token], map: "idx_user_sessions_token")
   @@index([is_active], map: "idx_user_sessions_active")
   @@index([expires_at], map: "idx_user_sessions_expires")
   @@index([last_activity], map: "idx_user_sessions_last_activity")
+  @@index([access_token], map: "idx_user_sessions_access_token")
 }
 
 model audit_logs {
@@ -657,13 +657,23 @@ model permissions {
   is_active         Boolean?           @default(true)
   created_at        DateTime?          @default(now()) @db.Timestamptz(6)
   updated_at        DateTime?          @default(now()) @updatedAt @db.Timestamptz(6)
+  parent_id         String?            @db.Uuid
+  scope             String?            @default("global") @db.VarChar(20)
   permission_groups permission_groups? @relation(fields: [group_id], references: [id], onUpdate: NoAction)
+  permissions       permissions?       @relation("permissionsTopermissions", fields: [parent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  other_permissions permissions[]      @relation("permissionsTopermissions")
   role_permissions  role_permissions[]
   user_permissions  user_permissions[]
 
   @@index([group_id], map: "idx_permissions_group")
   @@index([is_active], map: "idx_permissions_active")
   @@index([priority], map: "idx_permissions_priority")
+  @@index([name], map: "idx_permissions_name")
+  @@index([parent_id], map: "idx_permissions_parent_id")
+  @@index([resource, action], map: "idx_permissions_resource_action")
+  @@index([resource, is_active], map: "idx_permissions_resource_active")
+  @@index([scope], map: "idx_permissions_scope")
+  @@index([scope, resource], map: "idx_permissions_scope_resource")
 }
 
 model roles {
@@ -877,6 +887,16 @@ model users_backup {
   device_warning_logs_acknowledged device_warning_logs[] @relation("DeviceWarningLogAcknowledgedBy")
   logs_created                     logs[]                @relation("LogCreatedBy")
   roles_backup                     roles_backup?         @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_role_id_fkey")
+}
+
+model device_data_logs {
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id String    @db.Uuid
+  data_json Json
+  timestamp DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([device_id], map: "idx_device_data_logs_device")
+  @@index([timestamp], map: "idx_device_data_logs_timestamp")
 }
 
 enum device_status {

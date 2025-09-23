@@ -6,6 +6,8 @@ import { createRole, getAllRoles, deleteRole, updateRole } from '../controllers/
 import deviceRoutes from './deviceRoutes.js';
 // Import device data processor routes
 import deviceDataRoutes from './deviceDataRoutes.js';
+// Import MQTT device routes
+import mqttRoutes from './mqttRoutes.js';
 // Import các controller cần thiết
 import {
     loginUser,
@@ -220,5 +222,8 @@ router.use('/devices', deviceRoutes);
 
 // Device data processor routes (Dynamic MQTT system)
 router.use('/device-processor', deviceDataRoutes);
+
+// MQTT device management routes
+router.use('/mqtt', mqttRoutes);
 
 export default router;

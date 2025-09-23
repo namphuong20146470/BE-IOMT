@@ -66,7 +66,7 @@ class SessionService {
         data: {
           access_token: accessToken,
           refresh_token: refreshToken,
-          expires_in: 900, // 15 minutes in seconds
+          expires_in: 1800, // 30 minutes in seconds
           token_type: 'Bearer',
           session_id: session.id,
           user: session.users
@@ -151,7 +151,7 @@ class SessionService {
         success: true,
         data: {
           access_token: accessToken,
-          expires_in: 900, // 15 minutes
+          expires_in: 1800, // 30 minutes
           token_type: 'Bearer',
           user: session.users
         }

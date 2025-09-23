@@ -49,7 +49,7 @@ export const getAllDevices = async (req, res) => {
         }
 
         if (manufacturer) {
-            whereConditions.push(`dm.manufacturer ILIKE $${paramIndex}`);
+            whereConditions.push(`m.name ILIKE $${paramIndex}`);
             params.push(`%${manufacturer}%`);
             paramIndex++;
         }
@@ -76,7 +76,7 @@ export const getAllDevices = async (req, res) => {
                 d.id, d.serial_number, d.asset_tag, d.status,
                 d.purchase_date, d.installation_date, d.created_at, d.updated_at,
                 d.model_id, d.organization_id, d.department_id,
-                dm.name as model_name, dm.manufacturer, dm.specifications,
+                dm.name as model_name, m.name as manufacturer, dm.specifications,
                 dc.name as category_name,
                 o.id as organization_id_ref, o.name as organization_name,
                 dept.id as department_id_ref, dept.name as department_name,
@@ -97,6 +97,7 @@ export const getAllDevices = async (req, res) => {
                 END as connection_status
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.id
@@ -113,6 +114,7 @@ export const getAllDevices = async (req, res) => {
             SELECT COUNT(*)::integer as total
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.id
@@ -146,13 +148,22 @@ export const getAllDevices = async (req, res) => {
 export const getDeviceById = async (req, res) => {
     try {
         const { id } = req.params;
+        
+        // Validate UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(id)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid device ID format. Must be a valid UUID.'
+            });
+        }
 
         const device = await prisma.$queryRaw`
             SELECT 
                 d.id, d.serial_number, d.asset_tag, d.status,
                 d.purchase_date, d.installation_date, d.created_at, d.updated_at,
                 d.model_id, d.organization_id, d.department_id,
-                dm.name as model_name, dm.manufacturer, dm.specifications,
+                dm.name as model_name, m.name as manufacturer, dm.specifications,
                 dc.name as category_name, dc.description as category_description,
                 o.name as organization_name,
                 dept.name as department_name,
@@ -163,6 +174,7 @@ export const getDeviceById = async (req, res) => {
                 conn.ssl_enabled, conn.heartbeat_interval, conn.last_connected, conn.is_active
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.id

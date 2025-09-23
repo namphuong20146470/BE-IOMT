@@ -16,7 +16,7 @@ export const getWarrantyByDevice = async (req, res) => {
                 wi.id, wi.device_id, wi.warranty_start, wi.warranty_end, wi.provider,
                 d.serial_number, d.asset_tag,
                 dm.name as model_name, dm.manufacturer,
-                o.org_name as organization_name,
+                o.name as organization_name,
                 CASE 
                     WHEN wi.warranty_end < CURRENT_DATE THEN 'expired'
                     WHEN wi.warranty_end < CURRENT_DATE + INTERVAL '30 days' THEN 'expiring_soon'
@@ -27,7 +27,7 @@ export const getWarrantyByDevice = async (req, res) => {
             FROM warranty_info wi
             LEFT JOIN device d ON wi.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
+            LEFT JOIN organizations o ON d.organization_id = o.id
             WHERE wi.device_id = ${deviceId}::uuid
         `;
 
@@ -106,7 +106,7 @@ export const getAllWarranties = async (req, res) => {
                 wi.id, wi.device_id, wi.warranty_start, wi.warranty_end, wi.provider,
                 d.serial_number, d.asset_tag, d.status as device_status,
                 dm.name as model_name, dm.manufacturer,
-                o.org_name as organization_name,
+                o.name as organization_name,
                 dept.dept_name as department_name,
                 CASE 
                     WHEN wi.warranty_end < CURRENT_DATE THEN 'expired'
@@ -118,7 +118,7 @@ export const getAllWarranties = async (req, res) => {
             FROM warranty_info wi
             LEFT JOIN device d ON wi.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
+            LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.dept_id
             ${whereClause}
             ${havingCondition}
@@ -132,7 +132,7 @@ export const getAllWarranties = async (req, res) => {
             SELECT COUNT(*)::integer as total
             FROM warranty_info wi
             LEFT JOIN device d ON wi.device_id = d.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
+            LEFT JOIN organizations o ON d.organization_id = o.id
             ${whereClause}
         `;
 
@@ -432,13 +432,13 @@ export const getExpiringWarranties = async (req, res) => {
                 wi.id, wi.device_id, wi.warranty_start, wi.warranty_end, wi.provider,
                 d.serial_number, d.asset_tag,
                 dm.name as model_name, dm.manufacturer,
-                o.org_name as organization_name,
+                o.name as organization_name,
                 dept.dept_name as department_name,
                 (wi.warranty_end - CURRENT_DATE) as days_remaining
             FROM warranty_info wi
             LEFT JOIN device d ON wi.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
-            LEFT JOIN organizations o ON d.organization_id = o.org_id
+            LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.dept_id
             ${whereClause}
             ORDER BY wi.warranty_end ASC

@@ -46,7 +46,7 @@ export const getDeviceData = async (req, res) => {
           ddl.*,
           d.serial_number,
           dm.name as model_name,
-          dm.manufacturer
+          dm.manufacturer_id
         FROM device_data_logs ddl
         LEFT JOIN device d ON ddl.device_id = d.id
         LEFT JOIN device_models dm ON d.model_id = dm.id
@@ -177,7 +177,7 @@ export const getDeviceDataStats = async (req, res) => {
         d.name as device_name,
         d.status,
         dm.name as model_name,
-        dm.manufacturer,
+        dm.manufacturer_id,
         dc.last_connected,
         dc.is_active as connectivity_active
       FROM device d
