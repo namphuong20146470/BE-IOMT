@@ -20,13 +20,15 @@ class SessionService {
    * @param {string} userId - User UUID
    * @param {Object} deviceInfo - Device information
    * @param {string} ipAddress - Client IP address
+   * @param {Object} userForToken - Full user data for JWT token
    * @returns {Promise<Object>} Session tokens
    */
-  async createSession(userId, deviceInfo = {}, ipAddress = null) {
+  async createSession(userId, deviceInfo = {}, ipAddress = null, userForToken = null) {
     try {
       // Generate session and refresh tokens
       const sessionToken = this.generateSessionToken();
       const refreshToken = this.generateRefreshToken();
+      const hashedRefreshToken = this.hashToken(refreshToken);
 
       // Calculate expires_at (refresh token expiry)
       const expiresAt = new Date();
@@ -37,7 +39,7 @@ class SessionService {
         data: {
           user_id: userId,
           access_token: sessionToken,
-          refresh_token: refreshToken,
+          refresh_token: hashedRefreshToken, // Store hashed version
           device_info: JSON.stringify(deviceInfo),
           ip_address: ipAddress,
           expires_at: expiresAt,
@@ -56,8 +58,9 @@ class SessionService {
         }
       });
 
-      // Generate access token (JWT)
-      const accessToken = this.generateAccessToken(session.users, sessionToken);
+      // Generate access token (JWT) - use full user data if provided
+      const userDataForToken = userForToken || session.users;
+      const accessToken = this.generateAccessToken(userDataForToken, sessionToken);
 
       console.log(`✅ Created session for user: ${session.users.username} from IP: ${ipAddress}`);
 
@@ -89,10 +92,13 @@ class SessionService {
    */
   async refreshAccessToken(refreshToken, ipAddress = null) {
     try {
+      // Hash the refresh token to match stored version
+      const hashedRefreshToken = this.hashToken(refreshToken);
+      
       // Find active session with refresh token
       const session = await prisma.user_sessions.findFirst({
         where: {
-          refresh_token: refreshToken,
+          refresh_token: hashedRefreshToken,
           is_active: true,
           expires_at: {
             gt: new Date() // Not expired
@@ -553,6 +559,15 @@ class SessionService {
   }
 
   /**
+   * Hash token for secure storage
+   * @param {string} token - Token to hash
+   * @returns {string} Hashed token
+   */
+  hashToken(token) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  /**
    * Generate JWT access token
    * @param {Object} user - User object
    * @param {string} sessionToken - Session token (for jti)
@@ -565,6 +580,9 @@ class SessionService {
       username: user.username,
       full_name: user.full_name,
       email: user.email,
+      organization_id: user.organization_id,
+      department_id: user.department_id,
+      roles: user.roles || [],
       iat: Math.floor(Date.now() / 1000), // Issued at
       exp: Math.floor(Date.now() / 1000) + (15 * 60) // Expires in 15 minutes
     };

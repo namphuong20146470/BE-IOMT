@@ -101,12 +101,38 @@ export const loginUser = async (req, res) => {
         const user = await prisma.$queryRaw`
             SELECT u.id, u.username, u.full_name, u.email, u.organization_id, u.department_id, u.password_hash,
                    o.name as organization_name,
-                   d.name as department_name
+                   d.name as department_name,
+                   COALESCE(
+                       JSON_AGG(
+                           JSON_BUILD_OBJECT(
+                               'id', r.id,
+                               'name', r.name,
+                               'description', r.description,
+                               'is_system_role', r.is_system_role,
+                               'color', r.color,
+                               'icon', r.icon,
+                               'permissions', COALESCE(
+                                   (
+                                       SELECT JSON_AGG(p.name)
+                                       FROM role_permissions rp
+                                       JOIN permissions p ON rp.permission_id = p.id
+                                       WHERE rp.role_id = r.id
+                                   ),
+                                   '[]'::json
+                               )
+                           )
+                       ) FILTER (WHERE r.id IS NOT NULL),
+                       '[]'::json
+                   ) as roles
             FROM users u
             LEFT JOIN organizations o ON u.organization_id = o.id
             LEFT JOIN departments d ON u.department_id = d.id
+            LEFT JOIN user_roles ur ON u.id = ur.user_id
+            LEFT JOIN roles r ON ur.role_id = r.id AND r.is_active = true
             WHERE u.username = ${username}
             AND u.is_active = true
+            GROUP BY u.id, u.username, u.full_name, u.email, u.organization_id, u.department_id, 
+                     u.password_hash, o.name, d.name
         `;
 
         if (user.length === 0) {
@@ -162,6 +188,15 @@ export const loginUser = async (req, res) => {
         // Get client IP
         const ipAddress = req.ip || req.connection.remoteAddress || '127.0.0.1';
 
+        // Parse roles JSON if it's a string
+        let parsedRoles = [];
+        try {
+            parsedRoles = typeof user[0].roles === 'string' ? JSON.parse(user[0].roles) : user[0].roles || [];
+        } catch (error) {
+            console.error('Error parsing roles:', error);
+            parsedRoles = [];
+        }
+
         // Check for suspicious activity
         const securityCheck = await sessionService.detectSuspiciousActivity(user[0].id, ipAddress);
         
@@ -170,8 +205,17 @@ export const loginUser = async (req, res) => {
             // Could implement additional security measures here (email notification, 2FA, etc.)
         }
 
-        // Create session using SessionService
-        const sessionResult = await sessionService.createSession(user[0].id, deviceInfo, ipAddress);
+        // Create session using SessionService with full user data
+        const userForToken = {
+            id: user[0].id,
+            username: user[0].username,
+            full_name: user[0].full_name,
+            email: user[0].email,
+            organization_id: user[0].organization_id,
+            department_id: user[0].department_id,
+            roles: parsedRoles
+        };
+        const sessionResult = await sessionService.createSession(user[0].id, deviceInfo, ipAddress, userForToken);
 
         if (!sessionResult.success) {
             return res.status(500).json({
@@ -180,8 +224,8 @@ export const loginUser = async (req, res) => {
             });
         }
 
-        // Remove password_hash from response
-        const { password_hash, ...userWithoutPassword } = user[0];
+        // Remove password_hash from response 
+        const { password_hash, roles, ...userWithoutPassword } = user[0];
 
         res.status(200).json({
             success: true,
@@ -190,7 +234,10 @@ export const loginUser = async (req, res) => {
                 refresh_token: sessionResult.data.refresh_token,
                 expires_in: sessionResult.data.expires_in,
                 token_type: sessionResult.data.token_type,
-                user: userWithoutPassword,
+                user: {
+                    ...userWithoutPassword,
+                    roles: parsedRoles
+                },
                 session_id: sessionResult.data.session_id
             },
             message: 'Login successful',

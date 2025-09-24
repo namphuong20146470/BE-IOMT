@@ -261,17 +261,16 @@ class PermissionService {
         return memoryCache;
       }
 
-      // Check database cache
-      const dbCache = await prisma.$queryRaw`
-        SELECT permission_hash, permissions_json, expires_at
-        FROM user_permission_cache 
-        WHERE user_id = ${userId}::uuid 
-        AND expires_at > CURRENT_TIMESTAMP
-      `;
+      // Check database cache using Prisma
+      const dbCache = await prisma.user_permission_cache.findUnique({
+        where: {
+          user_id: userId
+        }
+      });
 
-      if (dbCache.length > 0) {
+      if (dbCache && dbCache.expires_at > new Date()) {
         console.log(`📋 Using database cache for user ${userId}`);
-        const cached = dbCache[0].permissions_json;
+        const cached = dbCache.permissions;
         // Store in memory cache
         this.cache.set(userId, cached);
         return cached;
@@ -291,7 +290,6 @@ class PermissionService {
    */
   async cachePermissions(userId, permissions) {
     try {
-      const hash = this.generatePermissionHash(permissions);
       const expiresAt = new Date(Date.now() + this.cacheTimeout);
 
       // Store in memory cache
@@ -300,17 +298,22 @@ class PermissionService {
         expires_at: expiresAt
       });
 
-      // Store in database cache
-      await prisma.$executeRaw`
-        INSERT INTO user_permission_cache (user_id, permission_hash, permissions_json, expires_at)
-        VALUES (${userId}::uuid, ${hash}, ${JSON.stringify(permissions)}::jsonb, ${expiresAt})
-        ON CONFLICT (user_id) 
-        DO UPDATE SET 
-          permission_hash = EXCLUDED.permission_hash,
-          permissions_json = EXCLUDED.permissions_json,
-          expires_at = EXCLUDED.expires_at,
-          created_at = CURRENT_TIMESTAMP
-      `;
+      // Store in database cache using Prisma upsert
+      await prisma.user_permission_cache.upsert({
+        where: {
+          user_id: userId
+        },
+        create: {
+          user_id: userId,
+          permissions: permissions,
+          expires_at: expiresAt
+        },
+        update: {
+          permissions: permissions,
+          expires_at: expiresAt,
+          computed_at: new Date()
+        }
+      });
 
       console.log(`💾 Cached permissions for user ${userId}`);
     } catch (error) {
@@ -341,11 +344,12 @@ class PermissionService {
       // Remove from memory cache
       this.cache.delete(userId);
 
-      // Remove from database cache
-      await prisma.$executeRaw`
-        DELETE FROM user_permission_cache 
-        WHERE user_id = ${userId}::uuid
-      `;
+      // Remove from database cache using Prisma
+      await prisma.user_permission_cache.deleteMany({
+        where: {
+          user_id: userId
+        }
+      });
 
       console.log(`🗑️ Invalidated cache for user ${userId}`);
     } catch (error) {
@@ -365,13 +369,16 @@ class PermissionService {
         }
       }
 
-      // Cleanup database cache
-      const result = await prisma.$executeRaw`
-        DELETE FROM user_permission_cache 
-        WHERE expires_at < CURRENT_TIMESTAMP
-      `;
+      // Cleanup database cache using Prisma
+      const result = await prisma.user_permission_cache.deleteMany({
+        where: {
+          expires_at: {
+            lt: new Date()
+          }
+        }
+      });
 
-      console.log(`🧹 Cleaned up expired caches`);
+      console.log(`🧹 Cleaned up ${result.count} expired caches`);
       return result;
     } catch (error) {
       console.error('Error cleaning up caches:', error);
