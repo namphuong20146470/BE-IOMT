@@ -24,9 +24,64 @@ export const getAllDevices = async (req, res) => {
         let params = [];
         let paramIndex = 1;
 
-        if (organization_id) {
-            whereConditions.push(`d.organization_id = $${paramIndex}::uuid`);
-            params.push(organization_id);
+        // **SECURITY: Always filter by user's organization**
+        const userOrgId = req.user?.organization_id;
+        if (!userOrgId) {
+            return res.status(403).json({
+                success: false,
+                message: 'User organization not found'
+            });
+        }
+
+        // Force organization filter based on user's organization
+        whereConditions.push(`d.organization_id = $${paramIndex}::uuid`);
+        params.push(userOrgId);
+        paramIndex++;
+
+        // Additional organization filter from query (must match user's org)
+        if (organization_id && organization_id !== userOrgId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot access devices from different organization'
+            });
+        }
+
+        // **DEPARTMENT FILTER: Only show user's department devices if user has department**
+        const userDeptId = req.user?.department_id;
+        if (userDeptId) {
+            // If user has department, only show devices from their department (unless they request specific dept)
+            if (department_id) {
+                // Validate user can access requested department
+                if (department_id !== userDeptId) {
+                    // Check if user has permission to view other departments
+                    const hasPermission = req.user?.permissions?.includes('view_all_departments') || false;
+                    if (!hasPermission) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'Access denied: Cannot access devices from different department'
+                        });
+                    }
+                }
+                whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
+                params.push(department_id);
+                paramIndex++;
+            } else {
+                // Auto-filter by user's department if no specific department requested
+                whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
+                params.push(userDeptId);
+                paramIndex++;
+            }
+        } else if (department_id) {
+            // User has no department but requests specific department - check permission
+            const hasPermission = req.user?.permissions?.includes('view_all_departments') || false;
+            if (!hasPermission) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: No permission to filter by department'
+                });
+            }
+            whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
+            params.push(department_id);
             paramIndex++;
         }
         
@@ -158,6 +213,15 @@ export const getDeviceById = async (req, res) => {
             });
         }
 
+        // **SECURITY: Filter by user's organization**
+        const userOrgId = req.user?.organization_id;
+        if (!userOrgId) {
+            return res.status(403).json({
+                success: false,
+                message: 'User organization not found'
+            });
+        }
+
         const device = await prisma.$queryRaw`
             SELECT 
                 d.id, d.serial_number, d.asset_tag, d.status,
@@ -180,14 +244,28 @@ export const getDeviceById = async (req, res) => {
             LEFT JOIN departments dept ON d.department_id = dept.id
             LEFT JOIN warranty_info wi ON d.id = wi.device_id
             LEFT JOIN device_connectivity conn ON d.id = conn.device_id
-            WHERE d.id = ${id}::uuid
+            WHERE d.id = ${id}::uuid 
+            AND d.organization_id = ${userOrgId}::uuid
         `;
 
         if (device.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: 'Device not found'
+                message: 'Device not found or access denied'
             });
+        }
+
+        // **DEPARTMENT LEVEL CHECK**
+        const userDeptId = req.user?.department_id;
+        if (userDeptId && device[0].department_id && device[0].department_id !== userDeptId) {
+            // Check if user has permission to view other departments
+            const hasPermission = req.user?.permissions?.includes('view_all_departments') || false;
+            if (!hasPermission) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: Cannot access device from different department'
+                });
+            }
         }
 
         res.status(200).json({

@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import iot from './routes/iotRoutes.js';
 
 import actLog from './routes/actLog.js';
+import masterDataRoutes from './routes/masterDataRoutes.js';
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
 // New Dynamic MQTT system (parallel)
@@ -31,6 +32,7 @@ app.use(cors());
 // Routes
 app.use('/iot', iot);
 app.use('/actlog', actLog);
+app.use('/actlog', masterDataRoutes); // Master data routes
 
 // SSL Configuration
 const { options, useHttps } = configureSSL();
