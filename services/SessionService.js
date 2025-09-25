@@ -233,6 +233,14 @@ class SessionService {
       };
     } catch (error) {
       console.error('Error validating access token:', error);
+      
+      if (error.name === 'JsonWebTokenError') {
+        console.error('❌ JWT Error Details:');
+        console.error('  - Message:', error.message);
+        console.error('  - JWT_SECRET exists:', !!process.env.JWT_SECRET);
+        console.error('  - JWT_SECRET length:', process.env.JWT_SECRET?.length || 0);
+      }
+      
       return null;
     }
   }
