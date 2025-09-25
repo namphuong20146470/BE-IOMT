@@ -1,5 +1,6 @@
 import express from 'express';
 import authMiddleware from '../middleware/authMiddleware.js';
+import { requirePermission, requireOrganization } from '../middleware/rbacMiddleware.js';
 
 // Device Category Controllers
 import {
@@ -112,7 +113,7 @@ router.delete('/device-models/:id', authMiddleware, deleteDeviceModel);
 // ====================================================================
 
 // GET /devices - Get all devices with filtering and pagination
-router.get('/devices', getAllDevices);
+router.get('/devices', authMiddleware, getAllDevices, requirePermission('device.read'));
 
 // GET /devices/statistics - Get device statistics
 router.get('/devices/statistics', getDeviceStatistics);
