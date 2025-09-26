@@ -288,8 +288,8 @@ export const createDevice = async (req, res) => {
     try {
         const {
             model_id,
-            organization_id,
-            department_id,
+            organization_id,  // Optional - sẽ được validate
+            department_id,    // Optional - sẽ được validate  
             serial_number,
             asset_tag,
             status = 'active',
@@ -297,89 +297,185 @@ export const createDevice = async (req, res) => {
             installation_date
         } = req.body;
 
-        if (!model_id || !organization_id || !serial_number) {
+        // ====================================================================
+        // 1. BASIC VALIDATION
+        // ====================================================================
+        if (!model_id || !serial_number) {
             return res.status(400).json({
                 success: false,
-                message: 'Model ID, organization ID, and serial number are required'
+                message: 'Model ID and serial number are required'
             });
         }
 
-        // Check if model exists
-        const modelExists = await prisma.$queryRaw`
-            SELECT id FROM device_models WHERE id = ${model_id}::uuid
-        `;
-        if (modelExists.length === 0) {
-            return res.status(400).json({
+        // ====================================================================
+        // 2. USER ORGANIZATION & DEPARTMENT VALIDATION
+        // ====================================================================
+        const userOrgId = req.user?.organization_id;
+        const userDeptId = req.user?.department_id;
+        const userPermissions = req.user?.permissions || [];
+
+        if (!userOrgId) {
+            return res.status(403).json({
                 success: false,
-                message: 'Device model not found'
+                message: 'User organization not found'
             });
         }
 
-        // Check if organization exists
-        const orgExists = await prisma.$queryRaw`
-            SELECT id FROM organizations WHERE id = ${organization_id}::uuid
-        `;
-        if (orgExists.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Organization not found'
-            });
-        }
+        // ====================================================================
+        // 3. ORGANIZATION VALIDATION BASED ON USER ROLE
+        // ====================================================================
+        let finalOrganizationId = userOrgId; // Default to user's org
 
-        // Check if department exists (if provided)
-        if (department_id) {
-            const deptExists = await prisma.$queryRaw`
-                SELECT id FROM departments WHERE id = ${department_id}::uuid
+        // Check if user is trying to create in different organization
+        if (organization_id && organization_id !== userOrgId) {
+            // Only System Admin or Organization Admin can create in different orgs
+            const canCreateCrossOrg = userPermissions.includes('organization.create') || 
+                                     userPermissions.includes('system.admin');
+            
+            if (!canCreateCrossOrg) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: Cannot create devices in different organization'
+                });
+            }
+
+            // Validate target organization exists
+            const orgExists = await prisma.$queryRaw`
+                SELECT id, name FROM organizations WHERE id = ${organization_id}::uuid AND is_active = true
             `;
+            if (orgExists.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Target organization not found or inactive'
+                });
+            }
+
+            finalOrganizationId = organization_id;
+        }
+
+        // ====================================================================
+        // 4. DEPARTMENT VALIDATION BASED ON USER ROLE  
+        // ====================================================================
+        let finalDepartmentId = null;
+
+        if (department_id) {
+            // Check if department belongs to target organization
+            const deptExists = await prisma.$queryRaw`
+                SELECT id, name FROM departments 
+                WHERE id = ${department_id}::uuid 
+                AND organization_id = ${finalOrganizationId}::uuid 
+                AND is_active = true
+            `;
+            
             if (deptExists.length === 0) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Department not found'
+                    message: 'Department not found in target organization or inactive'
                 });
             }
+
+            // Check if user can create in this department
+            if (userDeptId && department_id !== userDeptId) {
+                // User trying to create in different department
+                const canCreateCrossDept = userPermissions.includes('device.create.all_departments') ||
+                                          userPermissions.includes('department.manage') ||
+                                          userPermissions.includes('organization.admin');
+                
+                if (!canCreateCrossDept) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Access denied: Cannot create devices in different department'
+                    });
+                }
+            }
+
+            finalDepartmentId = department_id;
+        } else {
+            // No department specified - auto-assign user's department if exists
+            finalDepartmentId = userDeptId;
         }
 
-        // Check for duplicate serial number
-        const duplicateSerial = await prisma.$queryRaw`
-            SELECT id FROM device WHERE serial_number = ${serial_number}
+        // ====================================================================
+        // 5. MODEL VALIDATION
+        // ====================================================================
+        const modelExists = await prisma.$queryRaw`
+            SELECT dm.id, dm.name, dc.name as category_name
+            FROM device_models dm
+            LEFT JOIN device_categories dc ON dm.category_id = dc.id
+            WHERE dm.id = ${model_id}::uuid AND dm.is_active = true
         `;
-        if (duplicateSerial.length > 0) {
+        
+        if (modelExists.length === 0) {
             return res.status(400).json({
                 success: false,
-                message: 'Device with this serial number already exists'
+                message: 'Device model not found or inactive'
             });
         }
 
-        // Check for duplicate asset tag within organization
+        // ====================================================================
+        // 6. DUPLICATE CHECKS
+        // ====================================================================
+        
+        // Check serial number globally unique
+        const duplicateSerial = await prisma.$queryRaw`
+            SELECT id, organization_id FROM device WHERE serial_number = ${serial_number}
+        `;
+        if (duplicateSerial.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: 'Device with this serial number already exists',
+                conflict: {
+                    field: 'serial_number',
+                    value: serial_number,
+                    existing_device_id: duplicateSerial[0].id
+                }
+            });
+        }
+
+        // Check asset tag unique within organization
         if (asset_tag) {
             const duplicateAssetTag = await prisma.$queryRaw`
                 SELECT id FROM device 
-                WHERE organization_id = ${organization_id}::uuid 
+                WHERE organization_id = ${finalOrganizationId}::uuid 
                 AND asset_tag = ${asset_tag}
             `;
             if (duplicateAssetTag.length > 0) {
-                return res.status(400).json({
+                return res.status(409).json({
                     success: false,
-                    message: 'Asset tag already exists in this organization'
+                    message: 'Asset tag already exists in this organization',
+                    conflict: {
+                        field: 'asset_tag',
+                        value: asset_tag,
+                        organization_id: finalOrganizationId
+                    }
                 });
             }
         }
 
-        // Handle optional date fields
+        // ====================================================================
+        // 7. CREATE DEVICE
+        // ====================================================================
+        
         const purchaseDateValue = purchase_date ? new Date(purchase_date) : null;
         const installationDateValue = installation_date ? new Date(installation_date) : null;
-        const departmentIdValue = department_id || null;
 
         const newDevice = await prisma.$queryRaw`
             INSERT INTO device (
-                model_id, organization_id, department_id, serial_number, 
-                asset_tag, status, purchase_date, installation_date,
-                created_at, updated_at
+                model_id, 
+                organization_id, 
+                department_id, 
+                serial_number, 
+                asset_tag, 
+                status, 
+                purchase_date, 
+                installation_date,
+                created_at, 
+                updated_at
             )
             VALUES (
                 ${model_id}::uuid, 
-                ${organization_id}::uuid, 
-                ${departmentIdValue}::uuid,
+                ${finalOrganizationId}::uuid, 
+                ${finalDepartmentId}::uuid,
                 ${serial_number}, 
                 ${asset_tag || null}, 
                 ${status}::device_status,
@@ -391,11 +487,37 @@ export const createDevice = async (req, res) => {
             RETURNING *
         `;
 
+        // ====================================================================
+        // 8. GET CREATED DEVICE WITH FULL INFO
+        // ====================================================================
+        const createdDeviceInfo = await prisma.$queryRaw`
+            SELECT 
+                d.id, d.serial_number, d.asset_tag, d.status,
+                d.created_at, d.organization_id, d.department_id,
+                dm.name as model_name,
+                o.name as organization_name,
+                dept.name as department_name,
+                dc.name as category_name
+            FROM device d
+            LEFT JOIN device_models dm ON d.model_id = dm.id
+            LEFT JOIN device_categories dc ON dm.category_id = dc.id  
+            LEFT JOIN organizations o ON d.organization_id = o.id
+            LEFT JOIN departments dept ON d.department_id = dept.id
+            WHERE d.id = ${newDevice[0].id}::uuid
+        `;
+
         res.status(201).json({
             success: true,
-            data: newDevice[0],
-            message: 'Device created successfully'
+            data: createdDeviceInfo[0],
+            message: 'Device created successfully',
+            created_by: {
+                user_id: req.user.id,
+                username: req.user.username,
+                organization_id: req.user.organization_id,
+                department_id: req.user.department_id
+            }
         });
+
     } catch (error) {
         console.error('Error creating device:', error);
         res.status(500).json({

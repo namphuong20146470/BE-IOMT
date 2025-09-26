@@ -7,6 +7,36 @@ import auditService from '../services/AuditService.js';
  */
 
 /**
+ * Helper: Check if user is Super Admin
+ * @param {Object} user - User object from JWT
+ * @returns {boolean} True if Super Admin
+ */
+export function isSuperAdmin(user) {
+  if (!user || !user.roles) return false;
+  
+  return user.roles.some(role => 
+    role.is_system_role === true || 
+    role.name?.toLowerCase().includes('super admin') ||
+    role.name?.toLowerCase() === 'super admin'
+  );
+}
+
+/**
+ * Helper: Check if user should have full organization access
+ * @param {Object} user - User object from JWT
+ * @returns {boolean} True if should have full access
+ */
+export function hasFullOrganizationAccess(user) {
+  // Super Admin always has full access
+  if (isSuperAdmin(user)) return true;
+  
+  // System admin without organization_id has full access
+  if (!user.organization_id) return true;
+  
+  return false;
+}
+
+/**
  * Permission-based middleware factory
  * @param {string} permission - Required permission (e.g., 'device.read')
  * @param {string} resourceType - Resource type (optional)
@@ -15,8 +45,18 @@ import auditService from '../services/AuditService.js';
 export function requirePermission(permission, resourceType = null) {
   return async (req, res, next) => {
     try {
+      console.log(`🔐 RBAC Middleware - Checking permission: ${permission}`);
+      console.log(`🔐 RBAC Middleware - User:`, JSON.stringify({
+        id: req.user?.id,
+        username: req.user?.username,
+        organization_id: req.user?.organization_id,
+        roles: req.user?.roles?.map(r => ({ name: r.name, is_system_role: r.is_system_role })),
+        permissions: req.user?.permissions ? 'present' : 'missing'
+      }, null, 2));
+
       // Must be authenticated first
       if (!req.user || !req.user.id) {
+        console.log(`❌ RBAC Middleware - User not authenticated`);
         await auditService.logAccessDenied(
           null, null, permission, resourceType, null,
           req.ip, req.get('User-Agent')
@@ -29,6 +69,8 @@ export function requirePermission(permission, resourceType = null) {
 
       const resourceId = req.params.id || req.params.resourceId || null;
       
+      console.log(`🔐 RBAC Middleware - Calling permissionService.hasPermission(${req.user.id}, ${permission})`);
+      
       // Check user permissions
       const hasPermission = await permissionService.hasPermission(
         req.user.id,
@@ -36,6 +78,8 @@ export function requirePermission(permission, resourceType = null) {
         resourceType,
         resourceId
       );
+      
+      console.log(`🔐 RBAC Middleware - Permission result: ${hasPermission}`);
 
       if (!hasPermission) {
         // Log failed permission check
@@ -75,7 +119,11 @@ export function requirePermission(permission, resourceType = null) {
         }
       });
       
-      console.log(`✅ Permission granted: ${req.user.username} → ${permission}`);
+      // Add Super Admin info to request for controllers to use
+      req.user.is_super_admin = isSuperAdmin(req.user);
+      req.user.has_full_org_access = hasFullOrganizationAccess(req.user);
+      
+      console.log(`✅ Permission granted: ${req.user.username} → ${permission} (Super Admin: ${req.user.is_super_admin})`);
       next();
       
     } catch (error) {

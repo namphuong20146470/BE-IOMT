@@ -79,18 +79,28 @@ export default async function authMiddleware(req, res, next) {
         const permissions = await permissionService.getUserPermissions(user.id);
         console.log('🔑 Permissions loaded:', permissions.length);
 
+        // Extract JWT payload to get full role info
+        const jwtPayload = jwt.decode(token);
+        console.log('🎫 JWT payload roles:', JSON.stringify(jwtPayload?.roles, null, 2));
+        
         // Attach user and session info to request
         req.user = user;
         req.session = sessionValidation;
         req.permissions = permissions;
         req.userRoles = user.user_roles.map(ur => ur.roles.name);
         
+        // Add full roles from JWT payload (includes is_system_role)
+        req.user.roles = jwtPayload?.roles || [];
+        req.user.organization_id = jwtPayload?.organization_id || user.organization_id;
+        req.user.department_id = jwtPayload?.department_id || user.department_id;
+        
         // Authentication success
         console.log('👤 User authenticated successfully:', {
             userId: user.id,
             userName: user.username,
-            organizationId: user.organization_id,
+            organizationId: req.user.organization_id,
             roles: req.userRoles,
+            fullRoles: req.user.roles.map(r => ({ name: r.name, is_system_role: r.is_system_role })),
             permissions: permissions.length
         });
 

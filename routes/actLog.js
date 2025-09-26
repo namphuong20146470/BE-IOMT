@@ -1,5 +1,6 @@
 import express from 'express';
 import authMiddleware from '../middleware/authMiddleware.js';
+import { requirePermission } from '../middleware/rbacMiddleware.js';
 import { createRole, getAllRoles, deleteRole, updateRole } from '../controllers/roles/role.controller.js';
 
 // Import device routes
@@ -109,11 +110,11 @@ router.get('/sessions', authMiddleware, getUserSessions);                    // 
 router.delete('/sessions/:sessionId', authMiddleware, terminateSession);    // Terminate specific session
 router.get('/sessions/statistics', authMiddleware, getSessionStatistics);   // Get session statistics
 
-// Organizations routes
-router.post('/organizations', createOrganization);
-router.get('/organizations', getAllOrganizations);
-router.get('/organizations/:id', getOrganizationById);
-router.put('/organizations/:id', updateOrganization);
+// Organizations routes - Protected with authentication + RBAC
+router.post('/organizations', authMiddleware, requirePermission('organization.create'), createOrganization);
+router.get('/organizations', authMiddleware, requirePermission('organization.read'), getAllOrganizations);
+router.get('/organizations/:id', authMiddleware, requirePermission('organization.read'), getOrganizationById);
+router.put('/organizations/:id', authMiddleware, requirePermission('organization.update'), updateOrganization);
 
 // Departments routes
 router.post('/departments', createDepartment);

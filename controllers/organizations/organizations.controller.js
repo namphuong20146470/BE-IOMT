@@ -38,18 +38,60 @@ export const createOrganization = async (req, res) => {
 
 export const getAllOrganizations = async (req, res) => {
     try {
-        const organizations = await prisma.$queryRaw`
-            SELECT id, name, type, address, phone, email, 
-                   license_number, is_active, created_at, updated_at
-            FROM organizations
-            WHERE is_active = true
-            ORDER BY created_at DESC
-        `;
+        // ====================================================================
+        // SCOPE DATA FILTERING - Logic phân quyền thông minh
+        // (Permission check đã được handle bởi requirePermission middleware)
+        // ====================================================================
+        const userOrgId = req.user?.organization_id;
+        const userRoles = req.user?.roles || [];
+        
+        // Lấy thông tin Super Admin từ middleware (đã tính toán sẵn)
+        const isSuperAdmin = req.user?.is_super_admin || false;
+        const hasFullAccess = req.user?.has_full_org_access || false;
+        
+        let organizations;
+        
+        // CASE 1: User có full organization access (Super Admin hoặc System Admin)
+        if (hasFullAccess) {
+            const accessType = isSuperAdmin ? 'Super Admin' : 'System Admin';
+            console.log(`👑 ${accessType} access - returning ALL organizations (override org scope)`);
+            organizations = await prisma.$queryRaw`
+                SELECT id, name, type, address, phone, email, 
+                       license_number, is_active, created_at, updated_at,
+                       (SELECT COUNT(*)::integer FROM users WHERE organization_id = organizations.id) as user_count,
+                       (SELECT COUNT(*)::integer FROM device WHERE organization_id = organizations.id) as device_count
+                FROM organizations
+                WHERE is_active = true
+                ORDER BY created_at DESC
+            `;
+        } 
+        // CASE 2: Regular user/admin với organization_id → Scoped access
+        else {
+            console.log(`🔒 Organization scoped access - filtering by org_id: ${userOrgId}`);
+            organizations = await prisma.$queryRaw`
+                SELECT id, name, type, address, phone, email, 
+                       license_number, is_active, created_at, updated_at,
+                       (SELECT COUNT(*)::integer FROM users WHERE organization_id = organizations.id) as user_count,
+                       (SELECT COUNT(*)::integer FROM device WHERE organization_id = organizations.id) as device_count
+                FROM organizations
+                WHERE id = ${userOrgId}::uuid AND is_active = true
+                ORDER BY created_at DESC
+            `;
+        }
+
+        // Determine access scope for response
+        const accessScope = hasFullAccess ? 
+            (isSuperAdmin ? 'super_admin_full_access' : 'system_admin_full_access') : 
+            'organization_scoped';
 
         res.status(200).json({
             success: true,
             data: organizations,
             count: organizations.length,
+            scope: accessScope,
+            user_organization_id: userOrgId,
+            is_super_admin: isSuperAdmin,
+            user_roles: userRoles.map(r => r.name),
             message: 'Organizations retrieved successfully'
         });
     } catch (error) {
