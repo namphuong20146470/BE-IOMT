@@ -100,25 +100,46 @@ export const createUser = async (req, res) => {
         
         // ⭐ START TRANSACTION for atomic user creation + role assignment
         const result = await prisma.$transaction(async (tx) => {
-            // 1. Create user
-            const newUser = await tx.$queryRaw`
-                INSERT INTO users (
-                    organization_id, department_id, username, 
-                    password_hash, full_name, email, phone
-                )
-                VALUES (
-                    ${organization_id || userOrgId}::uuid, 
-                    ${department_id || null}::uuid, 
-                    ${username},
-                    ${hashedPassword}, 
-                    ${full_name}, 
-                    ${email || null}, 
-                    ${phone || null}
-                )
-                RETURNING id, organization_id, department_id, username, full_name, email, phone, is_active, created_at, updated_at
-            `;
+            // 1. Create user using Prisma ORM with direct foreign key fields
+            const userData = {
+                username: username,
+                password_hash: hashedPassword,
+                full_name: full_name,
+                email: email || null,
+                phone: phone || null,
+                is_active: true,
+                created_at: getVietnamDate(),
+                updated_at: getVietnamDate(),
+                // Use direct foreign key fields instead of relations
+                organization_id: organization_id || userOrgId || null,
+                department_id: department_id || null
+            };
 
-            const createdUser = newUser[0];
+            const createdUser = await tx.users.create({
+                data: userData,
+                select: {
+                    id: true,
+                    username: true,
+                    full_name: true,
+                    email: true,
+                    phone: true,
+                    is_active: true,
+                    created_at: true,
+                    updated_at: true,
+                    organizations: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    },
+                    departments: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    }
+                }
+            });
 
             // 2. Assign role if provided
             let assignedRole = null;
@@ -127,45 +148,56 @@ export const createUser = async (req, res) => {
             if (role_id) {
                 try {
                     // Validate role exists and is accessible
-                    const role = await tx.$queryRaw`
-                        SELECT r.id, r.name, r.color, r.icon, r.is_system_role
-                        FROM roles r
-                        LEFT JOIN role_organizations ro ON r.id = ro.role_id
-                        WHERE r.id = ${role_id}::uuid 
-                        AND r.is_active = true
-                        AND (
-                            r.is_system_role = true 
-                            OR ro.organization_id = ${organization_id || userOrgId}::uuid
-                        )
-                    `;
+                    const role = await tx.roles.findFirst({
+                        where: {
+                            id: role_id,
+                            is_active: true,
+                            OR: [
+                                { is_system_role: true },
+                                { 
+                                    organization_id: organization_id || userOrgId 
+                                }
+                            ]
+                        },
+                        select: {
+                            id: true,
+                            name: true,
+                            color: true,
+                            icon: true,
+                            is_system_role: true
+                        }
+                    });
 
-                    if (role.length === 0) {
+                    if (!role) {
                         roleError = `Role ${role_id} not found or not available for this organization`;
                     } else {
-                        // Assign role
-                        const assignment = await tx.$queryRaw`
-                            INSERT INTO user_roles (
-                                user_id, role_id, organization_id, 
-                                department_id, assigned_by, assigned_at, is_active
-                            )
-                            VALUES (
-                                ${createdUser.id}::uuid,
-                                ${role_id}::uuid,
-                                ${organization_id || userOrgId}::uuid,
-                                ${department_id || null}::uuid,
-                                ${userId}::uuid,
-                                ${getVietnamDate()},
-                                true
-                            )
-                            RETURNING id
-                        `;
+                        // Assign role using Prisma ORM with direct foreign key fields
+                        const assignmentData = {
+                            user_id: createdUser.id,
+                            role_id: role_id,
+                            organization_id: organization_id || userOrgId,
+                            department_id: department_id || null,
+                            assigned_by: userId,
+                            assigned_at: getVietnamDate(),
+                            is_active: true,
+                            valid_from: getVietnamDate(),
+                            valid_until: null,
+                            notes: 'Auto-assigned during user creation'
+                        };
+
+                        const assignment = await tx.user_roles.create({
+                            data: assignmentData,
+                            select: {
+                                id: true
+                            }
+                        });
 
                         assignedRole = {
-                            id: role[0].id,
-                            name: role[0].name,
-                            color: role[0].color,
-                            icon: role[0].icon,
-                            assignment_id: assignment[0].id
+                            id: role.id,
+                            name: role.name,
+                            color: role.color,
+                            icon: role.icon,
+                            assignment_id: assignment.id
                         };
                     }
                 } catch (error) {
@@ -177,37 +209,64 @@ export const createUser = async (req, res) => {
             return { user: createdUser, assignedRole, roleError };
         });
 
-        // Get user with roles for response
-        const userWithRoles = await prisma.$queryRaw`
-            SELECT 
-                u.id, u.organization_id, u.department_id, u.username, 
-                u.full_name, u.email, u.phone, u.is_active, u.created_at,
-                d.name as department_name,
-                o.name as organization_name,
-                COALESCE(
-                    JSON_AGG(
-                        DISTINCT JSON_BUILD_OBJECT(
-                            'id', r.id,
-                            'name', r.name,
-                            'color', r.color,
-                            'icon', r.icon,
-                            'is_system_role', r.is_system_role
-                        )
-                    ) FILTER (WHERE r.id IS NOT NULL),
-                    '[]'::json
-                ) as roles
-            FROM users u
-            LEFT JOIN departments d ON u.department_id = d.id
-            LEFT JOIN organizations o ON u.organization_id = o.id
-            LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = true
-            LEFT JOIN roles r ON ur.role_id = r.id
-            WHERE u.id = ${result.user.id}::uuid
-            GROUP BY u.id, d.name, o.name
-        `;
+        // Get user with roles for response using Prisma ORM
+        const userWithRoles = await prisma.users.findUnique({
+            where: { id: result.user.id },
+            select: {
+                id: true,
+                organization_id: true,
+                department_id: true,
+                username: true,
+                full_name: true,
+                email: true,
+                phone: true,
+                is_active: true,
+                created_at: true,
+                departments: {
+                    select: {
+                        name: true
+                    }
+                },
+                organizations: {
+                    select: {
+                        name: true
+                    }
+                },
+                user_roles: {
+                    where: {
+                        is_active: true
+                    },
+                    select: {
+                        roles: {
+                            select: {
+                                id: true,
+                                name: true,
+                                color: true,
+                                icon: true,
+                                is_system_role: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Format the response data
+        const formattedUser = {
+            ...userWithRoles,
+            department_name: userWithRoles?.departments?.name || null,
+            organization_name: userWithRoles?.organizations?.name || null,
+            roles: userWithRoles?.user_roles?.map(ur => ur.roles) || []
+        };
+
+        // Remove nested objects for cleaner response
+        delete formattedUser.departments;
+        delete formattedUser.organizations;
+        delete formattedUser.user_roles;
 
         const responseData = {
             success: true,
-            data: userWithRoles[0],
+            data: formattedUser,
             message: `User created successfully${result.assignedRole ? ' with role assigned' : ''}`
         };
 
@@ -406,41 +465,237 @@ export const loginUser = async (req, res) => {
 
 export const getAllUsers = async (req, res) => {
     try {
-        const { organization_id } = req.query;
-
-        let users;
+        const userId = req.user?.id;
+        const userOrgId = req.user?.organization_id;
+        const isSuperAdmin = req.user?.is_super_admin || req.user?.roles?.some(r => r.is_system_role);
         
-        if (organization_id) {
-            users = await prisma.$queryRaw`
-                SELECT u.id, u.username, u.full_name, u.email, u.phone, u.is_active,
-                       u.organization_id, u.department_id,
-                       o.name as organization_name,
-                       d.name as department_name,
-                       u.created_at, u.updated_at
-                FROM users u
-                LEFT JOIN organizations o ON u.organization_id = o.id
-                LEFT JOIN departments d ON u.department_id = d.id
-                WHERE u.organization_id = ${organization_id}::uuid
-                ORDER BY u.created_at DESC
-            `;
-        } else {
-            users = await prisma.$queryRaw`
-                SELECT u.id, u.username, u.full_name, u.email, u.phone, u.is_active,
-                       u.organization_id, u.department_id,
-                       o.name as organization_name,
-                       d.name as department_name,
-                       u.created_at, u.updated_at
-                FROM users u
-                LEFT JOIN organizations o ON u.organization_id = o.id
-                LEFT JOIN departments d ON u.department_id = d.id
-                ORDER BY u.created_at DESC
-            `;
+        if (!userId) {
+            return res.status(401).json({ 
+                success: false,
+                error: 'Authentication required' 
+            });
         }
+
+        // ✅ Check permission
+        const hasPermission = await permissionService.hasPermission(userId, 'user.read');
+        if (!hasPermission) {
+            return res.status(403).json({ 
+                success: false,
+                error: 'Insufficient permissions' 
+            });
+        }
+
+        // ✅ Parse pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = Math.min(parseInt(req.query.limit) || 10, 100); // Max 100 items per page
+        const offset = (page - 1) * limit;
+
+        // ✅ Parse filter parameters
+        const {
+            organization_id: queryOrgId,
+            department_id,
+            is_active,
+            has_roles,
+            search,
+            sort_by = 'created_at',
+            sort_order = 'desc',
+            created_from,
+            created_to,
+            role_id,
+            include_roles = 'true' // ⭐ Mặc định trả về roles
+        } = req.query;
+
+        // ✅ Determine organization scope
+        let organization_id;
+        if (queryOrgId) {
+            // Specific organization requested
+            if (isSuperAdmin || queryOrgId === userOrgId) {
+                organization_id = queryOrgId;
+            } else {
+                return res.status(403).json({ 
+                    success: false,
+                    error: 'Access denied: Cannot access users from different organization' 
+                });
+            }
+        } else {
+            // No organization specified
+            if (isSuperAdmin) {
+                // Super Admin can see all organizations (organization_id = null means no filter)
+                organization_id = null;
+            } else {
+                // Regular users see only their organization
+                organization_id = userOrgId;
+            }
+        }
+
+        // ✅ Build WHERE conditions
+        let whereConditions = [];
+        let params = [];
+        let paramIndex = 1;
+
+        // Organization filter (required for non-Super Admin)
+        if (organization_id) {
+            whereConditions.push(`u.organization_id = $${paramIndex}::uuid`);
+            params.push(organization_id);
+            paramIndex++;
+        }
+        // Note: If organization_id is null (Super Admin with no org filter), no organization restriction
+
+        // Department filter
+        if (department_id) {
+            whereConditions.push(`u.department_id = $${paramIndex}::uuid`);
+            params.push(department_id);
+            paramIndex++;
+        }
+
+        // Active status filter
+        if (is_active !== undefined) {
+            whereConditions.push(`u.is_active = $${paramIndex}::boolean`);
+            params.push(is_active === 'true');
+            paramIndex++;
+        }
+
+        // Search filter (username, full_name, email)
+        if (search) {
+            whereConditions.push(`(
+                u.username ILIKE $${paramIndex} OR 
+                u.full_name ILIKE $${paramIndex} OR 
+                u.email ILIKE $${paramIndex}
+            )`);
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        // Date range filter
+        if (created_from) {
+            whereConditions.push(`u.created_at >= $${paramIndex}::timestamp`);
+            params.push(new Date(created_from));
+            paramIndex++;
+        }
+
+        if (created_to) {
+            whereConditions.push(`u.created_at <= $${paramIndex}::timestamp`);
+            params.push(new Date(created_to));
+            paramIndex++;
+        }
+
+        // Role filter
+        if (role_id) {
+            whereConditions.push(`EXISTS (
+                SELECT 1 FROM user_roles ur 
+                WHERE ur.user_id = u.id 
+                AND ur.role_id = $${paramIndex}::uuid 
+                AND ur.is_active = true
+            )`);
+            params.push(role_id);
+            paramIndex++;
+        }
+
+        // Has roles filter
+        if (has_roles !== undefined) {
+            if (has_roles === 'true') {
+                whereConditions.push(`EXISTS (
+                    SELECT 1 FROM user_roles ur 
+                    WHERE ur.user_id = u.id AND ur.is_active = true
+                )`);
+            } else {
+                whereConditions.push(`NOT EXISTS (
+                    SELECT 1 FROM user_roles ur 
+                    WHERE ur.user_id = u.id AND ur.is_active = true
+                )`);
+            }
+        }
+
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+        // ✅ Validate sort fields
+        const allowedSortFields = ['created_at', 'updated_at', 'username', 'full_name', 'email'];
+        const sortField = allowedSortFields.includes(sort_by) ? sort_by : 'created_at';
+        const sortDirection = sort_order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+        // ✅ Count total records
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM users u
+            LEFT JOIN organizations o ON u.organization_id = o.id
+            LEFT JOIN departments d ON u.department_id = d.id
+            ${whereClause}
+        `;
+
+        const countResult = await prisma.$queryRawUnsafe(countQuery, ...params);
+        const total = parseInt(countResult[0].total);
+
+        // ✅ Fetch users with pagination
+        const baseQuery = `
+            SELECT u.id, u.username, u.full_name, u.email, u.phone, u.is_active,
+                   u.organization_id, u.department_id,
+                   o.name as organization_name,
+                   d.name as department_name,
+                   u.created_at, u.updated_at
+                   ${include_roles === 'true' ? `,
+                   COALESCE(
+                       JSON_AGG(
+                           CASE WHEN r.id IS NOT NULL THEN
+                               JSON_BUILD_OBJECT(
+                                   'id', r.id,
+                                   'name', r.name,
+                                   'description', r.description,
+                                   'is_system_role', r.is_system_role,
+                                   'assigned_at', ur.assigned_at,
+                                   'is_active', ur.is_active,
+                                   'valid_until', ur.valid_until
+                               )
+                           END
+                       ) FILTER (WHERE r.id IS NOT NULL), '[]'::json
+                   ) as roles` : ''}
+            FROM users u
+            LEFT JOIN organizations o ON u.organization_id = o.id
+            LEFT JOIN departments d ON u.department_id = d.id
+            ${include_roles === 'true' ? `
+            LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = true
+            LEFT JOIN roles r ON ur.role_id = r.id AND r.is_active = true` : ''}
+            ${whereClause}
+            ${include_roles === 'true' ? 'GROUP BY u.id, o.name, d.name' : ''}
+            ORDER BY u.${sortField} ${sortDirection}
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `;
+
+        params.push(limit, offset);
+        const users = await prisma.$queryRawUnsafe(baseQuery, ...params);
+
+        // ✅ Calculate pagination info
+        const totalPages = Math.ceil(total / limit);
+        const hasNextPage = page < totalPages;
+        const hasPreviousPage = page > 1;
 
         res.status(200).json({
             success: true,
             data: users,
-            count: users.length,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages,
+                hasNextPage,
+                hasPreviousPage,
+                nextPage: hasNextPage ? page + 1 : null,
+                previousPage: hasPreviousPage ? page - 1 : null
+            },
+            filters: {
+                organization_id: organization_id || (isSuperAdmin ? 'ALL_ORGANIZATIONS' : userOrgId),
+                department_id,
+                is_active,
+                has_roles,
+                search,
+                created_from,
+                created_to,
+                role_id,
+                include_roles: include_roles === 'true'
+            },
+            sorting: {
+                sort_by: sortField,
+                sort_order: sortDirection.toLowerCase()
+            },
             message: 'Users retrieved successfully'
         });
     } catch (error) {
