@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import sessionService from '../../services/SessionService.js';
+import permissionService from '../../services/PermissionService.js';
+import roleService from '../../services/RoleService.js';
 
 const prisma = new PrismaClient();
 
@@ -23,6 +25,25 @@ function getVietnamDate() {
 
 export const createUser = async (req, res) => {
     try {
+        const userId = req.user?.id;
+        const userOrgId = req.user?.organization_id;
+        
+        if (!userId || !userOrgId) {
+            return res.status(401).json({ 
+                success: false,
+                error: 'Authentication required' 
+            });
+        }
+
+        // Check permission
+        const hasPermission = await permissionService.hasPermission(userId, 'user.create');
+        if (!hasPermission) {
+            return res.status(403).json({ 
+                success: false,
+                error: 'Insufficient permissions' 
+            });
+        }
+
         const { 
             organization_id, 
             department_id, 
@@ -30,7 +51,8 @@ export const createUser = async (req, res) => {
             password, 
             full_name, 
             email, 
-            phone 
+            phone,
+            role_id // ⭐ Single role ID only
         } = req.body;
 
         // Validate required fields
@@ -39,6 +61,28 @@ export const createUser = async (req, res) => {
                 success: false,
                 message: 'Username, password, and full_name are required'
             });
+        }
+
+        // Validate email format if provided
+        if (email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid email format'
+                });
+            }
+
+            // Check email exists
+            const existingEmail = await prisma.$queryRaw`
+                SELECT id FROM users WHERE email = ${email}
+            `;
+            if (existingEmail.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email already exists'
+                });
+            }
         }
 
         // Check username exists in users table
@@ -54,28 +98,131 @@ export const createUser = async (req, res) => {
 
         const hashedPassword = await hashPasswordBcrypt(password);
         
-        const newUser = await prisma.$queryRaw`
-            INSERT INTO users (
-                organization_id, department_id, username, 
-                password_hash, full_name, email, phone
-            )
-            VALUES (
-                ${organization_id || null}::uuid, 
-                ${department_id || null}::uuid, 
-                ${username},
-                ${hashedPassword}, 
-                ${full_name}, 
-                ${email || null}, 
-                ${phone || null}
-            )
-            RETURNING id, organization_id, department_id, username, full_name, email, phone, is_active, created_at, updated_at
+        // ⭐ START TRANSACTION for atomic user creation + role assignment
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Create user
+            const newUser = await tx.$queryRaw`
+                INSERT INTO users (
+                    organization_id, department_id, username, 
+                    password_hash, full_name, email, phone
+                )
+                VALUES (
+                    ${organization_id || userOrgId}::uuid, 
+                    ${department_id || null}::uuid, 
+                    ${username},
+                    ${hashedPassword}, 
+                    ${full_name}, 
+                    ${email || null}, 
+                    ${phone || null}
+                )
+                RETURNING id, organization_id, department_id, username, full_name, email, phone, is_active, created_at, updated_at
+            `;
+
+            const createdUser = newUser[0];
+
+            // 2. Assign role if provided
+            let assignedRole = null;
+            let roleError = null;
+
+            if (role_id) {
+                try {
+                    // Validate role exists and is accessible
+                    const role = await tx.$queryRaw`
+                        SELECT r.id, r.name, r.color, r.icon, r.is_system_role
+                        FROM roles r
+                        LEFT JOIN role_organizations ro ON r.id = ro.role_id
+                        WHERE r.id = ${role_id}::uuid 
+                        AND r.is_active = true
+                        AND (
+                            r.is_system_role = true 
+                            OR ro.organization_id = ${organization_id || userOrgId}::uuid
+                        )
+                    `;
+
+                    if (role.length === 0) {
+                        roleError = `Role ${role_id} not found or not available for this organization`;
+                    } else {
+                        // Assign role
+                        const assignment = await tx.$queryRaw`
+                            INSERT INTO user_roles (
+                                user_id, role_id, organization_id, 
+                                department_id, assigned_by, assigned_at, is_active
+                            )
+                            VALUES (
+                                ${createdUser.id}::uuid,
+                                ${role_id}::uuid,
+                                ${organization_id || userOrgId}::uuid,
+                                ${department_id || null}::uuid,
+                                ${userId}::uuid,
+                                ${getVietnamDate()},
+                                true
+                            )
+                            RETURNING id
+                        `;
+
+                        assignedRole = {
+                            id: role[0].id,
+                            name: role[0].name,
+                            color: role[0].color,
+                            icon: role[0].icon,
+                            assignment_id: assignment[0].id
+                        };
+                    }
+                } catch (error) {
+                    console.error(`Error assigning role ${role_id}:`, error);
+                    roleError = `Failed to assign role ${role_id}: ${error.message}`;
+                }
+            }
+
+            return { user: createdUser, assignedRole, roleError };
+        });
+
+        // Get user with roles for response
+        const userWithRoles = await prisma.$queryRaw`
+            SELECT 
+                u.id, u.organization_id, u.department_id, u.username, 
+                u.full_name, u.email, u.phone, u.is_active, u.created_at,
+                d.name as department_name,
+                o.name as organization_name,
+                COALESCE(
+                    JSON_AGG(
+                        DISTINCT JSON_BUILD_OBJECT(
+                            'id', r.id,
+                            'name', r.name,
+                            'color', r.color,
+                            'icon', r.icon,
+                            'is_system_role', r.is_system_role
+                        )
+                    ) FILTER (WHERE r.id IS NOT NULL),
+                    '[]'::json
+                ) as roles
+            FROM users u
+            LEFT JOIN departments d ON u.department_id = d.id
+            LEFT JOIN organizations o ON u.organization_id = o.id
+            LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = true
+            LEFT JOIN roles r ON ur.role_id = r.id
+            WHERE u.id = ${result.user.id}::uuid
+            GROUP BY u.id, d.name, o.name
         `;
 
-        res.status(201).json({
+        const responseData = {
             success: true,
-            data: newUser[0],
-            message: 'User created successfully'
-        });
+            data: userWithRoles[0],
+            message: `User created successfully${result.assignedRole ? ' with role assigned' : ''}`
+        };
+
+        // Include assigned role info if successful
+        if (result.assignedRole) {
+            responseData.assigned_role = result.assignedRole;
+        }
+
+        // Include role error if any (non-breaking)
+        if (result.roleError) {
+            responseData.role_warning = result.roleError;
+            responseData.message += `. Warning: Role assignment failed.`;
+        }
+
+        res.status(201).json(responseData);
     } catch (error) {
         console.error('Error creating user:', error);
         res.status(500).json({
@@ -565,16 +712,205 @@ export const getSessionStatistics = async (req, res) => {
 
 // Delete user placeholder (implement if needed)
 export const deleteUser = async (req, res) => {
-    return res.status(501).json({
-        success: false,
-        message: 'Delete user functionality not implemented yet'
-    });
+    try {
+        const userId = req.user?.id;
+        const userOrgId = req.user?.organization_id;
+        const { id } = req.params;
+        
+        if (!userId || !userOrgId) {
+            return res.status(401).json({ 
+                success: false,
+                error: 'Authentication required' 
+            });
+        }
+
+        // Check permission
+        const hasPermission = await permissionService.hasPermission(userId, 'user.delete');
+        if (!hasPermission) {
+            return res.status(403).json({ 
+                success: false,
+                error: 'Insufficient permissions' 
+            });
+        }
+
+        // Prevent self-deletion
+        if (id === userId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Cannot delete your own account'
+            });
+        }
+
+        // Check if user exists and belongs to same organization
+        const existingUser = await prisma.$queryRaw`
+            SELECT id, username, full_name, is_active
+            FROM users 
+            WHERE id = ${id}::uuid 
+            AND organization_id = ${userOrgId}::uuid
+        `;
+
+        if (!existingUser || existingUser.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'User not found'
+            });
+        }
+
+        const targetUser = existingUser[0];
+
+        // Soft delete user (set is_active = false)
+        await prisma.$transaction(async (tx) => {
+            // Update user status
+            await tx.$queryRaw`
+                UPDATE users 
+                SET is_active = false, 
+                    updated_at = ${getVietnamDate()}
+                WHERE id = ${id}::uuid
+            `;
+
+            // Deactivate user roles
+            await tx.$queryRaw`
+                UPDATE user_roles 
+                SET is_active = false, 
+                    updated_at = ${getVietnamDate()}
+                WHERE user_id = ${id}::uuid
+            `;
+
+            // Terminate all active sessions
+            await tx.$queryRaw`
+                UPDATE user_sessions 
+                SET is_active = false, 
+                    terminated_at = ${getVietnamDate()},
+                    termination_reason = 'USER_DELETED'
+                WHERE user_id = ${id}::uuid 
+                AND is_active = true
+            `;
+        });
+
+        res.json({
+            success: true,
+            message: `User "${targetUser.username}" has been deleted successfully`,
+            deleted_user: {
+                id: targetUser.id,
+                username: targetUser.username,
+                full_name: targetUser.full_name
+            }
+        });
+
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete user',
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
 };
 
-// Delete all users except admin placeholder
+// Delete all users except admin
 export const deleteAllUsersExceptAdmin = async (req, res) => {
-    return res.status(501).json({
-        success: false,
-        message: 'Mass delete functionality not implemented yet'
-    });
+    try {
+        const userId = req.user?.id;
+        const userOrgId = req.user?.organization_id;
+        const { confirmReset } = req.body;
+        
+        if (!userId || !userOrgId) {
+            return res.status(401).json({ 
+                success: false,
+                error: 'Authentication required' 
+            });
+        }
+
+        // Check permission (requires high-level permission)
+        const hasPermission = await permissionService.hasPermission(userId, 'user.delete');
+        if (!hasPermission) {
+            return res.status(403).json({ 
+                success: false,
+                error: 'Insufficient permissions' 
+            });
+        }
+
+        // Require confirmation
+        if (confirmReset !== 'CONFIRM_DELETE_ALL_DATA') {
+            return res.status(400).json({
+                success: false,
+                error: 'Confirmation required',
+                message: 'To delete all users, send confirmReset: "CONFIRM_DELETE_ALL_DATA"',
+                warning: 'This action cannot be undone!'
+            });
+        }
+
+        // Get users to be deleted (exclude current user and system admins)
+        const usersToDelete = await prisma.$queryRaw`
+            SELECT u.id, u.username, u.full_name
+            FROM users u
+            LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = true
+            LEFT JOIN roles r ON ur.role_id = r.id
+            WHERE u.organization_id = ${userOrgId}::uuid
+            AND u.is_active = true
+            AND u.id != ${userId}::uuid
+            AND (r.is_system_role IS NULL OR r.is_system_role = false)
+            GROUP BY u.id, u.username, u.full_name
+        `;
+
+        if (usersToDelete.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No users to delete',
+                deleted_count: 0
+            });
+        }
+
+        // Soft delete users in transaction
+        const deletedCount = await prisma.$transaction(async (tx) => {
+            const userIds = usersToDelete.map(u => u.id);
+
+            // Update users status
+            await tx.$queryRaw`
+                UPDATE users 
+                SET is_active = false, 
+                    updated_at = ${getVietnamDate()}
+                WHERE id = ANY(${userIds}::uuid[])
+            `;
+
+            // Deactivate user roles
+            await tx.$queryRaw`
+                UPDATE user_roles 
+                SET is_active = false, 
+                    updated_at = ${getVietnamDate()}
+                WHERE user_id = ANY(${userIds}::uuid[])
+            `;
+
+            // Terminate all active sessions
+            await tx.$queryRaw`
+                UPDATE user_sessions 
+                SET is_active = false, 
+                    terminated_at = ${getVietnamDate()},
+                    termination_reason = 'MASS_DELETE'
+                WHERE user_id = ANY(${userIds}::uuid[])
+                AND is_active = true
+            `;
+
+            return userIds.length;
+        });
+
+        res.json({
+            success: true,
+            message: `Successfully deleted ${deletedCount} users (excluding admins and current user)`,
+            deleted_count: deletedCount,
+            deleted_users: usersToDelete.map(u => ({
+                id: u.id,
+                username: u.username,
+                full_name: u.full_name
+            }))
+        });
+
+    } catch (error) {
+        console.error('Error deleting all users:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete users',
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
 };

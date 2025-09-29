@@ -21,15 +21,37 @@ export const getAllRoles = async (req, res) => {
         }
 
         const {
-            organization_id,
+            organization_id: queryOrgId,
             include_system = 'true',
             include_permissions = 'false',
             search,
             is_active = 'true'
         } = req.query;
 
+        // Use organization_id from query parameter, fallback to user's organization
+        // Super Admin can query other organizations, regular users get their own org
+        const userOrgId = req.user?.organization_id;
+        const isSuperAdmin = req.user?.is_super_admin || req.user?.roles?.some(r => r.is_system_role);
+        
+        let organization_id;
+        if (queryOrgId) {
+            // If organization_id specified in query
+            if (isSuperAdmin || queryOrgId === userOrgId) {
+                organization_id = queryOrgId;
+            } else {
+                return res.status(403).json({ 
+                    error: 'Access denied: Cannot access roles from different organization' 
+                });
+            }
+        } else {
+            // No organization_id in query, use user's organization
+            organization_id = userOrgId;
+        }
+
         if (!organization_id) {
-            return res.status(400).json({ error: 'Organization ID is required' });
+            return res.status(400).json({ 
+                error: 'Organization ID is required. Please provide organization_id or ensure user has organization.' 
+            });
         }
 
         const options = {

@@ -1,4 +1,6 @@
 import express from 'express';
+import authMiddleware from '../middleware/authMiddleware.js';
+import { requirePermission } from '../middleware/rbacMiddleware.js';
 
 import {
     getAllAuoDisplay,
@@ -135,21 +137,79 @@ router.get('/iot-env/30days', getIotEnv30Days);
 router.get('/iot-env/range', getIotEnvByDateRange);
 router.post('/iot-env', addIotEnv);
 
-// Warning Logs routes
-router.get('/warnings', getAllWarningLogs);
-router.get('/warnings/latest', getLatestWarningLogs);
-router.get('/warnings/active', getActiveWarnings);
-router.get('/warnings/statistics', getWarningStatistics);
-// PATCH endpoint cập nhật trạng thái cảnh báo
-router.patch('/warnings/:id/status', updateWarningStatus);
-router.put('/warnings/:id/acknowledge', acknowledgeWarning);
-router.put('/warnings/:id/resolve', resolveWarning);
-router.post('/warnings/delete-all', deleteAllWarningLogs);
-// Test endpoint to manually check warnings for current data
-router.post('/warnings/test', testCheckWarnings);
+// ========================================
+// WARNING LOGS ROUTES WITH RBAC
+// ========================================
 
-// DELETE endpoint xóa cảnh báo theo id
-router.delete('/warnings/:id', deleteWarningById);
+// GET /warnings - Get all warning logs (with filters)
+router.get('/warnings', 
+    authMiddleware, 
+    requirePermission('device.read'), 
+    getAllWarningLogs
+);
+
+// GET /warnings/latest - Get latest warning logs
+router.get('/warnings/latest', 
+    authMiddleware, 
+    requirePermission('device.read'), 
+    getLatestWarningLogs
+);
+
+// GET /warnings/active - Get active warnings only
+router.get('/warnings/active', 
+    authMiddleware, 
+    requirePermission('device.read'), 
+    getActiveWarnings
+);
+
+// GET /warnings/statistics - Get warning statistics
+router.get('/warnings/statistics', 
+    authMiddleware, 
+    requirePermission('device.read'), 
+    getWarningStatistics
+);
+
+// PATCH /warnings/:id/status - Update warning status (MAIN ENDPOINT) ⭐
+router.patch('/warnings/:id/status', 
+    authMiddleware, 
+    requirePermission('device.update'), 
+    updateWarningStatus
+);
+
+// PUT /warnings/:id/acknowledge - Acknowledge warning (legacy)
+router.put('/warnings/:id/acknowledge', 
+    authMiddleware, 
+    requirePermission('device.update'), 
+    acknowledgeWarning
+);
+
+// PUT /warnings/:id/resolve - Resolve warning (legacy)
+router.put('/warnings/:id/resolve', 
+    authMiddleware, 
+    requirePermission('device.update'), 
+    resolveWarning
+);
+
+// POST /warnings/test - Test warning system manually
+router.post('/warnings/test', 
+    authMiddleware, 
+    requirePermission('device.create'), 
+    testCheckWarnings
+);
+
+// DELETE /warnings/:id - Delete specific warning by ID
+router.delete('/warnings/:id', 
+    authMiddleware, 
+    requirePermission('device.delete'), 
+    deleteWarningById
+);
+
+// POST /warnings/delete-all - Delete all warnings (admin only)
+router.post('/warnings/delete-all', 
+    authMiddleware, 
+    requirePermission('system.admin'), 
+    deleteAllWarningLogs
+);
 
 
 

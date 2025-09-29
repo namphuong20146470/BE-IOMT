@@ -51,7 +51,9 @@ describe('API Test', () => {
                 username: 'admin', // Đổi thành tài khoản hợp lệ của bạn
                 password: 'admin123' // Đổi thành mật khẩu hợp lệ
             });
-        token = loginRes.body.token;
+        // Fix: Lấy access_token thay vì token
+        token = loginRes.body.data?.access_token || loginRes.body.token;
+        console.log('🔑 Login response:', JSON.stringify(loginRes.body, null, 2));
     });
     //USER TESTS
 
@@ -197,7 +199,9 @@ describe('API Test', () => {
     // });
 
     it('GET /iot/warnings', async () => {
-        const res = await request(app).get('/iot/warnings');
+        const res = await request(app)
+            .get('/iot/warnings')
+            .set('Authorization', `Bearer ${token}`);
         logResult('GET /iot/warnings', res);
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body.data)).toBe(true);

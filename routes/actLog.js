@@ -90,12 +90,13 @@ router.post('/roles', authMiddleware, createRole);
 router.put('/roles/:id_role', authMiddleware, updateRole);
 router.delete('/roles/:id_role', authMiddleware, deleteRole);
 
-// Lấy danh sách user (chỉ trưởng phòng TBYT và BGĐ BV)
-router.get('/users', getAllUsers);
-router.post('/users', authMiddleware, createUser);
-router.put('/users/:id', authMiddleware, updateUser);
-router.delete('/users/:id', authMiddleware, deleteUser);
-router.post('/users/all-except-admin', authMiddleware, deleteAllUsersExceptAdmin);
+// User Management Routes with RBAC
+router.get('/users', authMiddleware, requirePermission('user.read'), getAllUsers);
+router.post('/users', authMiddleware, requirePermission('user.create'), createUser);  // ⭐ Now supports role assignment
+router.get('/users/:id', authMiddleware, requirePermission('user.read'), getUserById);
+router.put('/users/:id', authMiddleware, requirePermission('user.update'), updateUser);
+router.delete('/users/:id', authMiddleware, requirePermission('user.delete'), deleteUser);
+router.post('/users/all-except-admin', authMiddleware, requirePermission('user.delete'), deleteAllUsersExceptAdmin);
 
 // ====================================================================
 // SESSION MANAGEMENT ROUTES

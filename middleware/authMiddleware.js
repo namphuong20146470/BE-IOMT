@@ -91,6 +91,7 @@ export default async function authMiddleware(req, res, next) {
         
         // Add full roles from JWT payload (includes is_system_role)
         req.user.roles = jwtPayload?.roles || [];
+        req.user.permissions = permissions; // Fix: Attach permissions to user object
         req.user.organization_id = jwtPayload?.organization_id || user.organization_id;
         req.user.department_id = jwtPayload?.department_id || user.department_id;
         
@@ -106,15 +107,18 @@ export default async function authMiddleware(req, res, next) {
 
         // Log successful authentication (optional)
         try {
-            await auditService.logUserActivity({
-                user_id: user.id,
-                action: 'AUTH_SUCCESS',
-                details: {
-                    session_id: sessionValidation.session_id,
+            await auditService.logActivity(
+                user.id,
+                'login',
+                'session',
+                sessionValidation.session_id,
+                {
                     ip: req.ip,
-                    userAgent: req.headers['user-agent']
-                }
-            });
+                    userAgent: req.headers['user-agent'],
+                    username: user.username
+                },
+                req.user.organization_id
+            );
         } catch (auditError) {
             console.error('Audit log error:', auditError);
         }
