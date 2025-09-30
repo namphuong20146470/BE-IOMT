@@ -21,9 +21,6 @@ logs/
 # Prisma lock
 prisma/migrations/migration_lock.toml
 
-# Local databases or dumps
-
-
 # Node
 node_modules/
 
