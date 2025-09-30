@@ -15,7 +15,7 @@ export const getWarrantyByDevice = async (req, res) => {
             SELECT 
                 wi.id, wi.device_id, wi.warranty_start, wi.warranty_end, wi.provider,
                 d.serial_number, d.asset_tag,
-                dm.name as model_name, dm.manufacturer,
+                dm.name as model_name, m.name as manufacturer,
                 o.name as organization_name,
                 CASE 
                     WHEN wi.warranty_end < CURRENT_DATE THEN 'expired'
@@ -27,6 +27,7 @@ export const getWarrantyByDevice = async (req, res) => {
             FROM warranty_info wi
             LEFT JOIN device d ON wi.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN organizations o ON d.organization_id = o.id
             WHERE wi.device_id = ${deviceId}::uuid
         `;
@@ -105,7 +106,7 @@ export const getAllWarranties = async (req, res) => {
             SELECT 
                 wi.id, wi.device_id, wi.warranty_start, wi.warranty_end, wi.provider,
                 d.serial_number, d.asset_tag, d.status as device_status,
-                dm.name as model_name, dm.manufacturer,
+                dm.name as model_name, m.name as manufacturer,
                 o.name as organization_name,
                 dept.dept_name as department_name,
                 CASE 
@@ -118,6 +119,7 @@ export const getAllWarranties = async (req, res) => {
             FROM warranty_info wi
             LEFT JOIN device d ON wi.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.dept_id
             ${whereClause}
@@ -431,13 +433,14 @@ export const getExpiringWarranties = async (req, res) => {
             SELECT 
                 wi.id, wi.device_id, wi.warranty_start, wi.warranty_end, wi.provider,
                 d.serial_number, d.asset_tag,
-                dm.name as model_name, dm.manufacturer,
+                dm.name as model_name, m.name as manufacturer,
                 o.name as organization_name,
                 dept.dept_name as department_name,
                 (wi.warranty_end - CURRENT_DATE) as days_remaining
             FROM warranty_info wi
             LEFT JOIN device d ON wi.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.dept_id
             ${whereClause}

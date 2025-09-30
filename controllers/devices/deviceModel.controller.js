@@ -20,7 +20,7 @@ export const getAllDeviceModels = async (req, res) => {
         }
         
         if (manufacturer) {
-            whereConditions.push(`dm.manufacturer ILIKE $${params.length + 1}`);
+            whereConditions.push(`m.name ILIKE $${params.length + 1}`);
             params.push(`%${manufacturer}%`);
         }
         
@@ -30,18 +30,19 @@ export const getAllDeviceModels = async (req, res) => {
 
         const models = await prisma.$queryRawUnsafe(`
             SELECT 
-                dm.id, dm.name, dm.manufacturer, dm.specifications,
-                dm.category_id,
+                dm.id, dm.name, m.name as manufacturer, dm.specifications,
+                dm.category_id, dm.manufacturer_id,
                 dc.name as category_name,
                 dc.description as category_description,
                 COUNT(d.id)::integer as devices_count
             FROM device_models dm
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device d ON dm.id = d.model_id
             ${whereClause}
-            GROUP BY dm.id, dm.name, dm.manufacturer, dm.specifications, 
-                     dm.category_id, dc.name, dc.description
-            ORDER BY dm.manufacturer, dm.name
+            GROUP BY dm.id, dm.name, m.name, dm.specifications, 
+                     dm.category_id, dm.manufacturer_id, dc.name, dc.description
+            ORDER BY m.name, dm.name
         `, ...params);
 
         res.status(200).json({
@@ -67,17 +68,18 @@ export const getDeviceModelById = async (req, res) => {
 
         const model = await prisma.$queryRaw`
             SELECT 
-                dm.id, dm.name, dm.manufacturer, dm.specifications,
-                dm.category_id,
+                dm.id, dm.name, m.name as manufacturer, dm.specifications,
+                dm.category_id, dm.manufacturer_id,
                 dc.name as category_name,
                 dc.description as category_description,
                 COUNT(d.id)::integer as devices_count
             FROM device_models dm
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device d ON dm.id = d.model_id
             WHERE dm.id = ${id}::uuid
-            GROUP BY dm.id, dm.name, dm.manufacturer, dm.specifications, 
-                     dm.category_id, dc.name, dc.description
+            GROUP BY dm.id, dm.name, m.name, dm.specifications, 
+                     dm.category_id, dm.manufacturer_id, dc.name, dc.description
         `;
 
         if (model.length === 0) {
@@ -285,13 +287,15 @@ export const getModelsByCategory = async (req, res) => {
 
         const models = await prisma.$queryRaw`
             SELECT 
-                dm.id, dm.name, dm.manufacturer, dm.specifications,
+                dm.id, dm.name, m.name as manufacturer, dm.specifications,
+                dm.manufacturer_id,
                 COUNT(d.id)::integer as devices_count
             FROM device_models dm
+            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device d ON dm.id = d.model_id
             WHERE dm.category_id = ${categoryId}::uuid
-            GROUP BY dm.id, dm.name, dm.manufacturer, dm.specifications
-            ORDER BY dm.manufacturer, dm.name
+            GROUP BY dm.id, dm.name, m.name, dm.specifications, dm.manufacturer_id
+            ORDER BY m.name, dm.name
         `;
 
         res.status(200).json({

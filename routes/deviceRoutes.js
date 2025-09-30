@@ -63,7 +63,7 @@ const router = express.Router();
 // ====================================================================
 
 // GET /device-categories - Get all categories (hierarchical)
-router.get('/device-categories', getAllDeviceCategories);
+router.get('/device-categories',authMiddleware, getAllDeviceCategories);
 
 // GET /device-categories/root - Get root categories only
 router.get('/device-categories/root', getRootCategories);
@@ -88,7 +88,7 @@ router.delete('/device-categories/:id', authMiddleware, deleteDeviceCategory);
 // ====================================================================
 
 // GET /device-models - Get all device models with filtering
-router.get('/device-models', getAllDeviceModels);
+router.get('/device-models', authMiddleware, getAllDeviceModels);
 
 // GET /device-models/manufacturers - Get manufacturers list
 router.get('/device-models/manufacturers', getManufacturers);
