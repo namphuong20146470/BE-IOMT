@@ -81,7 +81,7 @@ export default async function authMiddleware(req, res, next) {
 
         // Extract JWT payload to get full role info
         const jwtPayload = jwt.decode(token);
-        console.log('🎫 JWT payload roles:', JSON.stringify(jwtPayload?.roles, null, 2));
+        console.log('🎫 JWT payload roles');
         
         // Attach user and session info to request
         req.user = user;
@@ -96,14 +96,8 @@ export default async function authMiddleware(req, res, next) {
         req.user.department_id = jwtPayload?.department_id || user.department_id;
         
         // Authentication success
-        console.log('👤 User authenticated successfully:', {
-            userId: user.id,
-            userName: user.username,
-            organizationId: req.user.organization_id,
-            roles: req.userRoles,
-            fullRoles: req.user.roles.map(r => ({ name: r.name, is_system_role: r.is_system_role })),
-            permissions: permissions.length
-        });
+        console.log('👤 User authenticated successfully'
+        );
 
         // Log successful authentication (optional)
         try {

@@ -6,6 +6,17 @@ function getVietnamDate() {
     return new Date(now.getTime() + 7 * 60 * 60 * 1000);
 }
 
+// ✅ Helper function to safely get user permissions
+function getUserPermissions(user) {
+    return Array.isArray(user?.permissions) ? user.permissions : [];
+}
+
+// ✅ Helper function to check permission safely
+function hasPermission(user, permission) {
+    const permissions = getUserPermissions(user);
+    return permissions.includes(permission);
+}
+
 // Get all devices with filtering
 export const getAllDevices = async (req, res) => {
     try {
@@ -54,8 +65,8 @@ export const getAllDevices = async (req, res) => {
                 // Validate user can access requested department
                 if (department_id !== userDeptId) {
                     // Check if user has permission to view other departments
-                    const hasPermission = req.user?.permissions?.includes('view_all_departments') || false;
-                    if (!hasPermission) {
+                    const hasPermissionToViewAllDepts = hasPermission(req.user, 'view_all_departments');
+                    if (!hasPermissionToViewAllDepts) {
                         return res.status(403).json({
                             success: false,
                             message: 'Access denied: Cannot access devices from different department'
@@ -73,8 +84,8 @@ export const getAllDevices = async (req, res) => {
             }
         } else if (department_id) {
             // User has no department but requests specific department - check permission
-            const hasPermission = req.user?.permissions?.includes('view_all_departments') || false;
-            if (!hasPermission) {
+            const hasPermissionToViewAllDepts = hasPermission(req.user, 'view_all_departments');
+            if (!hasPermissionToViewAllDepts) {
                 return res.status(403).json({
                     success: false,
                     message: 'Access denied: No permission to filter by department'
@@ -259,8 +270,8 @@ export const getDeviceById = async (req, res) => {
         const userDeptId = req.user?.department_id;
         if (userDeptId && device[0].department_id && device[0].department_id !== userDeptId) {
             // Check if user has permission to view other departments
-            const hasPermission = req.user?.permissions?.includes('view_all_departments') || false;
-            if (!hasPermission) {
+            const hasPermissionToViewAllDepts = hasPermission(req.user, 'view_all_departments');
+            if (!hasPermissionToViewAllDepts) {
                 return res.status(403).json({
                     success: false,
                     message: 'Access denied: Cannot access device from different department'
@@ -312,7 +323,7 @@ export const createDevice = async (req, res) => {
         // ====================================================================
         const userOrgId = req.user?.organization_id;
         const userDeptId = req.user?.department_id;
-        const userPermissions = req.user?.permissions || [];
+        const userPermissions = getUserPermissions(req.user);
 
         if (!userOrgId) {
             return res.status(403).json({
@@ -329,8 +340,8 @@ export const createDevice = async (req, res) => {
         // Check if user is trying to create in different organization
         if (organization_id && organization_id !== userOrgId) {
             // Only System Admin or Organization Admin can create in different orgs
-            const canCreateCrossOrg = userPermissions.includes('organization.create') || 
-                                     userPermissions.includes('system.admin');
+            const canCreateCrossOrg = hasPermission(req.user, 'organization.create') || 
+                                     hasPermission(req.user, 'system.admin');
             
             if (!canCreateCrossOrg) {
                 return res.status(403).json({
@@ -377,9 +388,9 @@ export const createDevice = async (req, res) => {
             // Check if user can create in this department
             if (userDeptId && department_id !== userDeptId) {
                 // User trying to create in different department
-                const canCreateCrossDept = userPermissions.includes('device.create.all_departments') ||
-                                          userPermissions.includes('department.manage') ||
-                                          userPermissions.includes('organization.admin');
+                const canCreateCrossDept = hasPermission(req.user, 'device.create.all_departments') ||
+                                          hasPermission(req.user, 'department.manage') ||
+                                          hasPermission(req.user, 'organization.admin');
                 
                 if (!canCreateCrossDept) {
                     return res.status(403).json({
@@ -402,7 +413,7 @@ export const createDevice = async (req, res) => {
             SELECT dm.id, dm.name, dc.name as category_name
             FROM device_models dm
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
-            WHERE dm.id = ${model_id}::uuid AND dm.is_active = true
+            WHERE dm.id = ${model_id}::uuid
         `;
         
         if (modelExists.length === 0) {
@@ -453,39 +464,63 @@ export const createDevice = async (req, res) => {
         }
 
         // ====================================================================
-        // 7. CREATE DEVICE
+        // 7. CREATE DEVICE WITH CONNECTIVITY
         // ====================================================================
         
         const purchaseDateValue = purchase_date ? new Date(purchase_date) : null;
         const installationDateValue = installation_date ? new Date(installation_date) : null;
 
-        const newDevice = await prisma.$queryRaw`
-            INSERT INTO device (
-                model_id, 
-                organization_id, 
-                department_id, 
-                serial_number, 
-                asset_tag, 
-                status, 
-                purchase_date, 
-                installation_date,
-                created_at, 
-                updated_at
-            )
-            VALUES (
-                ${model_id}::uuid, 
-                ${finalOrganizationId}::uuid, 
-                ${finalDepartmentId}::uuid,
-                ${serial_number}, 
-                ${asset_tag || null}, 
-                ${status}::device_status,
-                ${purchaseDateValue}::date,
-                ${installationDateValue}::date,
-                ${getVietnamDate()}::timestamptz,
-                ${getVietnamDate()}::timestamptz
-            )
-            RETURNING *
-        `;
+        // Use transaction to create both device and device_connectivity
+        const result = await prisma.$transaction(async (tx) => {
+            // Create device record
+            const newDevice = await tx.$queryRaw`
+                INSERT INTO device (
+                    model_id, 
+                    organization_id, 
+                    department_id, 
+                    serial_number, 
+                    asset_tag, 
+                    status, 
+                    purchase_date, 
+                    installation_date,
+                    created_at, 
+                    updated_at
+                )
+                VALUES (
+                    ${model_id}::uuid, 
+                    ${finalOrganizationId}::uuid, 
+                    ${finalDepartmentId}::uuid,
+                    ${serial_number}, 
+                    ${asset_tag || null}, 
+                    ${status}::device_status,
+                    ${purchaseDateValue}::date,
+                    ${installationDateValue}::date,
+                    ${getVietnamDate()}::timestamptz,
+                    ${getVietnamDate()}::timestamptz
+                )
+                RETURNING id
+            `;
+
+            const deviceId = newDevice[0].id;
+
+            // Create device_connectivity record (this table has is_active)
+            await tx.$queryRaw`
+                INSERT INTO device_connectivity (
+                    device_id,
+                    is_active,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    ${deviceId}::uuid,
+                    true,
+                    ${getVietnamDate()}::timestamptz,
+                    ${getVietnamDate()}::timestamptz
+                )
+            `;
+
+            return newDevice[0];
+        });
 
         // ====================================================================
         // 8. GET CREATED DEVICE WITH FULL INFO
@@ -497,13 +532,15 @@ export const createDevice = async (req, res) => {
                 dm.name as model_name,
                 o.name as organization_name,
                 dept.name as department_name,
-                dc.name as category_name
+                dc.name as category_name,
+                conn.is_active as connectivity_active
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id  
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.id
-            WHERE d.id = ${newDevice[0].id}::uuid
+            LEFT JOIN device_connectivity conn ON d.id = conn.device_id
+            WHERE d.id = ${result.id}::uuid
         `;
 
         res.status(201).json({

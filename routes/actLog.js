@@ -118,10 +118,10 @@ router.get('/organizations/:id', authMiddleware, requirePermission('organization
 router.put('/organizations/:id', authMiddleware, requirePermission('organization.update'), updateOrganization);
 
 // Departments routes
-router.post('/departments', createDepartment);
-router.get('/departments', getAllDepartments);
-router.get('/departments/organization/:organization_id', getDepartmentsByOrganization);
-router.put('/departments/:id', updateDepartment);
+router.post('/departments',authMiddleware, createDepartment);
+router.get('/departments',authMiddleware, getAllDepartments);
+router.get('/departments/organization/:organization_id',authMiddleware, getDepartmentsByOrganization);
+router.put('/departments/:id',authMiddleware, updateDepartment);
 
 // ====================================================================
 // PERMISSION MANAGEMENT ROUTES

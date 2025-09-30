@@ -97,7 +97,7 @@ router.get('/device-models/manufacturers', getManufacturers);
 router.get('/device-models/:id', getDeviceModelById);
 
 // GET /device-models/category/:categoryId - Get models by category
-router.get('/device-models/category/:categoryId', getModelsByCategory);
+router.get('/device-models/category/:categoryId',authMiddleware, getModelsByCategory);
 
 // POST /device-models - Create device model
 router.post('/device-models', authMiddleware, createDeviceModel);
@@ -119,7 +119,7 @@ router.get('/devices', authMiddleware, getAllDevices, requirePermission('device.
 router.get('/devices/statistics', getDeviceStatistics);
 
 // GET /devices/:id - Get device by ID with full details
-router.get('/devices/:id', getDeviceById);
+router.get('/devices/:id',authMiddleware, getDeviceById);
 
 // POST /devices - Create device
 router.post('/devices', authMiddleware, createDevice);
