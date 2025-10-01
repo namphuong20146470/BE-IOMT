@@ -1,6 +1,7 @@
 import mqtt from 'mqtt';
 import { PrismaClient } from '@prisma/client';
 import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
+import socketService from '../services/socketService.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -494,6 +495,9 @@ class DynamicMqttManager {
                 await this.updateLatestDataBatch(tx, deviceId, fullState, timestamp);
             });
             
+            // 🔥 Emit real-time data to Socket.IO clients after successful save
+            this.emitRealtimeData(deviceId, changedFields, fullState);
+            
             console.log(`💾 Saved ${Object.keys(changedFields).length} changed fields for device ${deviceId}`);
             
         } catch (error) {
@@ -846,6 +850,61 @@ class DynamicMqttManager {
         }
         this.clients.clear();
         this.deviceTopics.clear();
+    }
+
+    // ==================== REAL-TIME SOCKET.IO INTEGRATION ====================
+    
+    async emitRealtimeData(deviceId, changedFields, fullState) {
+        try {
+            // Get device info for better context
+            const device = await prisma.devices.findUnique({
+                where: { id: deviceId },
+                include: {
+                    device_category: true,
+                    device_model: true,
+                    organizations: true,
+                    departments: true
+                }
+            });
+
+            if (!device) return;
+
+            const realtimeData = {
+                deviceId,
+                serialNumber: device.serial_number,
+                deviceName: device.name,
+                category: device.device_category?.name,
+                model: device.device_model?.name,
+                organization: device.organizations?.name,
+                department: device.departments?.name,
+                changedFields: Object.keys(changedFields),
+                data: fullState,
+                timestamp: new Date().toISOString()
+            };
+
+            // Emit to device-specific room
+            socketService.emitToRoom(`device_${deviceId}`, 'dynamicDeviceUpdate', realtimeData);
+
+            // Emit to organization room (for scoped access)
+            if (device.organization_id) {
+                socketService.emitToRoom(`org_${device.organization_id}`, 'dynamicDeviceUpdate', realtimeData);
+            }
+
+            // Emit to department room
+            if (device.department_id) {
+                socketService.emitToRoom(`dept_${device.department_id}`, 'dynamicDeviceUpdate', realtimeData);
+            }
+
+            // Emit to all devices room for overview
+            socketService.emitToRoom('all_devices', 'dynamicDeviceUpdate', realtimeData);
+
+            if (process.env.DEBUG_MQTT === 'true') {
+                console.log(`🔥 Emitted real-time data for device ${device.serial_number}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Error emitting real-time data:', error);
+        }
     }
 }
 

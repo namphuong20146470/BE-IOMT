@@ -1,151 +1,152 @@
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
-import permissionService from '../services/PermissionService.js';
-import sessionService from '../services/SessionService.js';
-import auditService from '../services/AuditService.js';
 
 const prisma = new PrismaClient();
 
 /**
- * Authentication Middleware - JWT Token Validation & User Loading
- * Focuses ONLY on authentication, not authorization
- * @param {Object} req - Express request
- * @param {Object} res - Express response
- * @param {Function} next - Next function
+ * 🔐 AUTHENTICATE - Middleware đọc token từ HTTP-Only Cookie
  */
-export default async function authMiddleware(req, res, next) {
+export const authMiddleware = async (req, res, next) => {
     try {
-        console.log('🔐 Starting authentication...');
-        
-        // Extract token
-        const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            console.log('❌ No Bearer token found');
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Access token required',
+        // ✅ Đọc token từ cookie
+        const token = req.cookies?.access_token;
+
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required',
                 code: 'AUTH_TOKEN_MISSING'
             });
         }
 
-        const token = authHeader.substring(7);
-        console.log('🎫 Token extracted:', token.substring(0, 20) + '...');
+        // Verify JWT
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // Validate token using SessionService
-        const sessionValidation = await sessionService.validateAccessToken(token);
-        if (!sessionValidation) {
-            console.log('❌ Invalid session: token validation failed');
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Invalid or expired token',
-                code: 'AUTH_TOKEN_INVALID'
+        // Validate session trong database
+        const sessions = await prisma.$queryRaw`
+            SELECT session_id, user_id, expires_at, is_valid
+            FROM user_sessions
+            WHERE session_id = ${decoded.jti}::uuid
+            AND is_valid = true
+            AND expires_at > NOW()
+        `;
+
+        if (sessions.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: 'Session expired or invalid',
+                code: 'AUTH_SESSION_INVALID'
             });
         }
 
-        console.log('✅ Session validated for user:', sessionValidation.user.id);
-        
-        // Get user with complete information
-        const user = await prisma.users.findUnique({
-            where: { id: sessionValidation.user.id },
-            include: {
-                user_roles: {
-                    include: {
-                        roles: {
-                            include: {
-                                role_permissions: {
-                                    include: {
-                                        permissions: true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        // Attach user data vào request
+        req.user = {
+            id: decoded.sub || decoded.id,
+            username: decoded.username,
+            full_name: decoded.full_name,
+            email: decoded.email,
+            organization_id: decoded.organization_id,
+            department_id: decoded.department_id,
+            roles: decoded.roles || []
+        };
 
-        if (!user) {
-            console.log('❌ User not found:', sessionValidation.user.id);
-            return res.status(401).json({ 
-                success: false, 
-                message: 'User not found',
-                code: 'AUTH_USER_NOT_FOUND'
-            });
-        }
-
-        console.log('✅ User loaded:', user.username);
-
-        // Load permissions using PermissionService
-        const permissions = await permissionService.getUserPermissions(user.id);
-        console.log('🔑 Permissions loaded:', permissions.length);
-
-        // Extract JWT payload to get full role info
-        const jwtPayload = jwt.decode(token);
-        console.log('🎫 JWT payload roles');
-        
-        // Attach user and session info to request
-        req.user = user;
-        req.session = sessionValidation;
-        req.permissions = permissions;
-        req.userRoles = user.user_roles.map(ur => ur.roles.name);
-        
-        // Add full roles from JWT payload (includes is_system_role)
-        req.user.roles = jwtPayload?.roles || [];
-        req.user.permissions = permissions; // Fix: Attach permissions to user object
-        req.user.organization_id = jwtPayload?.organization_id || user.organization_id;
-        req.user.department_id = jwtPayload?.department_id || user.department_id;
-        
-        // Authentication success
-        console.log('👤 User authenticated successfully'
-        );
-
-        // Log successful authentication (optional)
-        try {
-            await auditService.logActivity(
-                user.id,
-                'login',
-                'session',
-                sessionValidation.session_id,
-                {
-                    ip: req.ip,
-                    userAgent: req.headers['user-agent'],
-                    username: user.username
-                },
-                req.user.organization_id
-            );
-        } catch (auditError) {
-            console.error('Audit log error:', auditError);
-        }
+        req.session = {
+            session_id: decoded.jti,
+            expires_at: sessions[0].expires_at
+        };
 
         next();
 
     } catch (error) {
-        console.error('💥 Authentication error:', error);
-        
-        // Log authentication failure (optional)
-        try {
-            await auditService.logUserActivity({
-                user_id: req.ip, // fallback
-                action: 'AUTH_FAILED',
-                details: {
-                    error: error.message,
-                    ip: req.ip,
-                    userAgent: req.headers['user-agent']
-                }
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({
+                success: false,
+                message: 'Access token expired',
+                code: 'AUTH_TOKEN_EXPIRED',
+                hint: 'Use /auth/refresh to get new token'
             });
-        } catch (auditError) {
-            console.error('Audit log error:', auditError);
         }
 
-        return res.status(401).json({ 
-            success: false, 
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid token',
+                code: 'AUTH_TOKEN_INVALID'
+            });
+        }
+
+        console.error('Authentication error:', error);
+        return res.status(500).json({
+            success: false,
             message: 'Authentication failed',
             code: 'AUTH_ERROR'
         });
     }
-}
+};
 
+/**
+ * 🔓 OPTIONAL AUTH - Cho phép request không có token
+ */
+export const optionalAuth = async (req, res, next) => {
+    try {
+        const token = req.cookies?.access_token;
 
+        if (token) {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            req.user = {
+                id: decoded.sub || decoded.id,
+                username: decoded.username,
+                roles: decoded.roles || []
+            };
+        }
 
-// Export session service for use in controllers
-export { sessionService };
+        next();
+    } catch (error) {
+        // Ignore errors, continue as guest
+        next();
+    }
+};
+
+/**
+ * 🛡️ REQUIRE PERMISSION - Check user có permission không
+ */
+export const requirePermission = (permission) => {
+    return (req, res, next) => {
+        const userPermissions = req.user?.roles
+            ?.flatMap(role => role.permissions || []) || [];
+
+        if (!userPermissions.includes(permission)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Insufficient permissions',
+                code: 'AUTH_FORBIDDEN',
+                required: permission
+            });
+        }
+
+        next();
+    };
+};
+
+/**
+ * 🎭 REQUIRE ROLE - Check user có role không
+ */
+export const requireRole = (roleName) => {
+    return (req, res, next) => {
+        const userRoles = req.user?.roles?.map(r => r.name) || [];
+
+        if (!userRoles.includes(roleName)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Insufficient role',
+                code: 'AUTH_FORBIDDEN',
+                required: roleName
+            });
+        }
+
+        next();
+    };
+};  
+
+// 🔐 Export default cho backward compatibility
+export default authMiddleware;

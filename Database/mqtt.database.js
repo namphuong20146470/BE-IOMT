@@ -1,6 +1,7 @@
 import mqtt from 'mqtt';
 import { PrismaClient } from '@prisma/client';
 import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
+import socketService from '../services/socketService.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -216,8 +217,23 @@ async function processDeviceData(tableName, topicName, partialData) {
             await checkDeviceWarnings(tableName, warningData, result[0]?.id);
         }
 
+        // 🔥 Emit real-time data to Socket.IO clients
+        const deviceData = {
+            id: result[0]?.id,
+            tableName,
+            data: completeData,
+            changedFields,
+            timestamp: new Date().toISOString()
+        };
+
+        // Emit to device-specific room
+        socketService.emitToRoom(`device_${tableName}`, 'deviceDataUpdate', deviceData);
+
+        // Emit to all devices room for overview dashboard
+        socketService.emitToRoom('all_devices', 'deviceDataUpdate', deviceData);
+
         if (process.env.DEBUG_MQTT === 'true') {
-            console.log(`✅ ${topicName} saved | Changed: [${changedFields.join(', ')}]`);
+            console.log(`✅ ${topicName} saved | Changed: [${changedFields.join(', ')}] | Emitted to Socket.IO`);
         }
 
         return result[0];

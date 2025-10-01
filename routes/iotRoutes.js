@@ -142,9 +142,7 @@ router.post('/iot-env', addIotEnv);
 // ========================================
 
 // GET /warnings - Get all warning logs (with filters)
-router.get('/warnings', 
-    authMiddleware, 
-    requirePermission('device.read'), 
+router.get('/warnings',  
     getAllWarningLogs
 );
 
