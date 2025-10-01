@@ -1,11 +1,13 @@
 import mqtt from 'mqtt';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const prisma = new PrismaClient();
+
+// ==================== CONFIGURATION ====================
 
 const mqttConfig = {
     host: process.env.MQTT_HOST || 'broker.hivemq.com',
@@ -19,6 +21,15 @@ const mqttConfig = {
 };
 
 const TIME_WINDOW_MINUTES = parseInt(process.env.MQTT_TIME_WINDOW_MINUTES || '1');
+
+// Whitelist allowed tables (SQL injection protection)
+const ALLOWED_TABLES = [
+    'auo_display',
+    'camera_control_unit', 
+    'electronic_endoflator',
+    'led_nova_100',
+    'iot_environment_status'
+];
 
 console.log(`Connecting to MQTT broker at ${mqttConfig.host}:${mqttConfig.port}`);
 const url = `mqtt://${mqttConfig.host}:${mqttConfig.port}`;
@@ -36,6 +47,11 @@ const topics = {
 // ==================== HELPER FUNCTIONS ====================
 
 async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTES) {
+    // Validate table name (prevent SQL injection)
+    if (!ALLOWED_TABLES.includes(tableName)) {
+        throw new Error(`Invalid table name: ${tableName}`);
+    }
+
     try {
         const query = `
             SELECT * FROM ${tableName}
@@ -53,73 +69,71 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
 }
 
 function mergeDeviceData(latestRecord, newData) {
-    const defaults = {
-        voltage: 0,
-        current: 0,
-        power_operating: 0,
-        frequency: 0,
-        power_factor: 0,
-        operating_time: '00:00:00',
-        over_voltage_operating: false,
-        over_current_operating: false,
-        over_power_operating: false,
-        status_operating: false,
-        under_voltage_operating: false,
-        power_socket_status: false
-    };
-
+    // ✅ FIX: NO DEFAULTS - preserve all existing values
+    
     if (!latestRecord) {
+        // ⚠️ EDGE CASE: No previous record exists
+        // Initialize with received data only, leave other fields NULL/unset
+        console.warn('⚠️ No previous record found, initializing with partial data only');
         return {
-            ...defaults,
-            ...newData
+            voltage: newData.voltage ?? null,
+            current: newData.current ?? null,
+            power_operating: newData.power_operating ?? null,
+            frequency: newData.frequency ?? null,
+            power_factor: newData.power_factor ?? null,
+            operating_time: newData.operating_time ?? null,
+            over_voltage_operating: newData.over_voltage_operating ?? null,
+            over_current_operating: newData.over_current_operating ?? null,
+            over_power_operating: newData.over_power_operating ?? null,
+            status_operating: newData.status_operating ?? null,
+            under_voltage_operating: newData.under_voltage_operating ?? null,
+            power_socket_status: newData.power_socket_status ?? null
         };
     }
 
-    // Merge: prioritize new data, fallback to latest record
+    // ✅ PROPER DELTA MERGE: newData overrides, existing values preserved
     return {
-        voltage: newData.voltage ?? latestRecord.voltage ?? defaults.voltage,
-        current: newData.current ?? latestRecord.current ?? defaults.current,
-        power_operating: newData.power_operating ?? latestRecord.power_operating ?? defaults.power_operating,
-        frequency: newData.frequency ?? latestRecord.frequency ?? defaults.frequency,
-        power_factor: newData.power_factor ?? latestRecord.power_factor ?? defaults.power_factor,
-        operating_time: newData.operating_time ?? latestRecord.operating_time ?? defaults.operating_time,
-        over_voltage_operating: newData.over_voltage_operating ?? latestRecord.over_voltage_operating ?? defaults.over_voltage_operating,
-        over_current_operating: newData.over_current_operating ?? latestRecord.over_current_operating ?? defaults.over_current_operating,
-        over_power_operating: newData.over_power_operating ?? latestRecord.over_power_operating ?? defaults.over_power_operating,
-        status_operating: newData.status_operating ?? latestRecord.status_operating ?? defaults.status_operating,
-        under_voltage_operating: newData.under_voltage_operating ?? latestRecord.under_voltage_operating ?? defaults.under_voltage_operating,
-        power_socket_status: newData.power_socket_status ?? latestRecord.power_socket_status ?? defaults.power_socket_status
+        voltage: newData.voltage !== undefined ? newData.voltage : latestRecord.voltage,
+        current: newData.current !== undefined ? newData.current : latestRecord.current,
+        power_operating: newData.power_operating !== undefined ? newData.power_operating : latestRecord.power_operating,
+        frequency: newData.frequency !== undefined ? newData.frequency : latestRecord.frequency,
+        power_factor: newData.power_factor !== undefined ? newData.power_factor : latestRecord.power_factor,
+        operating_time: newData.operating_time !== undefined ? newData.operating_time : latestRecord.operating_time,
+        over_voltage_operating: newData.over_voltage_operating !== undefined ? newData.over_voltage_operating : latestRecord.over_voltage_operating,
+        over_current_operating: newData.over_current_operating !== undefined ? newData.over_current_operating : latestRecord.over_current_operating,
+        over_power_operating: newData.over_power_operating !== undefined ? newData.over_power_operating : latestRecord.over_power_operating,
+        status_operating: newData.status_operating !== undefined ? newData.status_operating : latestRecord.status_operating,
+        under_voltage_operating: newData.under_voltage_operating !== undefined ? newData.under_voltage_operating : latestRecord.under_voltage_operating,
+        power_socket_status: newData.power_socket_status !== undefined ? newData.power_socket_status : latestRecord.power_socket_status
     };
 }
 
 function mergeEnvironmentData(latestRecord, newData) {
-    const defaults = {
-        leak_current_ma: 0,
-        temperature_c: 0,
-        humidity_percent: 0,
-        over_temperature: false,
-        over_humidity: false,
-        soft_warning: false,
-        strong_warning: false,
-        shutdown_warning: false
-    };
-
     if (!latestRecord) {
+        // ⚠️ EDGE CASE: No previous record exists
+        console.warn('⚠️ No previous environment record found, initializing with partial data only');
         return {
-            ...defaults,
-            ...newData
+            leak_current_ma: newData.leak_current_ma ?? null,
+            temperature_c: newData.temperature_c ?? null,
+            humidity_percent: newData.humidity_percent ?? null,
+            over_temperature: newData.over_temperature ?? null,
+            over_humidity: newData.over_humidity ?? null,
+            soft_warning: newData.soft_warning ?? null,
+            strong_warning: newData.strong_warning ?? null,
+            shutdown_warning: newData.shutdown_warning ?? null
         };
     }
 
+    // ✅ PROPER DELTA MERGE: preserve existing values
     return {
-        leak_current_ma: newData.leak_current_ma ?? latestRecord.leak_current_ma ?? defaults.leak_current_ma,
-        temperature_c: newData.temperature_c ?? latestRecord.temperature_c ?? defaults.temperature_c,
-        humidity_percent: newData.humidity_percent ?? latestRecord.humidity_percent ?? defaults.humidity_percent,
-        over_temperature: newData.over_temperature ?? latestRecord.over_temperature ?? defaults.over_temperature,
-        over_humidity: newData.over_humidity ?? latestRecord.over_humidity ?? defaults.over_humidity,
-        soft_warning: newData.soft_warning ?? latestRecord.soft_warning ?? defaults.soft_warning,
-        strong_warning: newData.strong_warning ?? latestRecord.strong_warning ?? defaults.strong_warning,
-        shutdown_warning: newData.shutdown_warning ?? latestRecord.shutdown_warning ?? defaults.shutdown_warning
+        leak_current_ma: newData.leak_current_ma !== undefined ? newData.leak_current_ma : latestRecord.leak_current_ma,
+        temperature_c: newData.temperature_c !== undefined ? newData.temperature_c : latestRecord.temperature_c,
+        humidity_percent: newData.humidity_percent !== undefined ? newData.humidity_percent : latestRecord.humidity_percent,
+        over_temperature: newData.over_temperature !== undefined ? newData.over_temperature : latestRecord.over_temperature,
+        over_humidity: newData.over_humidity !== undefined ? newData.over_humidity : latestRecord.over_humidity,
+        soft_warning: newData.soft_warning !== undefined ? newData.soft_warning : latestRecord.soft_warning,
+        strong_warning: newData.strong_warning !== undefined ? newData.strong_warning : latestRecord.strong_warning,
+        shutdown_warning: newData.shutdown_warning !== undefined ? newData.shutdown_warning : latestRecord.shutdown_warning
     };
 }
 
@@ -127,6 +141,11 @@ function mergeEnvironmentData(latestRecord, newData) {
 
 async function processDeviceData(tableName, topicName, partialData) {
     try {
+        // Validate table name
+        if (!ALLOWED_TABLES.includes(tableName)) {
+            throw new Error(`Invalid table name: ${tableName}`);
+        }
+
         // Get latest record
         const latestRecord = await getLatestRecord(tableName);
         
@@ -207,6 +226,13 @@ async function processDeviceData(tableName, topicName, partialData) {
         throw error;
     }
 }
+
+// ==================== EXPORT FOR CONTROLLER USE ====================
+
+/**
+ * Export merge functions để controller có thể dùng chung logic
+ */
+export { getLatestRecord, mergeDeviceData, mergeEnvironmentData, ALLOWED_TABLES };
 
 // ==================== TOPIC HANDLERS ====================
 
@@ -292,14 +318,15 @@ async function processIotEnvData(partialData) {
 // ==================== MQTT EVENT HANDLERS ====================
 
 client.on('connect', () => {
-    console.log(`MQTT client connected to ${mqttConfig.host}:${mqttConfig.port}`);
+    console.log(`✅ MQTT connected: ${mqttConfig.host}:${mqttConfig.port}`);
 
     Object.values(topics).forEach(topic => {
-        client.subscribe(topic, (err) => {
+        // Set QoS 1 for at-least-once delivery
+        client.subscribe(topic, { qos: 1 }, (err) => {
             if (!err) {
-                console.log(`Subscribed to ${topic}`);
+                console.log(`📡 Subscribed: ${topic} (QoS: 1)`);
             } else {
-                console.error(`Error subscribing to ${topic}:`, err);
+                console.error(`❌ Subscribe error [${topic}]:`, err);
             }
         });
     });
@@ -308,7 +335,7 @@ client.on('connect', () => {
 client.on('message', async (topic, message) => {
     try {
         if (process.env.DEBUG_MQTT === 'true') {
-            console.log(`Received on ${topic}: ${message.toString()}`);
+            console.log(`📨 Received [${topic}]: ${message.toString()}`);
         }
         
         const data = JSON.parse(message.toString());
@@ -330,23 +357,56 @@ client.on('message', async (topic, message) => {
                 await processIotEnvData(data);
                 break;
             default:
-                console.log(`No handler for topic ${topic}`);
+                console.log(`⚠️  No handler for topic: ${topic}`);
         }
     } catch (error) {
-        console.error('Error processing MQTT message:', error);
+        if (error instanceof SyntaxError) {
+            console.error(`❌ Invalid JSON on ${topic}:`, message.toString());
+        } else {
+            console.error(`❌ Error processing ${topic}:`, error.message);
+        }
     }
 });
 
 client.on('error', (error) => {
-    console.error('MQTT client error:', error);
+    console.error('❌ MQTT client error:', error);
 });
 
 client.on('reconnect', () => {
-    console.log('MQTT client reconnecting...');
+    console.log('🔄 MQTT reconnecting...');
 });
 
 client.on('close', () => {
-    console.log('MQTT connection closed');
+    console.log('🔌 MQTT connection closed');
 });
+
+client.on('offline', () => {
+    console.log('📴 MQTT client offline');
+});
+
+// ==================== GRACEFUL SHUTDOWN ====================
+
+const gracefulShutdown = async () => {
+    console.log('\n🛑 Shutting down MQTT client...');
+    
+    // Unsubscribe from all topics
+    Object.values(topics).forEach(topic => {
+        client.unsubscribe(topic);
+    });
+    
+    // Close MQTT connection
+    client.end(false, {}, () => {
+        console.log('✅ MQTT disconnected');
+    });
+    
+    // Close Prisma connection
+    await prisma.$disconnect();
+    console.log('✅ Database disconnected');
+    
+    process.exit(0);
+};
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
 
 export default client;
