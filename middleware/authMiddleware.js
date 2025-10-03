@@ -11,15 +11,15 @@ export const authMiddleware = async (req, res, next) => {
         let token = null;
         let tokenSource = null;
 
-        // ✅ Priority 1: Check HttpOnly Cookie
-        if (req.cookies?.access_token) {
-            token = req.cookies.access_token;
-            tokenSource = 'cookie';
-        }
-        // ✅ Priority 2: Check Authorization Header
-        else if (req.headers.authorization?.startsWith('Bearer ')) {
+        // ✅ Priority 1: Check Authorization Header (localStorage)
+        if (req.headers.authorization?.startsWith('Bearer ')) {
             token = req.headers.authorization.substring(7);
             tokenSource = 'bearer';
+        }
+        // ✅ Priority 2: Check HttpOnly Cookie (fallback)
+        else if (req.cookies?.access_token) {
+            token = req.cookies.access_token;
+            tokenSource = 'cookie';
         }
 
         if (!token) {
@@ -27,7 +27,7 @@ export const authMiddleware = async (req, res, next) => {
                 success: false,
                 message: 'Authentication required',
                 code: 'AUTH_TOKEN_MISSING',
-                hint: 'Provide token via HttpOnly cookie or Authorization header'
+                hint: 'Provide token via Authorization header or HttpOnly cookie'
             });
         }
 

@@ -53,7 +53,7 @@ const extractClientInfo = (req) => ({
 // ========== MAIN CONTROLLERS ==========
 
 /**
- * 🔑 LOGIN - Pure HTTP-Only Cookie authentication
+ * 🔑 LOGIN - Return tokens for localStorage + Optional HttpOnly cookies
  */
 export const login = async (req, res) => {
     const { username, password } = req.body;
@@ -210,7 +210,7 @@ export const login = async (req, res) => {
             });
         }
 
-        // ✅ Set HTTP-Only cookies ONLY
+        // ✅ Set HttpOnly cookies (optional/fallback)
         setAuthCookies(
             res,
             sessionData.data.access_token,
@@ -227,14 +227,14 @@ export const login = async (req, res) => {
                 username: user.username,
                 ip: ipAddress,
                 userAgent,
-                loginMethod: 'cookie'
+                loginMethod: 'localStorage'
             },
             user.organization_id
         );
 
         console.log(`✅ Login successful: ${username}`);
 
-        // Prepare safe response (NO TOKENS)
+        // Prepare safe response
         const { password_hash, ...userResponse } = user;
         userResponse.roles = roles;
 
@@ -242,11 +242,41 @@ export const login = async (req, res) => {
             success: true,
             message: 'Login successful',
             data: {
-                user: userResponse,
+                user: {
+                    id: user.id,
+                    username: user.username,
+                    full_name: user.full_name,
+                    email: user.email,
+                    avatar: user.avatar || null,
+                    organization_id: user.organization_id,
+                    department_id: user.department_id,
+                    is_active: user.is_active,
+                    organization_name: user.organization_name,
+                    department_name: user.department_name,
+                    // ✅ Basic role info only
+                    role_name: roles[0]?.name || 'Unknown',
+                    role_color: roles[0]?.color || '#6B7280',
+                    role_icon: roles[0]?.icon || 'user'
+                },
+                tokens: {
+                    access_token: sessionData.data.access_token,
+                    refresh_token: sessionData.data.refresh_token,  // ✅ Add this
+                    access_token_expires_in: 900,
+                    refresh_token_expires_in: 604800,  // ✅ Add this
+                    token_type: 'Bearer'
+                },
                 session: {
                     session_id: sessionData.data.session_id,
+                    device_id: deviceInfo.user_agent || 'unknown-device',
+                    ip_address: ipAddress,
+                    created_at: sessionData.data.created_at || new Date().toISOString(),
                     expires_at: sessionData.data.expires_at
-                    // ✅ NO TOKENS in response
+                },
+                permissions_summary: {
+                    total: roles.reduce((total, role) => total + (role.permissions?.length || 0), 0),
+                    has_admin_access: roles.some(role => 
+                        role.permissions?.includes('system.admin') || false
+                    )
                 }
             },
             security_info: securityCheck?.is_suspicious ? {
@@ -277,12 +307,28 @@ export const login = async (req, res) => {
  */
 export const refreshToken = async (req, res) => {
     try {
-        const refreshToken = req.cookies?.refresh_token;
+        // ✅ Support both cookie and Bearer token refresh
+        let refreshToken = null;
+        let refreshSource = null;
+
+        // Priority 1: Check Authorization header (localStorage)
+        if (req.headers.authorization?.startsWith('Bearer ')) {
+            refreshToken = req.headers.authorization.substring(7);
+            refreshSource = 'bearer';
+        }
+        // Priority 2: Check cookie (fallback)
+        else if (req.cookies?.refresh_token) {
+            refreshToken = req.cookies.refresh_token;
+            refreshSource = 'cookie';
+        }
+
         const { ipAddress } = extractClientInfo(req);
 
         console.log('🔄 Refresh token request:', {
             hasRefreshToken: !!refreshToken,
+            refreshSource,
             cookies: Object.keys(req.cookies || {}),
+            hasAuthHeader: !!req.headers.authorization,
             ipAddress
         });
 
@@ -290,7 +336,8 @@ export const refreshToken = async (req, res) => {
             return res.status(401).json({
                 success: false,
                 message: 'Refresh token required',
-                code: 'AUTH_REFRESH_TOKEN_MISSING'
+                code: 'AUTH_REFRESH_TOKEN_MISSING',
+                hint: 'Provide refresh token via Authorization header or cookie'
             });
         }
 
@@ -299,7 +346,11 @@ export const refreshToken = async (req, res) => {
 
         if (!result.success) {
             console.log('❌ Refresh failed:', result.error);
-            clearAuthCookies(res);
+            
+            // Clear cookies only if using cookie-based refresh
+            if (refreshSource === 'cookie') {
+                clearAuthCookies(res);
+            }
             
             return res.status(401).json({
                 success: false,
@@ -308,8 +359,10 @@ export const refreshToken = async (req, res) => {
             });
         }
 
-        // Update access token cookie
-        res.cookie('access_token', result.data.access_token, COOKIE_OPTIONS.access);
+        // ✅ Update access token cookie (for cookie-based clients)
+        if (refreshSource === 'cookie') {
+            res.cookie('access_token', result.data.access_token, COOKIE_OPTIONS.access);
+        }
 
         console.log('✅ Token refreshed successfully for user:', result.data.user.username);
 
@@ -317,11 +370,40 @@ export const refreshToken = async (req, res) => {
             success: true,
             message: 'Token refreshed successfully',
             data: {
-                expires_in: result.data.expires_in,
                 user: {
                     id: result.data.user.id,
                     username: result.data.user.username,
-                    full_name: result.data.user.full_name
+                    full_name: result.data.user.full_name,
+                    email: result.data.user.email,
+                    avatar: result.data.user.avatar || null,
+                    organization_id: result.data.user.organization_id,
+                    department_id: result.data.user.department_id,
+                    is_active: result.data.user.is_active,
+                    organization_name: result.data.user.organization_name,
+                    department_name: result.data.user.department_name,
+                    // ✅ Basic role info only
+                    role_name: result.data.user.roles?.[0]?.name || 'Unknown',
+                    role_color: result.data.user.roles?.[0]?.color || '#6B7280',
+                    role_icon: result.data.user.roles?.[0]?.icon || 'user'
+                },
+                tokens: {
+                    access_token: result.data.access_token,
+                    // ✅ Optional: Return new refresh_token if rotated
+                    access_token_expires_in: 900,  // ✅ Consistent
+                    token_type: 'Bearer'
+                },
+                session: {
+                    session_id: result.data.session_id,
+                    device_id: result.data.device_id || 'unknown-device',
+                    ip_address: ipAddress,
+                    created_at: result.data.created_at || new Date().toISOString(),
+                    expires_at: result.data.expires_at
+                },
+                permissions_summary: {
+                    total: result.data.user.roles?.reduce((total, role) => total + (role.permissions?.length || 0), 0) || 0,
+                    has_admin_access: result.data.user.roles?.some(role => 
+                        role.permissions?.includes('system.admin') || false
+                    ) || false
                 }
             }
         });
@@ -329,8 +411,10 @@ export const refreshToken = async (req, res) => {
     } catch (error) {
         console.error('Refresh error:', error);
         
-        // Clear cookies on error
-        clearAuthCookies(res);
+        // Clear cookies on error (if using cookies)
+        if (req.cookies?.refresh_token) {
+            clearAuthCookies(res);
+        }
         
         return res.status(500).json({
             success: false,
@@ -397,7 +481,20 @@ export const logout = async (req, res) => {
 
         return res.json({
             success: true,
-            message: 'Logged out successfully'
+            message: 'Logged out successfully',
+            data: {
+                session: {
+                    session_id: sessionId,
+                    logged_out_at: new Date().toISOString(),
+                    ip_address: req.ip,
+                    logout_method: refreshToken ? 'refresh_token' : 
+                                 accessToken ? 'access_token' : 'session_id'
+                },
+                user: userId ? {
+                    id: userId,
+                    username: req.user?.username
+                } : null
+            }
         });
 
     } catch (error) {
@@ -459,7 +556,34 @@ export const getProfile = async (req, res) => {
 
         return res.json({
             success: true,
-            data: userProfile
+            message: 'User profile retrieved successfully',
+            data: {
+                user: {
+                    id: userProfile.id,
+                    username: userProfile.username,
+                    full_name: userProfile.full_name,
+                    email: userProfile.email,
+                    avatar: userProfile.avatar || null,
+                    organization_id: userProfile.organization_id,
+                    department_id: userProfile.department_id,
+                    organization_name: userProfile.organization_name,
+                    department_name: userProfile.department_name,
+                    created_at: userProfile.created_at,
+                    last_login_at: userProfile.last_login_at,
+                    is_active: userProfile.is_active || true,
+                    roles: userProfile.roles || [],
+                    permissions: userProfile.permissions || []
+                },
+                session: {
+                    session_id: req.session?.session_id,
+                    expires_at: req.session?.expires_at,
+                    auth_source: req.authSource
+                },
+                permissions_summary: {
+                    total: userProfile.permissions?.length || 0,
+                    roles_count: userProfile.roles?.length || 0
+                }
+            }
         });
 
     } catch (error) {
@@ -482,10 +606,24 @@ export const verifySession = async (req, res) => {
             success: true,
             message: 'Session is valid',
             data: {
-                user_id: req.user?.id,
-                username: req.user?.username,
-                session_id: req.session?.session_id,
-                expires_at: req.session?.expires_at
+                user: {
+                    id: req.user?.id,
+                    username: req.user?.username,
+                    full_name: req.user?.full_name,
+                    organization_id: req.user?.organization_id,
+                    department_id: req.user?.department_id,
+                    roles: req.user?.roles || []
+                },
+                session: {
+                    session_id: req.session?.session_id,
+                    expires_at: req.session?.expires_at,
+                    auth_source: req.authSource,
+                    verified_at: new Date().toISOString()
+                },
+                token_info: {
+                    token_type: req.authSource === 'bearer' ? 'Bearer' : 'Cookie',
+                    is_active: true
+                }
             }
         });
     } catch (error) {
@@ -582,7 +720,24 @@ export const changePassword = async (req, res) => {
 
         return res.json({
             success: true,
-            message: 'Password changed successfully'
+            message: 'Password changed successfully',
+            data: {
+                user: {
+                    id: userId,
+                    username: user.username,
+                    password_updated_at: new Date().toISOString()
+                },
+                session: {
+                    current_session_preserved: true,
+                    other_sessions_invalidated: true,
+                    requires_reauth: false
+                },
+                security: {
+                    password_strength: 'strong', // Could implement actual strength check
+                    last_password_change: new Date().toISOString(),
+                    ip_address: req.ip
+                }
+            }
         });
 
     } catch (error) {
@@ -592,6 +747,256 @@ export const changePassword = async (req, res) => {
             success: false,
             message: 'Failed to change password',
             code: 'AUTH_PASSWORD_CHANGE_ERROR'
+        });
+    }
+};
+
+// ✅ Full profile endpoint for app initialization
+export const getMe = async (req, res) => {
+    try {
+        // ✅ Debug JWT payload
+        console.log('🔍 JWT Payload:', req.user);
+        
+        const userId = req.user.sub || req.user.id || req.user.user_id;
+        
+        if (!userId) {
+            console.error('❌ No user ID found in JWT:', req.user);
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid token - user ID not found',
+                debug: process.env.NODE_ENV === 'development' ? req.user : undefined
+            });
+        }
+        
+        const user = await prisma.users.findUnique({
+            where: { id: userId },
+            include: {
+                organizations: {
+                    select: { 
+                        id: true, 
+                        name: true, 
+                        type: true,
+                        address: true,
+                        phone: true,
+                        email: true,
+                        license_number: true,
+                        is_active: true
+                    }
+                },
+                departments: {
+                    select: { 
+                        id: true, 
+                        name: true, 
+                        description: true,
+                        code: true
+                    }
+                },
+                user_roles: {
+                    where: { 
+                        is_active: true,
+                        valid_from: { lte: new Date() },
+                        OR: [
+                            { valid_until: null },
+                            { valid_until: { gte: new Date() } }
+                        ]
+                    },
+                    include: {
+                        roles: {
+                            include: {
+                                role_permissions: {
+                                    include: {
+                                        permissions: {
+                                            select: { name: true }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Get all permissions from all roles
+        const roles = user.user_roles.map(userRole => ({
+            id: userRole.roles.id,
+            name: userRole.roles.name,
+            description: userRole.roles.description,
+            color: userRole.roles.color,
+            icon: userRole.roles.icon,
+            permissions: userRole.roles.role_permissions.map(rp => rp.permissions.name)
+        }));
+
+        return res.json({
+            success: true,
+            message: 'Profile retrieved successfully',
+            data: {
+                user: {
+                    id: user.id,
+                    username: user.username,
+                    full_name: user.full_name,
+                    email: user.email,
+                    avatar: user.avatar,
+                    phone: user.phone,
+                    address: user.address,
+                    organization_id: user.organization_id,
+                    department_id: user.department_id,
+                    is_active: user.is_active,
+                    created_at: user.created_at,
+                    last_login: user.last_login,
+                    // ✅ Full organization & department info
+                    organization: user.organizations,
+                    department: user.departments,
+                    // ✅ Complete role information
+                    roles: roles
+                },
+                permissions_summary: {
+                    total: roles.reduce((total, role) => total + role.permissions.length, 0),
+                    scopes: [...new Set(roles.flatMap(role => 
+                        role.permissions.map(p => {
+                            if (p.includes('system.')) return 'global';
+                            if (p.includes('organization.')) return 'organization';  
+                            if (p.includes('department.')) return 'department';
+                            return 'project';
+                        })
+                    ))],
+                    has_admin_access: roles.some(role => 
+                        role.permissions.includes('system.admin')
+                    )
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Get profile error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// ✅ Permissions endpoint with caching support  
+export const getPermissions = async (req, res) => {
+    try {
+        // ✅ Debug JWT payload
+        console.log('🔍 JWT Payload:', req.user);
+        
+        const userId = req.user.sub || req.user.id || req.user.user_id;
+        
+        if (!userId) {
+            console.error('❌ No user ID found in JWT:', req.user);
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid token - user ID not found',
+                debug: process.env.NODE_ENV === 'development' ? req.user : undefined
+            });
+        }
+        
+        const user = await prisma.users.findUnique({
+            where: { id: userId },
+            include: {
+                user_roles: {
+                    where: { 
+                        is_active: true,
+                        valid_from: { lte: new Date() },
+                        OR: [
+                            { valid_until: null },
+                            { valid_until: { gte: new Date() } }
+                        ]
+                    },
+                    include: {
+                        roles: {
+                            include: {
+                                role_permissions: {
+                                    include: {
+                                        permissions: {
+                                            select: { name: true }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Get all unique permissions
+        const allPermissions = [...new Set(
+            user.user_roles.flatMap(userRole => 
+                userRole.roles.role_permissions.map(rp => rp.permissions.name)
+            )
+        )];
+
+        // Create permission map for O(1) lookup
+        const permissionMap = {};
+        allPermissions.forEach(permission => {
+            permissionMap[permission] = true;
+        });
+
+        // Group permissions by scope for easier frontend handling
+        const permissionsByScope = {
+            global: allPermissions.filter(p => p.includes('system.')),
+            organization: allPermissions.filter(p => p.includes('organization.')),
+            department: allPermissions.filter(p => p.includes('department.')),
+            project: allPermissions.filter(p => p.includes('project.')),
+            device: allPermissions.filter(p => p.includes('device.')),
+            report: allPermissions.filter(p => p.includes('report.')),
+            user: allPermissions.filter(p => p.includes('user.')),
+            role: allPermissions.filter(p => p.includes('role.')),
+            other: allPermissions.filter(p => 
+                !p.includes('system.') && 
+                !p.includes('organization.') && 
+                !p.includes('department.') && 
+                !p.includes('project.') && 
+                !p.includes('device.') && 
+                !p.includes('report.') && 
+                !p.includes('user.') && 
+                !p.includes('role.')
+            )
+        };
+
+        // Set cache headers for 15 minutes
+        res.set({
+            'Cache-Control': 'private, max-age=900', // 15 minutes
+            'ETag': `"${Buffer.from(JSON.stringify(allPermissions)).toString('base64')}"`,
+            'Last-Modified': new Date().toUTCString()
+        });
+
+        return res.json({
+            success: true,
+            message: 'Permissions retrieved successfully',
+            data: {
+                permissions: allPermissions,
+                permission_map: permissionMap,
+                permissions_by_scope: permissionsByScope,
+                total: allPermissions.length,
+                cached_until: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Get permissions error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };

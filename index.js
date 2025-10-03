@@ -13,8 +13,6 @@ import actLog from './routes/actLog.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
 import deviceDataRoutes from './routes/deviceDataRoutes.js';
 import authRoutes from './routes/auth.routes.js';
-import socketService from './services/socketService.js';
-
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
 // New Dynamic MQTT system (parallel)
@@ -55,12 +53,10 @@ const corsOptions = {
     // Development: Allow all localhost/127.0.0.1 origins
     if (process.env.NODE_ENV === 'development' && 
         (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
-      console.log(`✅ CORS allowed (dev mode): ${origin}`);
       return callback(null, true);
     }
     
     if (allowedOrigins.includes(origin)) {
-      console.log(`✅ CORS allowed: ${origin}`);
       callback(null, true);
     } else {
       console.log(`❌ CORS blocked origin: ${origin}`);
@@ -93,23 +89,30 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Routes
-app.use('/', deviceDataRoutes)
+app.use('/', deviceDataRoutes, masterDataRoutes)
 app.use('/auth', authRoutes); // 🔐 JWT Authentication routes
 app.use('/iot', iot);
 app.use('/actlog', actLog);
-app.use('/', masterDataRoutes); // Master data routes
 // Device management routes
 app.use('/devices', deviceRoutes);
 // SSL Configuration
 const { options, useHttps } = configureSSL();
+
+// ==================== SIMPLE SOCKET.IO SETUP ====================
+let io;
 
 // Start server
 if (process.env.NODE_ENV !== 'test') {
     if (useHttps) {
         const httpsServer = https.createServer(options, app);
         
-        // ✅ Khởi tạo Socket.IO với HTTPS server
-        socketService.initialize(httpsServer);
+        // ✅ Khởi tạo Socket.IO đơn giản
+        io = new Server(httpsServer, {
+            cors: {
+                origin: allowedOrigins,
+                credentials: true
+            }
+        });
 
         httpsServer.listen(port, "0.0.0.0", () => {
             console.log(`🔒 HTTPS Server + Socket.IO chạy tại: https://192.168.0.252:${port}`);
@@ -128,12 +131,34 @@ if (process.env.NODE_ENV !== 'test') {
     } else {
         const httpServer = http.createServer(app);
 
-        // ✅ Khởi tạo Socket.IO với HTTP server
-        socketService.initialize(httpServer);
+        // ✅ Khởi tạo Socket.IO đơn giản
+        io = new Server(httpServer, {
+            cors: {
+                origin: allowedOrigins,
+                credentials: true
+            }
+        });
 
         httpServer.listen(port, () => {
             console.log(`🌍 HTTP Server + Socket.IO chạy tại: http://localhost:${port}`);
         });
+    }
+
+    // ==================== SOCKET.IO EVENT HANDLING ====================
+    if (io) {
+        // Lắng nghe sự kiện khi client kết nối
+        io.on('connection', (socket) => {
+            console.log('🔌 New client connected:', socket.id);
+            
+            socket.on('disconnect', () => {
+                console.log('❌ Client disconnected:', socket.id);
+            });
+        });
+
+        // Tạo global reference cho MQTT dynamic manager
+        global.io = io;
+        
+        console.log('✅ Socket.IO initialized successfully');
     }
 }
 

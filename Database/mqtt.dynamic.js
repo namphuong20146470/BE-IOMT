@@ -852,59 +852,55 @@ class DynamicMqttManager {
         this.deviceTopics.clear();
     }
 
-    // ==================== REAL-TIME SOCKET.IO INTEGRATION ====================
+    // ==================== SIMPLIFIED SOCKET.IO INTEGRATION ====================
     
-    async emitRealtimeData(deviceId, changedFields, fullState) {
+    emitRealtimeData(deviceId, changedFields, fullState) {
         try {
-            // Get device info for better context
-            const device = await prisma.devices.findUnique({
-                where: { id: deviceId },
-                include: {
-                    device_category: true,
-                    device_model: true,
-                    organizations: true,
-                    departments: true
+            // Sử dụng global Socket.IO instance
+            if (!global.io) {
+                console.warn('⚠️ Socket.IO not available');
+                return;
+            }
+
+            // Get device name from cache or use serial number
+            const device = this.getDeviceFromTopics(deviceId);
+            const deviceName = device?.model_name || device?.serial_number || `Device-${deviceId}`;
+
+            // Convert fullState to simple data object
+            const simpleData = {};
+            for (const [key, fieldData] of Object.entries(fullState)) {
+                simpleData[key] = fieldData.value;
+            }
+
+            // Broadcast đơn giản đến tất cả clients
+            global.io.emit('mqtt_data', {
+                deviceId,
+                deviceName,
+                data: simpleData,
+                metadata: {
+                    changedFields: Object.keys(changedFields),
+                    lastUpdate: new Date().toISOString(),
+                    source: 'mqtt_dynamic'
                 }
             });
 
-            if (!device) return;
-
-            const realtimeData = {
-                deviceId,
-                serialNumber: device.serial_number,
-                deviceName: device.name,
-                category: device.device_category?.name,
-                model: device.device_model?.name,
-                organization: device.organizations?.name,
-                department: device.departments?.name,
-                changedFields: Object.keys(changedFields),
-                data: fullState,
-                timestamp: new Date().toISOString()
-            };
-
-            // Emit to device-specific room
-            socketService.emitToRoom(`device_${deviceId}`, 'dynamicDeviceUpdate', realtimeData);
-
-            // Emit to organization room (for scoped access)
-            if (device.organization_id) {
-                socketService.emitToRoom(`org_${device.organization_id}`, 'dynamicDeviceUpdate', realtimeData);
-            }
-
-            // Emit to department room
-            if (device.department_id) {
-                socketService.emitToRoom(`dept_${device.department_id}`, 'dynamicDeviceUpdate', realtimeData);
-            }
-
-            // Emit to all devices room for overview
-            socketService.emitToRoom('all_devices', 'dynamicDeviceUpdate', realtimeData);
-
             if (process.env.DEBUG_MQTT === 'true') {
-                console.log(`🔥 Emitted real-time data for device ${device.serial_number}`);
+                console.log(`🔥 Socket.IO broadcast sent for ${deviceName}`);
             }
 
         } catch (error) {
             console.error('❌ Error emitting real-time data:', error);
         }
+    }
+
+    // Helper to get device info from topics cache
+    getDeviceFromTopics(deviceId) {
+        for (const device of this.deviceTopics.values()) {
+            if (device.id === deviceId) {
+                return device;
+            }
+        }
+        return null;
     }
 }
 

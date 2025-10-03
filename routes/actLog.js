@@ -1,7 +1,7 @@
 import express from 'express';
 import authMiddleware from '../middleware/authMiddleware.js';
 import { requirePermission } from '../middleware/rbacMiddleware.js';
-import { createRole, getAllRoles, deleteRole, updateRole } from '../controllers/roles/role.controller.js';
+import { createRole, getAllRoles, deleteRole, updateRole } from '../controllers/roles/roles.controller.js';
 
 // Import device routes
 import deviceRoutes from './deviceRoutes.js';

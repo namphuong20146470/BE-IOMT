@@ -12,6 +12,8 @@ router.post('/refresh', authController.refreshToken);
 // Protected routes (require authentication)
 router.post('/logout', authMiddleware, authController.logout);
 router.get('/profile', authMiddleware, authController.getProfile);
+router.get('/me', authMiddleware, authController.getMe);  // ✅ Full profile for app init
+router.get('/permissions', authMiddleware, authController.getPermissions);  // ✅ Permissions with caching
 router.get('/verify', authMiddleware, authController.verifySession);
 router.post('/change-password', authMiddleware, authController.changePassword);
 

@@ -54,14 +54,29 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
     }
 
     try {
-        const query = `
+        // ✅ IMPROVED: Get latest record within reasonable time window
+        // If no recent record, get the absolute latest regardless of time
+        let query = `
             SELECT * FROM ${tableName}
             WHERE timestamp >= NOW() - INTERVAL '${timeWindowMinutes} minutes'
             ORDER BY timestamp DESC
             LIMIT 1
         `;
         
-        const result = await prisma.$queryRawUnsafe(query);
+        let result = await prisma.$queryRawUnsafe(query);
+        
+        // ✅ Fallback: If no recent record, get absolute latest (up to 24h)
+        if (!result[0]) {
+            console.warn(`⚠️ No record in ${timeWindowMinutes}min window, trying 24h fallback for ${tableName}`);
+            query = `
+                SELECT * FROM ${tableName}
+                WHERE timestamp >= NOW() - INTERVAL '24 hours'
+                ORDER BY timestamp DESC
+                LIMIT 1
+            `;
+            result = await prisma.$queryRawUnsafe(query);
+        }
+        
         return result[0] || null;
     } catch (error) {
         console.error(`Error getting latest record from ${tableName}:`, error);
@@ -69,73 +84,85 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
     }
 }
 
-function mergeDeviceData(latestRecord, newData) {
-    // ✅ FIX: NO DEFAULTS - preserve all existing values
-    
-    if (!latestRecord) {
-        // ⚠️ EDGE CASE: No previous record exists
-        // Initialize with received data only, leave other fields NULL/unset
-        console.warn('⚠️ No previous record found, initializing with partial data only');
-        return {
-            voltage: newData.voltage ?? null,
-            current: newData.current ?? null,
-            power_operating: newData.power_operating ?? null,
-            frequency: newData.frequency ?? null,
-            power_factor: newData.power_factor ?? null,
-            operating_time: newData.operating_time ?? null,
-            over_voltage_operating: newData.over_voltage_operating ?? null,
-            over_current_operating: newData.over_current_operating ?? null,
-            over_power_operating: newData.over_power_operating ?? null,
-            status_operating: newData.status_operating ?? null,
-            under_voltage_operating: newData.under_voltage_operating ?? null,
-            power_socket_status: newData.power_socket_status ?? null
-        };
-    }
+// ==================== DUPLICATE + UPDATE STRATEGY ====================
 
-    // ✅ PROPER DELTA MERGE: newData overrides, existing values preserved
-    return {
-        voltage: newData.voltage !== undefined ? newData.voltage : latestRecord.voltage,
-        current: newData.current !== undefined ? newData.current : latestRecord.current,
-        power_operating: newData.power_operating !== undefined ? newData.power_operating : latestRecord.power_operating,
-        frequency: newData.frequency !== undefined ? newData.frequency : latestRecord.frequency,
-        power_factor: newData.power_factor !== undefined ? newData.power_factor : latestRecord.power_factor,
-        operating_time: newData.operating_time !== undefined ? newData.operating_time : latestRecord.operating_time,
-        over_voltage_operating: newData.over_voltage_operating !== undefined ? newData.over_voltage_operating : latestRecord.over_voltage_operating,
-        over_current_operating: newData.over_current_operating !== undefined ? newData.over_current_operating : latestRecord.over_current_operating,
-        over_power_operating: newData.over_power_operating !== undefined ? newData.over_power_operating : latestRecord.over_power_operating,
-        status_operating: newData.status_operating !== undefined ? newData.status_operating : latestRecord.status_operating,
-        under_voltage_operating: newData.under_voltage_operating !== undefined ? newData.under_voltage_operating : latestRecord.under_voltage_operating,
-        power_socket_status: newData.power_socket_status !== undefined ? newData.power_socket_status : latestRecord.power_socket_status
-    };
+async function duplicateAndUpdateRecord(tableName, newData) {
+    try {
+        // ✅ 1. Get COMPLETE latest record
+        const latestRecord = await getLatestRecord(tableName, 60); // 60min window
+        
+        if (!latestRecord) {
+            console.warn(`⚠️ No previous record found for ${tableName}, creating new record with partial data`);
+            return createNewRecord(tableName, newData);
+        }
+
+        // ✅ 2. Log duplicate strategy
+        if (process.env.DEBUG_MQTT === 'true') {
+            console.log(`🔄 [${tableName}] DUPLICATE + UPDATE strategy:`);
+            console.log(`   📋 Source record ID: ${latestRecord.id}`);
+            console.log(`   📥 MQTT updates:`, Object.keys(newData));
+            console.log(`   ⏰ Source timestamp: ${latestRecord.timestamp}`);
+        }
+
+        // ✅ 3. DUPLICATE entire record structure (exclude id, timestamp)
+        const { id, timestamp, ...recordData } = latestRecord;
+        
+        // ✅ 4. UPDATE only fields provided by MQTT
+        const updatedData = {
+            ...recordData,  // 🎯 ALL existing data duplicated
+            ...newData      // 🎯 Only MQTT fields updated
+        };
+
+        // ✅ 5. Log what's preserved vs updated
+        if (process.env.DEBUG_MQTT === 'true') {
+            const updatedFields = Object.keys(newData);
+            const preservedFields = Object.keys(recordData).filter(key => 
+                !updatedFields.includes(key) && recordData[key] !== null
+            );
+            console.log(`   🔄 Updated fields: [${updatedFields.join(', ')}]`);
+            console.log(`   💾 Preserved fields: [${preservedFields.join(', ')}]`);
+            console.log(`   📊 Preservation ratio: ${preservedFields.length}/${Object.keys(recordData).length}`);
+        }
+
+        return updatedData;
+    } catch (error) {
+        console.error(`❌ Error in duplicate+update for ${tableName}:`, error);
+        throw error;
+    }
 }
 
-function mergeEnvironmentData(latestRecord, newData) {
-    if (!latestRecord) {
-        // ⚠️ EDGE CASE: No previous record exists
-        console.warn('⚠️ No previous environment record found, initializing with partial data only');
+async function createNewRecord(tableName, partialData) {
+    // ✅ Fallback when no previous record exists
+    console.log(`🆕 Creating new record for ${tableName} (no previous data)`);
+    
+    if (tableName === 'iot_environment_status') {
         return {
-            leak_current_ma: newData.leak_current_ma ?? null,
-            temperature_c: newData.temperature_c ?? null,
-            humidity_percent: newData.humidity_percent ?? null,
-            over_temperature: newData.over_temperature ?? null,
-            over_humidity: newData.over_humidity ?? null,
-            soft_warning: newData.soft_warning ?? null,
-            strong_warning: newData.strong_warning ?? null,
-            shutdown_warning: newData.shutdown_warning ?? null
+            leak_current_ma: partialData.leak_current_ma ?? null,
+            temperature_c: partialData.temperature_c ?? null,
+            humidity_percent: partialData.humidity_percent ?? null,
+            over_temperature: partialData.over_temperature ?? null,
+            over_humidity: partialData.over_humidity ?? null,
+            soft_warning: partialData.soft_warning ?? null,
+            strong_warning: partialData.strong_warning ?? null,
+            shutdown_warning: partialData.shutdown_warning ?? null
+        };
+    } else {
+        // Device tables
+        return {
+            voltage: partialData.voltage ?? null,
+            current: partialData.current ?? null,
+            power_operating: partialData.power_operating ?? null,
+            frequency: partialData.frequency ?? null,
+            power_factor: partialData.power_factor ?? null,
+            operating_time: partialData.operating_time ?? null,
+            over_voltage_operating: partialData.over_voltage_operating ?? null,
+            over_current_operating: partialData.over_current_operating ?? null,
+            over_power_operating: partialData.over_power_operating ?? null,
+            status_operating: partialData.status_operating ?? null,
+            under_voltage_operating: partialData.under_voltage_operating ?? null,
+            power_socket_status: partialData.power_socket_status ?? null
         };
     }
-
-    // ✅ PROPER DELTA MERGE: preserve existing values
-    return {
-        leak_current_ma: newData.leak_current_ma !== undefined ? newData.leak_current_ma : latestRecord.leak_current_ma,
-        temperature_c: newData.temperature_c !== undefined ? newData.temperature_c : latestRecord.temperature_c,
-        humidity_percent: newData.humidity_percent !== undefined ? newData.humidity_percent : latestRecord.humidity_percent,
-        over_temperature: newData.over_temperature !== undefined ? newData.over_temperature : latestRecord.over_temperature,
-        over_humidity: newData.over_humidity !== undefined ? newData.over_humidity : latestRecord.over_humidity,
-        soft_warning: newData.soft_warning !== undefined ? newData.soft_warning : latestRecord.soft_warning,
-        strong_warning: newData.strong_warning !== undefined ? newData.strong_warning : latestRecord.strong_warning,
-        shutdown_warning: newData.shutdown_warning !== undefined ? newData.shutdown_warning : latestRecord.shutdown_warning
-    };
 }
 
 // ==================== DEVICE DATA PROCESSOR ====================
@@ -147,13 +174,13 @@ async function processDeviceData(tableName, topicName, partialData) {
             throw new Error(`Invalid table name: ${tableName}`);
         }
 
-        // Get latest record
-        const latestRecord = await getLatestRecord(tableName);
+        // ✅ NEW STRATEGY: Duplicate + Update
+        console.log(`� [${topicName}] Processing with DUPLICATE+UPDATE strategy`);
         
-        // Merge data
-        const completeData = mergeDeviceData(latestRecord, partialData);
+        // ✅ 1. Duplicate latest record and update with MQTT data
+        const completeData = await duplicateAndUpdateRecord(tableName, partialData);
         
-        // Insert new record
+        // ✅ 2. Insert the duplicated+updated record
         const query = `
             INSERT INTO ${tableName} (
                 voltage, 
@@ -183,7 +210,7 @@ async function processDeviceData(tableName, topicName, partialData) {
                 $11,
                 $12,
                 CURRENT_TIMESTAMP
-            ) RETURNING id
+            ) RETURNING id, timestamp
         `;
 
         const result = await prisma.$queryRawUnsafe(
@@ -202,8 +229,14 @@ async function processDeviceData(tableName, topicName, partialData) {
             completeData.power_socket_status
         );
 
-        // Check warnings only for changed values
+        // ✅ 3. Analyze what was updated vs preserved
         const changedFields = Object.keys(partialData).filter(key => key !== 'timestamp');
+        const allFields = Object.keys(completeData);
+        const preservedFields = allFields.filter(key => 
+            !changedFields.includes(key) && completeData[key] !== null
+        );
+
+        // ✅ 4. Check warnings only for changed values
         const warningFields = ['voltage', 'current', 'power_operating', 'frequency', 'power_factor'];
         const warningData = {};
         
@@ -217,28 +250,37 @@ async function processDeviceData(tableName, topicName, partialData) {
             await checkDeviceWarnings(tableName, warningData, result[0]?.id);
         }
 
-        // 🔥 Emit real-time data to Socket.IO clients
+        // ✅ 5. Socket.IO emission
         const deviceData = {
             id: result[0]?.id,
             tableName,
             data: completeData,
             changedFields,
+            preservedFields,
+            strategy: 'duplicate_update',
             timestamp: new Date().toISOString()
         };
 
         // Emit to device-specific room
         socketService.emitToRoom(`device_${tableName}`, 'deviceDataUpdate', deviceData);
-
-        // Emit to all devices room for overview dashboard
         socketService.emitToRoom('all_devices', 'deviceDataUpdate', deviceData);
 
+        // ✅ 6. Enhanced success logging
+        const preservationRatio = `${preservedFields.length}/${allFields.length}`;
+        
         if (process.env.DEBUG_MQTT === 'true') {
-            console.log(`✅ ${topicName} saved | Changed: [${changedFields.join(', ')}] | Emitted to Socket.IO`);
+            console.log(`✅ [${topicName}] Record created:`);
+            console.log(`   🆔 ID: ${result[0]?.id}`);
+            console.log(`   🔄 Updated: [${changedFields.join(', ')}]`);
+            console.log(`   💾 Preserved: [${preservedFields.join(', ')}]`);
+            console.log(`   📊 Ratio: ${preservationRatio}`);
+        } else {
+            console.log(`✅ ${topicName} | Updated: [${changedFields.join(', ')}] | Preserved: ${preservationRatio}`);
         }
 
         return result[0];
     } catch (error) {
-        console.error(`❌ Error saving ${topicName}:`, error);
+        console.error(`❌ Error processing ${topicName}:`, error);
         throw error;
     }
 }
@@ -246,9 +288,9 @@ async function processDeviceData(tableName, topicName, partialData) {
 // ==================== EXPORT FOR CONTROLLER USE ====================
 
 /**
- * Export merge functions để controller có thể dùng chung logic
+ * Export duplicate+update functions để controller có thể dùng chung logic
  */
-export { getLatestRecord, mergeDeviceData, mergeEnvironmentData, ALLOWED_TABLES };
+export { getLatestRecord, duplicateAndUpdateRecord, createNewRecord, ALLOWED_TABLES };
 
 // ==================== TOPIC HANDLERS ====================
 
@@ -270,9 +312,12 @@ async function processLedNovaData(data) {
 
 async function processIotEnvData(partialData) {
     try {
-        const latestRecord = await getLatestRecord('iot_environment_status');
-        const completeData = mergeEnvironmentData(latestRecord, partialData);
+        console.log(`🔄 [IoT Environment] Processing with DUPLICATE+UPDATE strategy`);
+        
+        // ✅ 1. Duplicate latest record and update with MQTT data
+        const completeData = await duplicateAndUpdateRecord('iot_environment_status', partialData);
 
+        // ✅ 2. Insert the duplicated+updated record
         const query = `
             INSERT INTO iot_environment_status (
                 leak_current_ma,
@@ -294,7 +339,7 @@ async function processIotEnvData(partialData) {
                 $7,
                 $8,
                 CURRENT_TIMESTAMP
-            ) RETURNING id
+            ) RETURNING id, timestamp
         `;
 
         const result = await prisma.$queryRawUnsafe(
@@ -309,7 +354,14 @@ async function processIotEnvData(partialData) {
             completeData.shutdown_warning
         );
 
+        // ✅ 3. Analyze what was updated vs preserved
         const changedFields = Object.keys(partialData).filter(key => key !== 'timestamp');
+        const allFields = Object.keys(completeData);
+        const preservedFields = allFields.filter(key => 
+            !changedFields.includes(key) && completeData[key] !== null
+        );
+
+        // ✅ 4. Check warnings only for changed values
         const warningFields = ['leak_current_ma', 'temperature_c', 'humidity_percent'];
         const warningData = {};
         
@@ -323,11 +375,34 @@ async function processIotEnvData(partialData) {
             await checkDeviceWarnings('iot_environment_status', warningData, result[0]?.id);
         }
 
+        // ✅ 5. Socket.IO emission
+        const envData = {
+            id: result[0]?.id,
+            tableName: 'iot_environment_status',
+            data: completeData,
+            changedFields,
+            preservedFields,
+            strategy: 'duplicate_update',
+            timestamp: new Date().toISOString()
+        };
+
+        socketService.emitToRoom('device_iot_environment_status', 'deviceDataUpdate', envData);
+        socketService.emitToRoom('all_devices', 'deviceDataUpdate', envData);
+
+        // ✅ 6. Enhanced success logging
+        const preservationRatio = `${preservedFields.length}/${allFields.length}`;
+
         if (process.env.DEBUG_MQTT === 'true') {
-            console.log(`✅ IoT Environment saved | Changed: [${changedFields.join(', ')}]`);
+            console.log(`✅ [IoT Environment] Record created:`);
+            console.log(`   🆔 ID: ${result[0]?.id}`);
+            console.log(`   🔄 Updated: [${changedFields.join(', ')}]`);
+            console.log(`   💾 Preserved: [${preservedFields.join(', ')}]`);
+            console.log(`   📊 Ratio: ${preservationRatio}`);
+        } else {
+            console.log(`✅ IoT Environment | Updated: [${changedFields.join(', ')}] | Preserved: ${preservationRatio}`);
         }
     } catch (error) {
-        console.error('❌ Error saving IoT Environment:', error);
+        console.error('❌ Error processing IoT Environment:', error);
     }
 }
 
