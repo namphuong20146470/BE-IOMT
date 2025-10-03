@@ -17,7 +17,6 @@ function hasPermission(user, permission) {
     return permissions.includes(permission);
 }
 
-// Get all devices with filtering
 export const getAllDevices = async (req, res) => {
     try {
         const { 
@@ -35,37 +34,39 @@ export const getAllDevices = async (req, res) => {
         let params = [];
         let paramIndex = 1;
 
-        // **SECURITY: Always filter by user's organization**
-        const userOrgId = req.user?.organization_id;
-        if (!userOrgId) {
-            return res.status(403).json({
-                success: false,
-                message: 'User organization not found'
-            });
-        }
+        // Check Super Admin (System Admin)
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin' || 
+        (!user?.organization_id && !user?.department_id);
 
-        // Force organization filter based on user's organization
-        whereConditions.push(`d.organization_id = $${paramIndex}::uuid`);
-        params.push(userOrgId);
-        paramIndex++;
+        if (!isSuperAdmin) {
+            // Normal user / org admin
+            const userOrgId = user?.organization_id;
+            if (!userOrgId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'User organization not found'
+                });
+            }
 
-        // Additional organization filter from query (must match user's org)
-        if (organization_id && organization_id !== userOrgId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied: Cannot access devices from different organization'
-            });
-        }
+            // Force organization filter
+            whereConditions.push(`d.organization_id = $${paramIndex}::uuid`);
+            params.push(userOrgId);
+            paramIndex++;
 
-        // **DEPARTMENT FILTER: Only show user's department devices if user has department**
-        const userDeptId = req.user?.department_id;
-        if (userDeptId) {
-            // If user has department, only show devices from their department (unless they request specific dept)
-            if (department_id) {
-                // Validate user can access requested department
-                if (department_id !== userDeptId) {
-                    // Check if user has permission to view other departments
-                    const hasPermissionToViewAllDepts = hasPermission(req.user, 'view_all_departments');
+            // Validate organization filter in query
+            if (organization_id && organization_id !== userOrgId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: Cannot access devices from different organization'
+                });
+            }
+
+            // Department filter
+            const userDeptId = user?.department_id;
+            if (userDeptId) {
+                if (department_id && department_id !== userDeptId) {
+                    const hasPermissionToViewAllDepts = hasPermission(user, 'view_all_departments');
                     if (!hasPermissionToViewAllDepts) {
                         return res.status(403).json({
                             success: false,
@@ -74,34 +75,35 @@ export const getAllDevices = async (req, res) => {
                     }
                 }
                 whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
+                params.push(department_id || userDeptId);
+                paramIndex++;
+            } else if (department_id) {
+                const hasPermissionToViewAllDepts = hasPermission(user, 'view_all_departments');
+                if (!hasPermissionToViewAllDepts) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Access denied: No permission to filter by department'
+                    });
+                }
+                whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
                 params.push(department_id);
                 paramIndex++;
-            } else {
-                // Auto-filter by user's department if no specific department requested
-                whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
-                params.push(userDeptId);
+            }
+        } else {
+            // Super Admin: allow filter any org/dep if passed
+            if (organization_id) {
+                whereConditions.push(`d.organization_id = $${paramIndex}::uuid`);
+                params.push(organization_id);
                 paramIndex++;
             }
-        } else if (department_id) {
-            // User has no department but requests specific department - check permission
-            const hasPermissionToViewAllDepts = hasPermission(req.user, 'view_all_departments');
-            if (!hasPermissionToViewAllDepts) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'Access denied: No permission to filter by department'
-                });
+            if (department_id) {
+                whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
+                params.push(department_id);
+                paramIndex++;
             }
-            whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
-            params.push(department_id);
-            paramIndex++;
         }
-        
-        if (department_id) {
-            whereConditions.push(`d.department_id = $${paramIndex}::uuid`);
-            params.push(department_id);
-            paramIndex++;
-        }
-        
+
+        // Other filters
         if (model_id) {
             whereConditions.push(`d.model_id = $${paramIndex}::uuid`);
             params.push(model_id);
@@ -131,10 +133,6 @@ export const getAllDevices = async (req, res) => {
             : '';
 
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        
-        // Add limit and offset parameters
-        const limitParamIndex = paramIndex;
-        const offsetParamIndex = paramIndex + 1;
         params.push(parseInt(limit), offset);
 
         const devices = await prisma.$queryRawUnsafe(`
@@ -146,14 +144,12 @@ export const getAllDevices = async (req, res) => {
                 dc.name as category_name,
                 o.id as organization_id_ref, o.name as organization_name,
                 dept.id as department_id_ref, dept.name as department_name,
-                -- Warranty info
                 wi.warranty_end,
                 CASE 
                     WHEN wi.warranty_end < CURRENT_DATE THEN 'expired'
                     WHEN wi.warranty_end < CURRENT_DATE + INTERVAL '30 days' THEN 'expiring_soon'
                     ELSE 'valid'
                 END as warranty_status,
-                -- Connectivity status
                 conn.last_connected,
                 conn.is_active as connectivity_active,
                 CASE 
@@ -171,11 +167,11 @@ export const getAllDevices = async (req, res) => {
             LEFT JOIN device_connectivity conn ON d.id = conn.device_id
             ${whereClause}
             ORDER BY d.created_at DESC
-            LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
+            LIMIT $${paramIndex} OFFSET $${paramIndex+1}
         `, ...params);
 
-        // Get total count
-        const countParams = params.slice(0, -2); // Remove limit and offset
+        // Total count
+        const countParams = params.slice(0, -2);
         const totalResult = await prisma.$queryRawUnsafe(`
             SELECT COUNT(*)::integer as total
             FROM device d
@@ -209,6 +205,7 @@ export const getAllDevices = async (req, res) => {
         });
     }
 };
+
 
 // Get device by ID with full details
 export const getDeviceById = async (req, res) => {
@@ -340,8 +337,17 @@ export const createDevice = async (req, res) => {
         // Check if user is trying to create in different organization
         if (organization_id && organization_id !== userOrgId) {
             // Only System Admin or Organization Admin can create in different orgs
-            const canCreateCrossOrg = hasPermission(req.user, 'organization.create') || 
-                                     hasPermission(req.user, 'system.admin');
+            // Chỉ System Admin hoặc Org Admin mới có quyền tạo ở org khác
+const isSystemAdmin = hasPermission(req.user, 'system.admin') &&
+                      user.organization_id === null &&
+                      user.department_id === null;
+
+const isOrgAdmin = hasPermission(req.user, 'organization.create') &&
+                   user.organization_id !== null && // Org admin luôn có org_id
+                   user.department_id === null;
+
+const canCreateCrossOrg = isSystemAdmin || isOrgAdmin;
+
             
             if (!canCreateCrossOrg) {
                 return res.status(403).json({

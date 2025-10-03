@@ -113,7 +113,7 @@ router.delete('/device-models/:id', authMiddleware, deleteDeviceModel);
 // ====================================================================
 
 // GET /devices - Get all devices with filtering and pagination
-router.get('/devices', authMiddleware, getAllDevices, requirePermission('device.read'));
+router.get('/devices', authMiddleware, requirePermission('device.read'), getAllDevices);
 
 // GET /devices/statistics - Get device statistics
 router.get('/devices/statistics', getDeviceStatistics);

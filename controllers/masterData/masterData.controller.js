@@ -4,24 +4,40 @@ const prisma = new PrismaClient();
 // Get organizations accessible to user
 export const getOrganizations = async (req, res) => {
     try {
-        // **SECURITY: User can only see their own organization**
         const userOrgId = req.user?.organization_id;
-        if (!userOrgId) {
+
+        // Case 1: JWT không có org_id
+        if (userOrgId === undefined) {
             return res.status(403).json({
                 success: false,
                 message: 'User organization not found'
             });
         }
 
-        const organizations = await prisma.$queryRaw`
-            SELECT 
-                id, name, code, address, phone, email, 
-                website, description, status, created_at
-            FROM organizations 
-            WHERE id = ${userOrgId}::uuid
-            AND status = 'active'
-            ORDER BY name
-        `;
+        let organizations;
+
+        if (userOrgId === null) {
+            // Case 2: System Admin → xem tất cả
+            organizations = await prisma.$queryRaw`
+                SELECT 
+                    id, name, code, license_number, address, phone, email, 
+                    website, description, status, created_at
+                FROM organizations 
+                WHERE status = 'ACTIVE'
+                ORDER BY name
+            `;
+        } else {
+            // Case 3: User bình thường → chỉ xem tổ chức của mình
+            organizations = await prisma.$queryRaw`
+                SELECT 
+                    id, name, code, license_number, address, phone, email, 
+                    website, description, status, created_at
+                FROM organizations 
+                WHERE id = ${userOrgId}::uuid
+                AND status = 'ACTIVE'
+                ORDER BY name
+            `;
+        }
 
         res.status(200).json({
             success: true,
@@ -37,6 +53,7 @@ export const getOrganizations = async (req, res) => {
         });
     }
 };
+
 
 // Get departments by organization
 export const getDepartments = async (req, res) => {
@@ -238,8 +255,7 @@ export const getMeasurements = async (req, res) => {
 
         const measurements = await prisma.$queryRawUnsafe(`
             SELECT 
-                id, name, data_type, unit, validation_rules, 
-                description, created_at
+                id, name, data_type, unit, validation_rules
             FROM measurements
             ${whereClause}
             ORDER BY name

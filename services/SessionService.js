@@ -58,9 +58,9 @@ class SessionService {
         }
       });
 
-      // Generate access token (JWT) - use full user data if provided
+      // Generate access token (JWT) - use session.id as JTI
       const userDataForToken = userForToken || session.users;
-      const accessToken = this.generateAccessToken(userDataForToken, sessionToken);
+      const accessToken = this.generateAccessToken(userDataForToken, session.id); // ✅ Use UUID
 
       console.log(`✅ Created session for user: ${session.users.username} from IP: ${ipAddress}`);
 
@@ -149,7 +149,7 @@ class SessionService {
       });
 
       // Generate new access token
-      const accessToken = this.generateAccessToken(session.users, session.access_token);
+      const accessToken = this.generateAccessToken(session.users, session.id); // ✅ Use UUID
 
       console.log(`✅ Refreshed access token for user: ${session.users.username}`);
 
@@ -184,7 +184,7 @@ class SessionService {
       // Find session by access_token (jti in JWT)
       const session = await prisma.user_sessions.findFirst({
         where: {
-          access_token: decoded.jti,
+          id: decoded.jti, // ✅ Now jti is session.id (UUID)
           is_active: true,
           expires_at: {
             gt: new Date()
@@ -578,13 +578,13 @@ class SessionService {
   /**
    * Generate JWT access token
    * @param {Object} user - User object
-   * @param {string} sessionToken - Session token (for jti)
+   * @param {string} sessionId - Session UUID (for jti)
    * @returns {string} JWT access token
    */
-  generateAccessToken(user, sessionToken) {
+  generateAccessToken(user, sessionId) {
     const payload = {
       sub: user.id, // Subject (user ID)
-      jti: sessionToken, // JWT ID (session token)
+      jti: sessionId, // ✅ JWT ID (session UUID)
       username: user.username,
       full_name: user.full_name,
       email: user.email,

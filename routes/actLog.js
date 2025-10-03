@@ -219,8 +219,7 @@ router.get('/auth/decode', (req, res) => {
     }
 });
 
-// Device management routes
-router.use('/devices', deviceRoutes);
+
 
 // Device data processor routes (Dynamic MQTT system)
 router.use('/device-processor', deviceDataRoutes);

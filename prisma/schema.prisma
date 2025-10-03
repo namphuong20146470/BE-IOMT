@@ -112,6 +112,9 @@ model organizations {
   created_at            DateTime?              @default(now()) @db.Timestamptz(6)
   updated_at            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   is_active             Boolean                @default(true)
+  code                  String?
+  website               String?
+  description           String?
   access_policies       access_policies[]
   alert_metrics         alert_metrics[]
   alert_rules           alert_rules[]

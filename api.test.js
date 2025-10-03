@@ -46,10 +46,10 @@ describe('API Test', () => {
     beforeAll(async () => {
         // Đăng nhập để lấy token (thay bằng tài khoản có quyền tạo user)
         const loginRes = await request(app)
-            .post('/actlog/login')
+            .post('/auth/login')
             .send({
-                username: 'admin', // Đổi thành tài khoản hợp lệ của bạn
-                password: 'admin123' // Đổi thành mật khẩu hợp lệ
+                username: 'BSNHhai', // Đổi thành tài khoản hợp lệ của bạn
+                password: 'pass123' // Đổi thành mật khẩu hợp lệ
             });
         // Fix: Lấy access_token thay vì token
         token = loginRes.body.data?.access_token || loginRes.body.token;

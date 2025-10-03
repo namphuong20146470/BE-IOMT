@@ -13,15 +13,16 @@ const hashPasswordLegacy = (password) =>
 const COOKIE_OPTIONS = {
     access: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax', // Cho phép cookie gửi khi navigate từ external site
-        maxAge: 15 * 60 * 1000, // 15 phút
-        path: '/'
+        secure: false,
+        sameSite: 'none',
+        maxAge: 15 * 60 * 1000,
+        path: '/',
+       domain: undefined
     },
     refresh: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: false,
+        sameSite: 'none',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
         path: '/'
     }
@@ -277,6 +278,13 @@ export const login = async (req, res) => {
 export const refreshToken = async (req, res) => {
     try {
         const refreshToken = req.cookies?.refresh_token;
+        const { ipAddress } = extractClientInfo(req);
+
+        console.log('🔄 Refresh token request:', {
+            hasRefreshToken: !!refreshToken,
+            cookies: Object.keys(req.cookies || {}),
+            ipAddress
+        });
 
         if (!refreshToken) {
             return res.status(401).json({
@@ -286,37 +294,49 @@ export const refreshToken = async (req, res) => {
             });
         }
 
-        // Refresh session
-        const newSession = await sessionService.refreshSession(refreshToken);
+        // ✅ Fix: Use refreshAccessToken instead of refreshSession
+        const result = await sessionService.refreshAccessToken(refreshToken, ipAddress);
 
-        if (!newSession) {
+        if (!result.success) {
+            console.log('❌ Refresh failed:', result.error);
             clearAuthCookies(res);
             
             return res.status(401).json({
                 success: false,
-                message: 'Invalid or expired refresh token',
+                message: result.error || 'Invalid or expired refresh token',
                 code: 'AUTH_REFRESH_TOKEN_INVALID'
             });
         }
 
         // Update access token cookie
-        res.cookie('access_token', newSession.access_token, COOKIE_OPTIONS.access);
+        res.cookie('access_token', result.data.access_token, COOKIE_OPTIONS.access);
+
+        console.log('✅ Token refreshed successfully for user:', result.data.user.username);
 
         return res.json({
             success: true,
             message: 'Token refreshed successfully',
             data: {
-                expires_at: newSession.expires_at
+                expires_in: result.data.expires_in,
+                user: {
+                    id: result.data.user.id,
+                    username: result.data.user.username,
+                    full_name: result.data.user.full_name
+                }
             }
         });
 
     } catch (error) {
         console.error('Refresh error:', error);
         
+        // Clear cookies on error
+        clearAuthCookies(res);
+        
         return res.status(500).json({
             success: false,
             message: 'Failed to refresh token',
-            code: 'AUTH_REFRESH_ERROR'
+            code: 'AUTH_REFRESH_ERROR',
+            debug: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };
@@ -327,17 +347,33 @@ export const refreshToken = async (req, res) => {
 export const logout = async (req, res) => {
     try {
         const refreshToken = req.cookies?.refresh_token;
+        const accessToken = req.cookies?.access_token;
         const sessionId = req.session?.session_id;
         const userId = req.user?.id;
 
-        // Invalidate session in database
+        console.log('🚪 Logout request:', {
+            hasRefreshToken: !!refreshToken,
+            hasAccessToken: !!accessToken,
+            sessionId,
+            userId
+        });
+
+        // Try to invalidate session using available tokens
+        let logoutResult = null;
+        
         if (refreshToken) {
-            await sessionService.invalidateSessionByToken(refreshToken);
+            // ✅ Fix: Use logout method with refresh token
+            logoutResult = await sessionService.logout(refreshToken);
+        } else if (accessToken) {
+            // Fallback to access token
+            logoutResult = await sessionService.logout(accessToken);
         } else if (sessionId) {
-            await sessionService.invalidateSession(sessionId);
+            // Direct session deactivation
+            await sessionService.deactivateSession(sessionId);
+            logoutResult = { success: true };
         }
 
-        // Log logout
+        // Log logout activity
         if (userId) {
             await auditService.logActivity(
                 userId,
@@ -346,14 +382,18 @@ export const logout = async (req, res) => {
                 sessionId,
                 {
                     ip: req.ip,
-                    userAgent: req.headers['user-agent']
+                    userAgent: req.headers['user-agent'],
+                    logoutMethod: refreshToken ? 'refresh_token' : 
+                                 accessToken ? 'access_token' : 'session_id'
                 },
                 req.user?.organization_id
             );
         }
 
-        // Clear cookies
+        // Always clear cookies regardless of result
         clearAuthCookies(res);
+
+        console.log('✅ Logout completed:', logoutResult);
 
         return res.json({
             success: true,
@@ -369,7 +409,8 @@ export const logout = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Logout failed',
-            code: 'AUTH_LOGOUT_ERROR'
+            code: 'AUTH_LOGOUT_ERROR',
+            debug: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };
