@@ -724,7 +724,7 @@ model user_roles {
   id               String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   user_id          String        @db.Uuid
   role_id          String        @db.Uuid
-  organization_id  String        @db.Uuid
+  organization_id  String?       @db.Uuid
   department_id    String?       @db.Uuid
   valid_from       DateTime?     @default(now()) @db.Timestamptz(6)
   valid_until      DateTime?     @db.Timestamptz(6)
@@ -734,10 +734,11 @@ model user_roles {
   notes            String?
   assigned_by_user users?        @relation("UserRoleAssignedBy", fields: [assigned_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   departments      departments?  @relation(fields: [department_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  organizations    organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations    organizations? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   roles            roles         @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users            users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  
   @@unique([user_id, role_id, organization_id, department_id])
   @@index([user_id], map: "idx_user_roles_user")
   @@index([role_id], map: "idx_user_roles_role")

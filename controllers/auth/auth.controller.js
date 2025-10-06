@@ -900,49 +900,66 @@ export const getPermissions = async (req, res) => {
                 debug: process.env.NODE_ENV === 'development' ? req.user : undefined
             });
         }
-        
-        const user = await prisma.users.findUnique({
-            where: { id: userId },
-            include: {
-                user_roles: {
-                    where: { 
-                        is_active: true,
-                        valid_from: { lte: new Date() },
-                        OR: [
-                            { valid_until: null },
-                            { valid_until: { gte: new Date() } }
-                        ]
-                    },
-                    include: {
-                        roles: {
-                            include: {
-                                role_permissions: {
-                                    include: {
-                                        permissions: {
-                                            select: { name: true }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
 
-        if (!user) {
+        // ✅ Use same Raw SQL as login for consistency
+        const users = await prisma.$queryRaw`
+            SELECT u.id, u.username, u.full_name, u.email, 
+                   u.organization_id, u.department_id,
+                   COALESCE(
+                       JSON_AGG(
+                           JSON_BUILD_OBJECT(
+                               'id', r.id,
+                               'name', r.name,
+                               'description', r.description,
+                               'color', r.color,
+                               'icon', r.icon,
+                               'permissions', COALESCE(
+                                   (
+                                       SELECT JSON_AGG(p.name)
+                                       FROM role_permissions rp
+                                       JOIN permissions p ON rp.permission_id = p.id
+                                       WHERE rp.role_id = r.id
+                                   ),
+                                   '[]'::json
+                               )
+                           )
+                       ) FILTER (WHERE r.id IS NOT NULL),
+                       '[]'::json
+                   ) as roles
+            FROM users u
+            LEFT JOIN organizations o ON u.organization_id = o.id
+            LEFT JOIN departments d ON u.department_id = d.id
+            LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = true
+            LEFT JOIN roles r ON ur.role_id = r.id AND r.is_active = true
+            WHERE u.id = ${userId}::uuid
+            AND u.is_active = true
+            GROUP BY u.id, u.username, u.full_name, u.email, 
+                     u.organization_id, u.department_id
+        `;
+
+        if (users.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'User not found'
             });
         }
 
+        const user = users[0];
+        
+        // Parse roles (same as login)
+        const roles = typeof user.roles === 'string' 
+            ? JSON.parse(user.roles) 
+            : (user.roles || []);
+
+        console.log('🔍 Raw roles data:', user.roles);
+        console.log('🔍 Parsed roles:', roles);
+
         // Get all unique permissions
         const allPermissions = [...new Set(
-            user.user_roles.flatMap(userRole => 
-                userRole.roles.role_permissions.map(rp => rp.permissions.name)
-            )
+            roles.flatMap(role => role.permissions || [])
         )];
+
+        console.log('🔍 All permissions:', allPermissions);
 
         // Create permission map for O(1) lookup
         const permissionMap = {};
@@ -987,7 +1004,12 @@ export const getPermissions = async (req, res) => {
                 permission_map: permissionMap,
                 permissions_by_scope: permissionsByScope,
                 total: allPermissions.length,
-                cached_until: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+                cached_until: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+                debug: process.env.NODE_ENV === 'development' ? {
+                    user_id: userId,
+                    roles_count: roles.length,
+                    raw_roles: user.roles
+                } : undefined
             }
         });
 

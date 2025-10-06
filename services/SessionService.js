@@ -111,6 +111,8 @@ class SessionService {
               username: true,
               full_name: true,
               email: true,
+              organization_id: true,
+              department_id: true,
               is_active: true
             }
           }
@@ -124,8 +126,63 @@ class SessionService {
         };
       }
 
+      // Get full user data with roles (same as login)
+      const users = await prisma.$queryRaw`
+        SELECT u.id, u.username, u.full_name, u.email, 
+               u.organization_id, u.department_id,
+               u.is_active,
+               o.name as organization_name,
+               d.name as department_name,
+               COALESCE(
+                   JSON_AGG(
+                       JSON_BUILD_OBJECT(
+                           'id', r.id,
+                           'name', r.name,
+                           'description', r.description,
+                           'color', r.color,
+                           'icon', r.icon,
+                           'permissions', COALESCE(
+                               (
+                                   SELECT JSON_AGG(p.name)
+                                   FROM role_permissions rp
+                                   JOIN permissions p ON rp.permission_id = p.id
+                                   WHERE rp.role_id = r.id
+                               ),
+                               '[]'::json
+                           )
+                       )
+                   ) FILTER (WHERE r.id IS NOT NULL),
+                   '[]'::json
+               ) as roles
+        FROM users u
+        LEFT JOIN organizations o ON u.organization_id = o.id
+        LEFT JOIN departments d ON u.department_id = d.id
+        LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = true
+        LEFT JOIN roles r ON ur.role_id = r.id AND r.is_active = true
+        WHERE u.id = ${session.users.id}::uuid
+        AND u.is_active = true
+        GROUP BY u.id, u.username, u.full_name, u.email, 
+                 u.organization_id, u.department_id,
+                 u.is_active, o.name, d.name
+      `;
+
+      if (users.length === 0) {
+        await this.deactivateSession(session.id);
+        return {
+          success: false,
+          error: 'User not found or inactive'
+        };
+      }
+
+      const userWithRoles = users[0];
+      
+      // Parse roles
+      const roles = typeof userWithRoles.roles === 'string' 
+        ? JSON.parse(userWithRoles.roles) 
+        : (userWithRoles.roles || []);
+
       // Check if user is still active
-      if (!session.users.is_active) {
+      if (!userWithRoles.is_active) {
         // Deactivate session if user is inactive
         await this.deactivateSession(session.id);
         return {
@@ -133,6 +190,17 @@ class SessionService {
           error: 'User account is inactive'
         };
       }
+
+      // Prepare user data for token (same structure as login)
+      const userForToken = {
+        id: userWithRoles.id,
+        username: userWithRoles.username,
+        full_name: userWithRoles.full_name,
+        email: userWithRoles.email,
+        organization_id: userWithRoles.organization_id,
+        department_id: userWithRoles.department_id,
+        roles
+      };
 
       // Update last activity and IP if different
       const updateData = {
@@ -148,10 +216,10 @@ class SessionService {
         data: updateData
       });
 
-      // Generate new access token
-      const accessToken = this.generateAccessToken(session.users, session.id); // ✅ Use UUID
+      // Generate new access token with full user data
+      const accessToken = this.generateAccessToken(userForToken, session.id);
 
-      console.log(`✅ Refreshed access token for user: ${session.users.username}`);
+      console.log(`✅ Refreshed access token for user: ${userWithRoles.username}`);
 
       return {
         success: true,
@@ -159,7 +227,23 @@ class SessionService {
           access_token: accessToken,
           expires_in: 1800, // 30 minutes
           token_type: 'Bearer',
-          user: session.users
+          session_id: session.id,
+          created_at: session.created_at,
+          expires_at: session.expires_at,
+          device_id: session.device_info || 'unknown-device',
+          user: {
+            id: userWithRoles.id,
+            username: userWithRoles.username,
+            full_name: userWithRoles.full_name,
+            email: userWithRoles.email,
+            avatar: userWithRoles.avatar || null,
+            organization_id: userWithRoles.organization_id,
+            department_id: userWithRoles.department_id,
+            is_active: userWithRoles.is_active,
+            organization_name: userWithRoles.organization_name,
+            department_name: userWithRoles.department_name,
+            roles: roles
+          }
         }
       };
     } catch (error) {

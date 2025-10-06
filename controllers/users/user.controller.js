@@ -25,24 +25,25 @@ function getVietnamDate() {
 
 export const createUser = async (req, res) => {
     try {
+        console.log('🔍 CreateUser - Start:', {
+            user: req.user?.username,
+            body: { ...req.body, password: '[HIDDEN]' }
+        });
+
         const userId = req.user?.id;
         const userOrgId = req.user?.organization_id;
         
-        if (!userId || !userOrgId) {
+        if (!userId) {
+            console.log('❌ CreateUser - No userId');
             return res.status(401).json({ 
                 success: false,
                 error: 'Authentication required' 
             });
         }
 
-        // Check permission
-        const hasPermission = await permissionService.hasPermission(userId, 'user.create');
-        if (!hasPermission) {
-            return res.status(403).json({ 
-                success: false,
-                error: 'Insufficient permissions' 
-            });
-        }
+        console.log('✅ CreateUser - User authenticated:', { userId, userOrgId });
+
+        // ✅ Permission already checked by middleware - no need to check again
 
         const { 
             organization_id, 
@@ -110,7 +111,7 @@ export const createUser = async (req, res) => {
                 is_active: true,
                 created_at: getVietnamDate(),
                 updated_at: getVietnamDate(),
-                // Use direct foreign key fields instead of relations
+                // ✅ FIXED: Handle organization_id properly for Super Admin  
                 organization_id: organization_id || userOrgId || null,
                 department_id: department_id || null
             };
@@ -171,33 +172,67 @@ export const createUser = async (req, res) => {
                     if (!role) {
                         roleError = `Role ${role_id} not found or not available for this organization`;
                     } else {
-                        // Assign role using Prisma ORM with direct foreign key fields
-                        const assignmentData = {
+                        // ✅ FIXED: Handle null organization_id for Super Admin
+                        const orgIdForRole = organization_id || userOrgId;
+                        
+                        console.log('🔍 Role assignment data:', {
                             user_id: createdUser.id,
                             role_id: role_id,
-                            organization_id: organization_id || userOrgId,
+                            organization_id: orgIdForRole,
                             department_id: department_id || null,
-                            assigned_by: userId,
-                            assigned_at: getVietnamDate(),
-                            is_active: true,
-                            valid_from: getVietnamDate(),
-                            valid_until: null,
-                            notes: 'Auto-assigned during user creation'
-                        };
-
-                        const assignment = await tx.user_roles.create({
-                            data: assignmentData,
-                            select: {
-                                id: true
-                            }
+                            is_system_role: role.is_system_role
                         });
+
+                        // Use different query based on whether organization_id is null
+                        let assignment;
+                        if (orgIdForRole) {
+                            // Normal role assignment with organization
+                            assignment = await tx.$queryRaw`
+                                INSERT INTO user_roles (
+                                    user_id, role_id, organization_id, department_id,
+                                    assigned_by, assigned_at, is_active, valid_from, valid_until, notes
+                                ) VALUES (
+                                    ${createdUser.id}::uuid,
+                                    ${role_id}::uuid,
+                                    ${orgIdForRole}::uuid,
+                                    ${department_id || null}::uuid,
+                                    ${userId}::uuid,
+                                    ${getVietnamDate()},
+                                    true,
+                                    ${getVietnamDate()},
+                                    null,
+                                    'Auto-assigned during user creation'
+                                ) RETURNING id
+                            `;
+                        } else {
+                            // System role assignment without organization (for Super Admin)
+                            assignment = await tx.$queryRaw`
+                                INSERT INTO user_roles (
+                                    user_id, role_id, organization_id, department_id,
+                                    assigned_by, assigned_at, is_active, valid_from, valid_until, notes
+                                ) VALUES (
+                                    ${createdUser.id}::uuid,
+                                    ${role_id}::uuid,
+                                    null,
+                                    null,
+                                    ${userId}::uuid,
+                                    ${getVietnamDate()},
+                                    true,
+                                    ${getVietnamDate()},
+                                    null,
+                                    'Auto-assigned system role during user creation'
+                                ) RETURNING id
+                            `;
+                        }
+
+                        console.log('✅ Role assignment successful:', assignment);
 
                         assignedRole = {
                             id: role.id,
                             name: role.name,
                             color: role.color,
                             icon: role.icon,
-                            assignment_id: assignment.id
+                            assignment_id: assignment[0]?.id
                         };
                     }
                 } catch (error) {

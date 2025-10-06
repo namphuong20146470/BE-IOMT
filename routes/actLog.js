@@ -72,7 +72,10 @@ import {
 import {
     debugUserPermissions,
     assignPermissionToUser,
-    getUserPermissions
+    getUserPermissions,
+    assignRoleToUser,
+    removeRoleFromUser,
+    getUserRoles
 } from '../controllers/users/userPermission.controller.js';
 
 //Logout route
@@ -137,6 +140,11 @@ router.put('/roles/:roleId/permissions', authMiddleware, updateRolePermissions);
 router.get('/users/:userId/permissions/debug', debugUserPermissions);
 router.get('/users/:userId/permissions', getUserPermissions);
 router.post('/users/:userId/permissions', assignPermissionToUser);
+
+// ✅ NEW: User Role Management routes
+router.post('/users/:userId/roles', authMiddleware, requirePermission('user.update'), assignRoleToUser);
+router.delete('/users/:userId/roles/:roleId', authMiddleware, requirePermission('user.update'), removeRoleFromUser);
+router.get('/users/:userId/roles', authMiddleware, requirePermission('user.read'), getUserRoles);
 // Permission CRUD
 router.get('/permissions', authMiddleware, getAllPermissions);
 router.post('/permissions', authMiddleware, createPermission);
