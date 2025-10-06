@@ -37,7 +37,8 @@ export const authMiddleware = async (req, res, next) => {
             jti: decoded.jti,
             sub: decoded.sub,
             username: decoded.username,
-            tokenSource
+            tokenSource,
+            exp: new Date(decoded.exp * 1000).toISOString()
         });
 
         // ✅ Session validation (only for cookie-based auth)

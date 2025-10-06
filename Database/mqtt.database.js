@@ -48,33 +48,42 @@ const topics = {
 // ==================== HELPER FUNCTIONS ====================
 
 async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTES) {
-    // Validate table name (prevent SQL injection)
     if (!ALLOWED_TABLES.includes(tableName)) {
         throw new Error(`Invalid table name: ${tableName}`);
     }
 
     try {
-        // ✅ IMPROVED: Get latest record within reasonable time window
-        // If no recent record, get the absolute latest regardless of time
-        let query = `
-            SELECT * FROM ${tableName}
-            WHERE timestamp >= NOW() - INTERVAL '${timeWindowMinutes} minutes'
-            ORDER BY timestamp DESC
+        // ✅ FIX: Cast interval to TEXT khi SELECT
+        const query = `
+            SELECT 
+                id,
+                voltage,
+                current,
+                power_operating,
+                frequency,
+                power_factor,
+                CAST(operating_time AS TEXT) as operating_time,
+                over_voltage_operating,
+                over_current_operating,
+                over_power_operating,
+                status_operating,
+                under_voltage_operating,
+                power_socket_status,
+                timestamp
+            FROM ${tableName} 
+            ORDER BY timestamp DESC 
             LIMIT 1
         `;
         
-        let result = await prisma.$queryRawUnsafe(query);
+        const result = await prisma.$queryRawUnsafe(query);
         
-        // ✅ Fallback: If no recent record, get absolute latest (up to 24h)
-        if (!result[0]) {
-            console.warn(`⚠️ No record in ${timeWindowMinutes}min window, trying 24h fallback for ${tableName}`);
-            query = `
-                SELECT * FROM ${tableName}
-                WHERE timestamp >= NOW() - INTERVAL '24 hours'
-                ORDER BY timestamp DESC
-                LIMIT 1
-            `;
-            result = await prisma.$queryRawUnsafe(query);
+        if (result[0]) {
+            if (process.env.DEBUG_MQTT === 'true') {
+                const timeDiff = Math.round((new Date() - new Date(result[0].timestamp)) / 60000);
+                console.log(`📋 Latest record for ${tableName}: ${timeDiff} minutes old`);
+            }
+        } else {
+            console.warn(`⚠️ No previous record found in ${tableName} table`);
         }
         
         return result[0] || null;
@@ -88,47 +97,219 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
 
 async function duplicateAndUpdateRecord(tableName, newData) {
     try {
-        // ✅ 1. Get COMPLETE latest record
-        const latestRecord = await getLatestRecord(tableName, 60); // 60min window
+        // ✅ 1. Get COMPLETE latest record (no time window limit)
+        const latestRecord = await getLatestRecord(tableName);
         
+        // ✅ 2. Enhanced logging to debug merge issues
+        if (process.env.DEBUG_MQTT === 'true') {
+            console.log(`🔍 [${tableName}] Latest record analysis:`);
+            if (latestRecord) {
+                const nullFields = Object.entries(latestRecord)
+                    .filter(([key, value]) => value === null && key !== 'id' && key !== 'timestamp')
+                    .map(([key]) => key);
+                console.log(`   📋 Record ID: ${latestRecord.id}`);
+                console.log(`   ⏰ Timestamp: ${latestRecord.timestamp}`);
+                console.log(`   ❌ NULL fields: [${nullFields.join(', ')}]`);
+                console.log(`   ✅ Valid fields: ${Object.keys(latestRecord).length - nullFields.length - 2}`);
+            } else {
+                console.log(`   ⚠️ No latest record found!`);
+            }
+        }
+        
+        // ✅ 3. If no record exists at all, create minimal record with only MQTT data
         if (!latestRecord) {
-            console.warn(`⚠️ No previous record found for ${tableName}, creating new record with partial data`);
-            return createNewRecord(tableName, newData);
+            console.warn(`⚠️ No latest record found for ${tableName}, trying to find ANY record...`);
+            
+            const anyRecord = await prisma.$queryRawUnsafe(`
+                SELECT * FROM ${tableName} 
+                WHERE id IS NOT NULL 
+                ORDER BY timestamp DESC 
+                LIMIT 1
+            `);
+            
+            if (anyRecord && anyRecord[0]) {
+                console.log(`✅ Found fallback record from ${anyRecord[0].timestamp}`);
+                return await mergeWithRecord(tableName, anyRecord[0], newData);
+            } else {
+                // ✅ IMPROVED: Only create fields that MQTT actually provides
+                console.warn(`⚠️ Table ${tableName} is completely empty, creating minimal record`);
+                return createMinimalRecord(tableName, newData);
+            }
         }
 
-        // ✅ 2. Log duplicate strategy
-        if (process.env.DEBUG_MQTT === 'true') {
-            console.log(`🔄 [${tableName}] DUPLICATE + UPDATE strategy:`);
-            console.log(`   📋 Source record ID: ${latestRecord.id}`);
-            console.log(`   📥 MQTT updates:`, Object.keys(newData));
-            console.log(`   ⏰ Source timestamp: ${latestRecord.timestamp}`);
-        }
-
-        // ✅ 3. DUPLICATE entire record structure (exclude id, timestamp)
-        const { id, timestamp, ...recordData } = latestRecord;
+        // ✅ 4. Merge with found record
+        return await mergeWithRecord(tableName, latestRecord, newData);
         
-        // ✅ 4. UPDATE only fields provided by MQTT
-        const updatedData = {
-            ...recordData,  // 🎯 ALL existing data duplicated
-            ...newData      // 🎯 Only MQTT fields updated
-        };
-
-        // ✅ 5. Log what's preserved vs updated
-        if (process.env.DEBUG_MQTT === 'true') {
-            const updatedFields = Object.keys(newData);
-            const preservedFields = Object.keys(recordData).filter(key => 
-                !updatedFields.includes(key) && recordData[key] !== null
-            );
-            console.log(`   🔄 Updated fields: [${updatedFields.join(', ')}]`);
-            console.log(`   💾 Preserved fields: [${preservedFields.join(', ')}]`);
-            console.log(`   📊 Preservation ratio: ${preservedFields.length}/${Object.keys(recordData).length}`);
-        }
-
-        return updatedData;
     } catch (error) {
         console.error(`❌ Error in duplicate+update for ${tableName}:`, error);
         throw error;
     }
+}
+
+// ✅ NEW: Separate merge function with better null handling
+async function mergeWithRecord(tableName, sourceRecord, newData) {
+    // ✅ 2. Log merge strategy
+    if (process.env.DEBUG_MQTT === 'true') {
+        console.log(`🔄 [${tableName}] MERGE strategy:`);
+        console.log(`   📋 Source record ID: ${sourceRecord.id}`);
+        console.log(`   📥 MQTT updates:`, Object.keys(newData));
+        console.log(`   ⏰ Source timestamp: ${sourceRecord.timestamp}`);
+    }
+
+    // ✅ 3. SMART MERGE: Keep existing non-null values, update with MQTT data
+    const { id, timestamp, ...recordData } = sourceRecord;
+    
+    // ✅ 4. Enhanced merge with null handling
+    const updatedData = {};
+    
+    // First, copy all existing non-null values
+    for (const [key, value] of Object.entries(recordData)) {
+        if (value !== null) {
+            updatedData[key] = value;
+        }
+    }
+    
+    // Then, override with MQTT data (even if null - MQTT data is authoritative)
+    for (const [key, value] of Object.entries(newData)) {
+        updatedData[key] = value;
+    }
+
+    // ✅ 5. Enhanced logging for merge analysis
+    if (process.env.DEBUG_MQTT === 'true') {
+        const updatedFields = Object.keys(newData);
+        const preservedFields = Object.keys(recordData).filter(key => 
+            !updatedFields.includes(key) && recordData[key] !== null
+        );
+        const nullFields = Object.keys(recordData).filter(key => 
+            !updatedFields.includes(key) && recordData[key] === null
+        );
+        
+        console.log(`   🔄 Updated by MQTT: [${updatedFields.join(', ')}]`);
+        console.log(`   💾 Preserved non-null: [${preservedFields.join(', ')}]`);
+        console.log(`   ⚠️ Remaining null: [${nullFields.join(', ')}]`);
+        console.log(`   📊 Data completeness: ${(Object.keys(updatedData).length - nullFields.length)}/${Object.keys(recordData).length}`);
+    }
+
+    return updatedData;
+}
+
+// ✅ NEW: Create minimal record with only MQTT-provided fields
+async function createMinimalRecord(tableName, mqttData) {
+    console.log(`🆕 Creating minimal record for ${tableName} with only MQTT fields`);
+    
+    if (process.env.DEBUG_MQTT === 'true') {
+        console.log(`   📥 MQTT fields: [${Object.keys(mqttData).join(', ')}]`);
+        console.log(`   ⚠️ Other fields will remain NULL until populated`);
+    }
+    
+    // ✅ Return ONLY the fields that MQTT provides
+    // This prevents massive NULL field insertion
+    return { ...mqttData };
+}
+
+// ✅ NEW: Smart insert function that only inserts non-null fields
+async function insertDeviceRecord(tableName, data) {
+    const deviceFields = [
+        'voltage', 'current', 'power_operating', 'frequency', 'power_factor', 
+        'operating_time', 'over_voltage_operating', 'over_current_operating',
+        'over_power_operating', 'status_operating', 'under_voltage_operating', 
+        'power_socket_status'
+    ];
+    
+    console.log(`📝 [${tableName}] insertDeviceRecord called`);
+    console.log(`   Input data:`, JSON.stringify(data));
+    
+    const fieldsToInsert = deviceFields.filter(field => 
+        data[field] !== null && data[field] !== undefined
+    );
+    
+    console.log(`   Fields to insert:`, fieldsToInsert);
+    
+    if (fieldsToInsert.length === 0) {
+        console.error(`❌ [${tableName}] No valid fields to insert!`);
+        console.error(`   Expected:`, deviceFields);
+        console.error(`   Got:`, Object.keys(data));
+        return null;
+    }
+    
+    const fieldNames = fieldsToInsert.join(', ');
+    const placeholders = fieldsToInsert.map((_, index) => {
+        const field = fieldsToInsert[index];
+        if (field === 'operating_time') return `$${index + 1}::interval`;
+        if (['voltage', 'current', 'power_operating', 'frequency', 'power_factor'].includes(field)) {
+            return `$${index + 1}::real`;
+        }
+        return `$${index + 1}`;
+    }).join(', ');
+    
+    const query = `
+        INSERT INTO ${tableName} (${fieldNames}, timestamp) 
+        VALUES (${placeholders}, CURRENT_TIMESTAMP) 
+        RETURNING id, timestamp
+    `;
+    
+    const values = fieldsToInsert.map(field => data[field]);
+    
+    console.log(`   Query:`, query);
+    console.log(`   Values:`, values);
+    
+    try {
+        const result = await prisma.$queryRawUnsafe(query, ...values);
+        console.log(`✅ [${tableName}] Insert success, ID:`, result[0]?.id);
+        return result;
+    } catch (error) {
+        console.error(`❌ [${tableName}] Insert ERROR:`, error.message);
+        console.error(`   Query:`, query);
+        console.error(`   Values:`, values);
+        console.error(`   Stack:`, error.stack);
+        return null;
+    }
+}
+
+// ✅ NEW: Smart insert for environment data
+async function insertEnvironmentRecord(data) {
+    const envFields = [
+        'leak_current_ma', 'temperature_c', 'humidity_percent',
+        'over_temperature', 'over_humidity', 'soft_warning', 
+        'strong_warning', 'shutdown_warning'
+    ];
+    
+    // Filter out null/undefined fields
+    const fieldsToInsert = envFields.filter(field => 
+        data[field] !== null && data[field] !== undefined
+    );
+    
+    if (fieldsToInsert.length === 0) {
+        console.warn(`⚠️ No valid fields to insert for iot_environment_status`);
+        return null;
+    }
+    
+    // Build dynamic query
+    const fieldNames = fieldsToInsert.join(', ');
+    const placeholders = fieldsToInsert.map((_, index) => {
+        const field = fieldsToInsert[index];
+        // Handle specific data types for environment
+        if (['leak_current_ma', 'temperature_c', 'humidity_percent'].includes(field)) {
+            return `$${index + 1}::real`;
+        }
+        return `$${index + 1}`;
+    }).join(', ');
+    
+    const query = `
+        INSERT INTO iot_environment_status (${fieldNames}, timestamp) 
+        VALUES (${placeholders}, CURRENT_TIMESTAMP) 
+        RETURNING id, timestamp
+    `;
+    
+    const values = fieldsToInsert.map(field => data[field]);
+    
+    if (process.env.DEBUG_MQTT === 'true') {
+        console.log(`📝 [iot_environment_status] Smart INSERT:`);
+        console.log(`   📊 Fields: [${fieldsToInsert.join(', ')}]`);
+        console.log(`   ❌ Skipped NULL: [${envFields.filter(f => !fieldsToInsert.includes(f)).join(', ')}]`);
+    }
+    
+    return await prisma.$queryRawUnsafe(query, ...values);
 }
 
 async function createNewRecord(tableName, partialData) {
@@ -169,74 +350,40 @@ async function createNewRecord(tableName, partialData) {
 
 async function processDeviceData(tableName, topicName, partialData) {
     try {
-        // Validate table name
         if (!ALLOWED_TABLES.includes(tableName)) {
             throw new Error(`Invalid table name: ${tableName}`);
         }
 
-        // ✅ NEW STRATEGY: Duplicate + Update
-        console.log(`� [${topicName}] Processing with DUPLICATE+UPDATE strategy`);
+        console.log(`🔄 [${topicName}] Processing with DUPLICATE+UPDATE strategy`);
         
-        // ✅ 1. Duplicate latest record and update with MQTT data
         const completeData = await duplicateAndUpdateRecord(tableName, partialData);
         
-        // ✅ 2. Insert the duplicated+updated record
-        const query = `
-            INSERT INTO ${tableName} (
-                voltage, 
-                current, 
-                power_operating, 
-                frequency, 
-                power_factor, 
-                operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
-                timestamp
-            ) VALUES (
-                $1::real, 
-                $2::real, 
-                $3::real, 
-                $4::real, 
-                $5::real, 
-                $6::interval,
-                $7,
-                $8,
-                $9,
-                $10,
-                $11,
-                $12,
-                CURRENT_TIMESTAMP
-            ) RETURNING id, timestamp
-        `;
+        // ✅ FIX 1: Check completeData có valid không
+        const hasValidFields = Object.values(completeData).some(v => v !== null && v !== undefined);
+        if (!hasValidFields) {
+            console.error(`❌ [${topicName}] No valid data after merge!`);
+            console.error(`   MQTT data:`, partialData);
+            console.error(`   Complete data:`, completeData);
+            return null; // Exit early
+        }
+        
+        const result = await insertDeviceRecord(tableName, completeData);
 
-        const result = await prisma.$queryRawUnsafe(
-            query,
-            completeData.voltage,
-            completeData.current,
-            completeData.power_operating,
-            completeData.frequency,
-            completeData.power_factor,
-            completeData.operating_time,
-            completeData.over_voltage_operating,
-            completeData.over_current_operating,
-            completeData.over_power_operating,
-            completeData.status_operating,
-            completeData.under_voltage_operating,
-            completeData.power_socket_status
-        );
+        // ✅ FIX 2: Check result trước khi dùng
+        if (!result || !result[0]) {
+            console.error(`❌ [${topicName}] Insert failed - no record created`);
+            console.error(`   Table:`, tableName);
+            console.error(`   Data:`, completeData);
+            return null; // Exit early
+        }
 
-        // ✅ 3. Analyze what was updated vs preserved
+        // ✅ Từ đây trở xuống mới safe
         const changedFields = Object.keys(partialData).filter(key => key !== 'timestamp');
         const allFields = Object.keys(completeData);
         const preservedFields = allFields.filter(key => 
             !changedFields.includes(key) && completeData[key] !== null
         );
 
-        // ✅ 4. Check warnings only for changed values
         const warningFields = ['voltage', 'current', 'power_operating', 'frequency', 'power_factor'];
         const warningData = {};
         
@@ -247,12 +394,16 @@ async function processDeviceData(tableName, topicName, partialData) {
         });
 
         if (Object.keys(warningData).length > 0) {
-            await checkDeviceWarnings(tableName, warningData, result[0]?.id);
+            try {
+                await checkDeviceWarnings(tableName, warningData, result[0].id);
+            } catch (warnError) {
+                console.error(`⚠️ Warning check failed:`, warnError.message);
+                // Don't throw, continue
+            }
         }
 
-        // ✅ 5. Socket.IO emission
         const deviceData = {
-            id: result[0]?.id,
+            id: result[0].id,
             tableName,
             data: completeData,
             changedFields,
@@ -261,16 +412,14 @@ async function processDeviceData(tableName, topicName, partialData) {
             timestamp: new Date().toISOString()
         };
 
-        // Emit to device-specific room
         socketService.emitToRoom(`device_${tableName}`, 'deviceDataUpdate', deviceData);
         socketService.emitToRoom('all_devices', 'deviceDataUpdate', deviceData);
 
-        // ✅ 6. Enhanced success logging
         const preservationRatio = `${preservedFields.length}/${allFields.length}`;
         
         if (process.env.DEBUG_MQTT === 'true') {
             console.log(`✅ [${topicName}] Record created:`);
-            console.log(`   🆔 ID: ${result[0]?.id}`);
+            console.log(`   🆔 ID: ${result[0].id}`);
             console.log(`   🔄 Updated: [${changedFields.join(', ')}]`);
             console.log(`   💾 Preserved: [${preservedFields.join(', ')}]`);
             console.log(`   📊 Ratio: ${preservationRatio}`);
@@ -279,9 +428,12 @@ async function processDeviceData(tableName, topicName, partialData) {
         }
 
         return result[0];
+        
     } catch (error) {
         console.error(`❌ Error processing ${topicName}:`, error);
-        throw error;
+        console.error(`   Stack:`, error.stack);
+        // ✅ FIX 3: Không throw, để MQTT tiếp tục
+        return null;
     }
 }
 
@@ -290,7 +442,15 @@ async function processDeviceData(tableName, topicName, partialData) {
 /**
  * Export duplicate+update functions để controller có thể dùng chung logic
  */
-export { getLatestRecord, duplicateAndUpdateRecord, createNewRecord, ALLOWED_TABLES };
+export { 
+    getLatestRecord, 
+    duplicateAndUpdateRecord, 
+    mergeWithRecord, 
+    createMinimalRecord,
+    insertDeviceRecord,
+    insertEnvironmentRecord,
+    ALLOWED_TABLES 
+};
 
 // ==================== TOPIC HANDLERS ====================
 
@@ -317,42 +477,8 @@ async function processIotEnvData(partialData) {
         // ✅ 1. Duplicate latest record and update with MQTT data
         const completeData = await duplicateAndUpdateRecord('iot_environment_status', partialData);
 
-        // ✅ 2. Insert the duplicated+updated record
-        const query = `
-            INSERT INTO iot_environment_status (
-                leak_current_ma,
-                temperature_c,
-                humidity_percent,
-                over_temperature,
-                over_humidity,
-                soft_warning,
-                strong_warning,
-                shutdown_warning,
-                timestamp
-            ) VALUES (
-                $1::real,
-                $2::real,
-                $3::real,
-                $4,
-                $5,
-                $6,
-                $7,
-                $8,
-                CURRENT_TIMESTAMP
-            ) RETURNING id, timestamp
-        `;
-
-        const result = await prisma.$queryRawUnsafe(
-            query,
-            completeData.leak_current_ma,
-            completeData.temperature_c,
-            completeData.humidity_percent,
-            completeData.over_temperature,
-            completeData.over_humidity,
-            completeData.soft_warning,
-            completeData.strong_warning,
-            completeData.shutdown_warning
-        );
+        // ✅ 2. Smart insert: only insert fields that have data
+        const result = await insertEnvironmentRecord(completeData);
 
         // ✅ 3. Analyze what was updated vs preserved
         const changedFields = Object.keys(partialData).filter(key => key !== 'timestamp');

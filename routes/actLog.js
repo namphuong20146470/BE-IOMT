@@ -181,6 +181,58 @@ router.get('/auth/test', authMiddleware, (req, res) => {
     });
 });
 
+// ✅ NEW: Debug authentication issues
+router.post('/auth/debug', (req, res) => {
+    const authHeader = req.headers['authorization'];
+    
+    console.log('🔍 DEBUG Authentication:');
+    console.log('   📋 Headers:', req.headers);
+    console.log('   🔑 Auth Header:', authHeader);
+    console.log('   🍪 Cookies:', req.cookies);
+    console.log('   🌍 JWT_SECRET exists:', !!process.env.JWT_SECRET);
+    
+    if (!authHeader) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'No authorization header',
+            headers: req.headers
+        });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'No token provided',
+            authHeader: authHeader
+        });
+    }
+
+    try {
+        // Test JWT verification
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        res.json({
+            success: true,
+            message: 'Token verification successful',
+            decoded: decoded,
+            jwt_secret_length: process.env.JWT_SECRET?.length,
+            token_length: token.length
+        });
+    } catch (error) {
+        console.error('❌ JWT Verification Error:', error);
+        
+        res.status(401).json({
+            success: false,
+            message: 'JWT verification failed',
+            error: error.message,
+            error_name: error.name,
+            jwt_secret_exists: !!process.env.JWT_SECRET,
+            token_preview: token.substring(0, 20) + '...'
+        });
+    }
+});
+
 // Decode token without verification (for debugging)
 router.get('/auth/decode', (req, res) => {
     const authHeader = req.headers['authorization'];

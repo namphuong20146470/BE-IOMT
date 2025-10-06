@@ -261,7 +261,7 @@ export const login = async (req, res) => {
                 tokens: {
                     access_token: sessionData.data.access_token,
                     refresh_token: sessionData.data.refresh_token,  // ✅ Add this
-                    access_token_expires_in: 900,
+                    access_token_expires_in: 1800,
                     refresh_token_expires_in: 604800,  // ✅ Add this
                     token_type: 'Bearer'
                 },
@@ -389,7 +389,7 @@ export const refreshToken = async (req, res) => {
                 tokens: {
                     access_token: result.data.access_token,
                     // ✅ Optional: Return new refresh_token if rotated
-                    access_token_expires_in: 900,  // ✅ Consistent
+                    access_token_expires_in:1800,// Consistent
                     token_type: 'Bearer'
                 },
                 session: {

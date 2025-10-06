@@ -50,74 +50,68 @@ export function requirePermission(permission, resourceType = null) {
         id: req.user?.id,
         username: req.user?.username,
         organization_id: req.user?.organization_id,
-        roles: req.user?.roles?.map(r => ({ name: r.name, is_system_role: r.is_system_role })),
-        permissions: req.user?.permissions ? 'present' : 'missing'
+        roles: req.user?.roles?.map(r => ({ name: r.name, permissions: r.permissions?.length || 0 }))
       }, null, 2));
 
       // Must be authenticated first
       if (!req.user || !req.user.id) {
         console.log(`❌ RBAC Middleware - User not authenticated`);
-        await auditService.logAccessDenied(
-          null, null, permission, resourceType, null,
-          req.ip, req.get('User-Agent')
-        );
         return res.status(401).json({
           success: false,
           message: 'Authentication required for permission check'
         });
       }
 
-      const resourceId = req.params.id || req.params.resourceId || null;
+      // ✅ FIXED: Check permissions from JWT token first
+      let hasPermission = false;
       
-      console.log(`🔐 RBAC Middleware - Calling permissionService.hasPermission(${req.user.id}, ${permission})`);
-      
-      // Check user permissions
-      const hasPermission = await permissionService.hasPermission(
-        req.user.id,
-        permission,
-        resourceType,
-        resourceId
-      );
-      
-      console.log(`🔐 RBAC Middleware - Permission result: ${hasPermission}`);
+      // Check if user is Super Admin (bypass all checks)
+      if (isSuperAdmin(req.user)) {
+        console.log(`✅ Super Admin detected - bypassing permission check`);
+        hasPermission = true;
+      } else {
+        // Check permissions from JWT token roles
+        const userPermissions = req.user.roles?.flatMap(role => role.permissions || []) || [];
+        hasPermission = userPermissions.includes(permission);
+        
+        console.log(`� JWT Token permissions:`, userPermissions.slice(0, 10) + '...');
+        console.log(`🔍 Required permission: ${permission}`);
+        console.log(`🔍 Permission found in JWT: ${hasPermission}`);
+      }
+
+      // ✅ Fallback: If not found in JWT, check database
+      if (!hasPermission) {
+        console.log(`🔄 Permission not found in JWT, checking database...`);
+        
+        try {
+          hasPermission = await permissionService.hasPermission(
+            req.user.id,
+            permission,
+            resourceType,
+            req.params.id || req.params.resourceId || null
+          );
+          console.log(`� Database permission result: ${hasPermission}`);
+        } catch (dbError) {
+          console.error(`❌ Database permission check failed:`, dbError);
+          // Continue with JWT-only check
+        }
+      }
 
       if (!hasPermission) {
-        // Log failed permission check
-        await auditService.logAccessDenied(
-          req.user.id,
-          req.user.organization_id,
-          permission,
-          resourceType,
-          resourceId,
-          req.ip,
-          req.get('User-Agent')
-        );
+        console.log(`❌ Permission denied: ${req.user.username} → ${permission}`);
         
         return res.status(403).json({
           success: false,
           message: 'Insufficient permissions',
           required_permission: permission,
           resource_type: resourceType,
-          user_permissions: req.user.permissions?.roles?.map(r => r.name) || []
+          user_roles: req.user.roles?.map(r => r.name) || [],
+          debug: {
+            jwt_permissions: req.user.roles?.flatMap(role => role.permissions || []).slice(0, 5),
+            super_admin: isSuperAdmin(req.user)
+          }
         });
       }
-
-      // Log successful permission check
-      await auditService.batchLog({
-        userId: req.user.id,
-        organizationId: req.user.organization_id,
-        action: 'permission_granted',
-        resourceType,
-        resourceId,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-        success: true,
-        newValues: {
-          permission,
-          resource_type: resourceType,
-          resource_id: resourceId
-        }
-      });
       
       // Add Super Admin info to request for controllers to use
       req.user.is_super_admin = isSuperAdmin(req.user);
@@ -127,7 +121,7 @@ export function requirePermission(permission, resourceType = null) {
       next();
       
     } catch (error) {
-      console.error('Permission middleware error:', error);
+      console.error('❌ Permission middleware error:', error);
       res.status(500).json({
         success: false,
         message: 'Permission check failed',

@@ -312,15 +312,15 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
 
         // Check current warnings
         if (deviceData.current !== null && deviceData.current !== undefined) {
-            if (deviceData.current > thresholds.current_max * 1.2) {
-                warnings.push({
-                    warning_type: 'current_high',
-                    warning_severity: 'major',
-                    measured_value: deviceData.current,
-                    threshold_value: thresholds.current_max * 1.2,
-                    warning_message: `Dòng điện vượt ngưỡng`
-                });
-            } else if (deviceData.current > thresholds.current_max) {
+            // if (deviceData.current > thresholds.current_max * 1.2) {
+            //     warnings.push({
+            //         warning_type: 'current_high',
+            //         warning_severity: 'major',
+            //         measured_value: deviceData.current,
+            //         threshold_value: thresholds.current_max * 1.2,
+            //         warning_message: `Dòng điện vượt ngưỡng`
+            //     });
+            if (deviceData.current > thresholds.current_max) {
                 warnings.push({
                     warning_type: 'current_warning',
                     warning_severity: 'moderate',
@@ -333,15 +333,15 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
 
         // Check power warnings
         if (deviceData.power_operating !== null && deviceData.power_operating !== undefined) {
-            if (deviceData.power_operating > thresholds.power_max * 1.2) {
-                warnings.push({
-                    warning_type: 'power_high',
-                    warning_severity: 'major',
-                    measured_value: deviceData.power_operating,
-                    threshold_value: thresholds.power_max * 1.2,
-                    warning_message: `Công suất vượt ngưỡng`
-                });
-            } else if (deviceData.power_operating > thresholds.power_max) {
+            // if (deviceData.power_operating > thresholds.power_max * 1.2) {
+            //     warnings.push({
+            //         warning_type: 'power_high',
+            //         warning_severity: 'major',
+            //         measured_value: deviceData.power_operating,
+            //         threshold_value: thresholds.power_max * 1.2,
+            //         warning_message: `Công suất vượt ngưỡng`
+            //     });
+           if (deviceData.power_operating > thresholds.power_max) {
                 warnings.push({
                     warning_type: 'power_warning',
                     warning_severity: 'moderate',
@@ -356,15 +356,15 @@ export const checkDeviceWarnings = async (deviceType, deviceData, deviceIdentifi
         if (deviceType === 'iot_environment_status') {
             // Temperature warning
             if (deviceData.temperature_c !== null && deviceData.temperature_c !== undefined) {
-                if (deviceData.temperature_c > thresholds.temperature_max * 1.2) {
-                    warnings.push({
-                        warning_type: 'temperature_high',
-                        warning_severity: 'critical',
-                        measured_value: deviceData.temperature_c,
-                        threshold_value: thresholds.temperature_max * 1.2,
-                        warning_message: `Nhiệt độ quá ngưỡng`
-                    });
-                } else if (deviceData.temperature_c > thresholds.temperature_max) {
+                // if (deviceData.temperature_c > thresholds.temperature_max * 1.2) {
+                //     warnings.push({
+                //         warning_type: 'temperature_high',
+                //         warning_severity: 'critical',
+                //         measured_value: deviceData.temperature_c,
+                //         threshold_value: thresholds.temperature_max * 1.2,
+                //         warning_message: `Nhiệt độ quá ngưỡng`
+                //     });
+    if (deviceData.temperature_c > thresholds.temperature_max) {
                     warnings.push({
                         warning_type: 'temperature_warning',
                         warning_severity: 'moderate',
