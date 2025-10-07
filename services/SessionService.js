@@ -6,8 +6,10 @@ const prisma = new PrismaClient();
 
 class SessionService {
   constructor() {
-    this.ACCESS_TOKEN_EXPIRES = '15m';     // 15 phút
+    this.ACCESS_TOKEN_EXPIRES = '30m';     // 15 phút
+    this.ACCESS_TOKEN_EXPIRES_SECONDS = 30 * 60; // 900 giây
     this.REFRESH_TOKEN_EXPIRES = '7d';     // 7 ngày
+    this.REFRESH_TOKEN_EXPIRES_SECONDS = 7 * 24 * 60 * 60; // 604800 giây
     this.SESSION_TIMEOUT = 30 * 60 * 1000; // 30 phút không hoạt động
   }
 
@@ -69,10 +71,13 @@ class SessionService {
         data: {
           access_token: accessToken,
           refresh_token: refreshToken,
-          expires_in: 1800, // 30 minutes in seconds
+          expires_in: this.ACCESS_TOKEN_EXPIRES_SECONDS, // ✅ 1800 giây (30 phút)
+          refresh_expires_in: this.REFRESH_TOKEN_EXPIRES_SECONDS, // ✅ 604800 giây (7 ngày)
           token_type: 'Bearer',
           session_id: session.id,
-          user: session.users
+          user: session.users,
+          created_at: session.created_at,
+          expires_at: expiresAt
         }
       };
     } catch (error) {
@@ -225,7 +230,7 @@ class SessionService {
         success: true,
         data: {
           access_token: accessToken,
-          expires_in: 1800, // 30 minutes
+          expires_in: this.ACCESS_TOKEN_EXPIRES_SECONDS, // ✅ 900 giây (15 phút)
           token_type: 'Bearer',
           session_id: session.id,
           created_at: session.created_at,
@@ -330,45 +335,64 @@ class SessionService {
   }
 
   /**
-   * Logout user (deactivate session)
-   * @param {string} sessionToken - Session token or refresh token
-   * @returns {Promise<Object>} Logout result
-   */
-  async logout(sessionToken) {
+ * Logout user (deactivate session)
+ * @param {string} token - Refresh token (plain text) or JWT access token
+ * @returns {Promise<Object>} Logout result
+ */
+async logout(token) {
     try {
-      // Find session by access_token or refresh_token
-      const session = await prisma.user_sessions.findFirst({
-        where: {
-          OR: [
-            { access_token: sessionToken },
-            { refresh_token: sessionToken }
-          ],
-          is_active: true
+        let session = null;
+
+        // Try 1: Hash token and find by refresh_token (most common case)
+        const hashedToken = this.hashToken(token);
+        session = await prisma.user_sessions.findFirst({
+            where: {
+                refresh_token: hashedToken,
+                is_active: true
+            }
+        });
+
+        // Try 2: If not found, assume it's a JWT and extract session ID (jti)
+        if (!session) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                if (decoded.jti) {
+                    session = await prisma.user_sessions.findFirst({
+                        where: {
+                            id: decoded.jti, // ✅ Use session UUID from JWT
+                            is_active: true
+                        }
+                    });
+                }
+            } catch (jwtError) {
+                console.log('Token is not a valid JWT, skipping JWT check');
+            }
         }
-      });
 
-      if (!session) {
+        if (!session) {
+            return {
+                success: false,
+                error: 'Session not found or already logged out'
+            };
+        }
+
+        // Deactivate session
+        await this.deactivateSession(session.id);
+
+        console.log(`✅ Logged out session: ${session.id}`);
         return {
-          success: false,
-          error: 'Session not found'
+            success: true,
+            message: 'Logged out successfully',
+            session_id: session.id
         };
-      }
-
-      await this.deactivateSession(session.id);
-
-      console.log(`✅ Logged out session: ${session.id}`);
-      return {
-        success: true,
-        message: 'Logged out successfully'
-      };
     } catch (error) {
-      console.error('Error during logout:', error);
-      return {
-        success: false,
-        error: 'Failed to logout'
-      };
+        console.error('Error during logout:', error);
+        return {
+            success: false,
+            error: 'Failed to logout'
+        };
     }
-  }
+}
 
   /**
    * Logout all sessions for user
@@ -666,6 +690,7 @@ class SessionService {
    * @returns {string} JWT access token
    */
   generateAccessToken(user, sessionId) {
+    const now = Math.floor(Date.now() / 1000);
     const payload = {
       sub: user.id, // Subject (user ID)
       jti: sessionId, // ✅ JWT ID (session UUID)
@@ -675,8 +700,8 @@ class SessionService {
       organization_id: user.organization_id,
       department_id: user.department_id,
       roles: user.roles || [],
-      iat: Math.floor(Date.now() / 1000), // Issued at
-      exp: Math.floor(Date.now() / 1000) + (15 * 60) // Expires in 15 minutes
+      iat: now, // Issued at
+      exp: now + this.ACCESS_TOKEN_EXPIRES_SECONDS // ✅ Consistent 15 phút
     };
 
     return jwt.sign(payload, process.env.JWT_SECRET, {

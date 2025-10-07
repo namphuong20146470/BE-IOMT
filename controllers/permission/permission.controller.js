@@ -351,49 +351,25 @@ export const getAllPermissions = async (req, res) => {
             });
         }
 
+        // ✅ Check if user is Super Admin
+        const isSuperAdmin = req.user?.roles?.some(role => role.is_system_role) || false;
+
         const { group_id, search, include_groups, format } = req.query;
 
         console.log('🔍 Getting all permissions', { group_id, search, include_groups, format });
 
         const permissions = await permissionService.getAllPermissions({
-            groupId: group_id,
+            group_id: group_id,
             search: search,
-            includeGroups: include_groups === 'true'
+            include_groups: include_groups === 'true',
+            format: format || 'array'
         });
-
-        // Format response
-        let formattedData = permissions;
-        if (format === 'grouped') {
-            // Group by resource
-            formattedData = permissions.reduce((acc, perm) => {
-                const resource = perm.resource || 'general';
-                if (!acc[resource]) {
-                    acc[resource] = [];
-                }
-                acc[resource].push(perm);
-                return acc;
-            }, {});
-        } else if (format === 'tree') {
-            // Group by resource.action
-            formattedData = permissions.reduce((acc, perm) => {
-                const resource = perm.resource || 'general';
-                if (!acc[resource]) {
-                    acc[resource] = {};
-                }
-                const action = perm.action || 'default';
-                if (!acc[resource][action]) {
-                    acc[resource][action] = [];
-                }
-                acc[resource][action].push(perm);
-                return acc;
-            }, {});
-        }
 
         return res.json({
             success: true,
-            data: formattedData,
-            total: Array.isArray(formattedData) ? formattedData.length : 
-                   Object.values(formattedData).flat().length,
+            data: permissions,
+            total: Array.isArray(permissions) ? permissions.length : 
+                   Object.values(permissions).flat().length,
             format: format || 'array',
             bypass_used: isSuperAdmin,
             filters: {

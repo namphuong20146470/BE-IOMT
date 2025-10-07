@@ -50,7 +50,7 @@ export const getAllRoles = async (req, res) => {
         }
 
         // ✅ FIXED: Chỉ require organization_id nếu không phải Super Admin
-        if (!organization_id && !isSuperAdmin) {
+        if (organization_id === undefined && !isSuperAdmin) {
             return res.status(400).json({ 
                 error: 'Organization ID is required. Please provide organization_id or ensure user has organization.' 
             });
@@ -358,6 +358,38 @@ export const getRoleStats = async (req, res) => {
         });
     } catch (err) {
         console.error('Error getting role stats:', err);
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+// Get user's active roles (GET /roles/users/:userId)
+export const getUserActiveRoles = async (req, res) => {
+    try {
+        const requesterId = req.user?.id;
+        if (!requesterId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const { userId } = req.params;
+        const { organization_id } = req.query;
+        
+        // Check permission (can view own roles or need user.read permission)
+        const hasPermission = userId === requesterId || 
+                             await permissionService.hasPermission(requesterId, 'user.read');
+        
+        if (!hasPermission) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+
+        const roles = await roleService.getUserActiveRoles(userId, organization_id || null);
+
+        return res.json({
+            success: true,
+            data: roles,
+            total: roles.length
+        });
+    } catch (err) {
+        console.error('Error getting user roles:', err);
         return res.status(500).json({ error: err.message });
     }
 };

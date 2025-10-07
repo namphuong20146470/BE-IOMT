@@ -522,7 +522,7 @@ export const getAllUsers = async (req, res) => {
 
         // ✅ Parse pagination parameters
         const page = parseInt(req.query.page) || 1;
-        const limit = Math.min(parseInt(req.query.limit) || 10, 100); // Max 100 items per page
+        const limit = Math.min(parseInt(req.query.limit) || 10, 100);
         const offset = (page - 1) * limit;
 
         // ✅ Parse filter parameters
@@ -537,13 +537,13 @@ export const getAllUsers = async (req, res) => {
             created_from,
             created_to,
             role_id,
-            include_roles = 'true' // ⭐ Mặc định trả về roles
+            include_roles = 'true',
+            include_system_users = 'false' // ⭐ NEW: Control system user visibility
         } = req.query;
 
         // ✅ Determine organization scope
         let organization_id;
         if (queryOrgId) {
-            // Specific organization requested
             if (isSuperAdmin || queryOrgId === userOrgId) {
                 organization_id = queryOrgId;
             } else {
@@ -553,12 +553,9 @@ export const getAllUsers = async (req, res) => {
                 });
             }
         } else {
-            // No organization specified
             if (isSuperAdmin) {
-                // Super Admin can see all organizations (organization_id = null means no filter)
-                organization_id = null;
+                organization_id = null; // No filter for Super Admin
             } else {
-                // Regular users see only their organization
                 organization_id = userOrgId;
             }
         }
@@ -568,13 +565,12 @@ export const getAllUsers = async (req, res) => {
         let params = [];
         let paramIndex = 1;
 
-        // Organization filter (required for non-Super Admin)
+        // Organization filter
         if (organization_id) {
             whereConditions.push(`u.organization_id = $${paramIndex}::uuid`);
             params.push(organization_id);
             paramIndex++;
         }
-        // Note: If organization_id is null (Super Admin with no org filter), no organization restriction
 
         // Department filter
         if (department_id) {
@@ -590,7 +586,7 @@ export const getAllUsers = async (req, res) => {
             paramIndex++;
         }
 
-        // Search filter (username, full_name, email)
+        // Search filter
         if (search) {
             whereConditions.push(`(
                 u.username ILIKE $${paramIndex} OR 
@@ -639,6 +635,18 @@ export const getAllUsers = async (req, res) => {
                     WHERE ur.user_id = u.id AND ur.is_active = true
                 )`);
             }
+        }
+
+        // ⭐ NEW: Exclude system users for regular users
+        // Only Super Admin can see system users, and only if explicitly requested
+        if (include_system_users !== 'true' || !isSuperAdmin) {
+            whereConditions.push(`NOT EXISTS (
+                SELECT 1 FROM user_roles ur
+                JOIN roles r ON ur.role_id = r.id
+                WHERE ur.user_id = u.id 
+                  AND r.is_system_role = true
+                  AND ur.is_active = true
+            )`);
         }
 
         const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -725,7 +733,8 @@ export const getAllUsers = async (req, res) => {
                 created_from,
                 created_to,
                 role_id,
-                include_roles: include_roles === 'true'
+                include_roles: include_roles === 'true',
+                include_system_users: include_system_users === 'true' && isSuperAdmin // Only true if Super Admin AND requested
             },
             sorting: {
                 sort_by: sortField,
@@ -742,7 +751,6 @@ export const getAllUsers = async (req, res) => {
         });
     }
 };
-
 export const getUserById = async (req, res) => {
     try {
         const { id } = req.params;

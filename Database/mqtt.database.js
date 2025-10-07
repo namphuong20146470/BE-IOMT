@@ -412,8 +412,13 @@ async function processDeviceData(tableName, topicName, partialData) {
             timestamp: new Date().toISOString()
         };
 
-        socketService.emitToRoom(`device_${tableName}`, 'deviceDataUpdate', deviceData);
-        socketService.emitToRoom('all_devices', 'deviceDataUpdate', deviceData);
+        // ✅ FIX: Use correct socketService method
+        socketService.broadcastMqttData(result[0].id, topicName, deviceData, {
+            type: 'deviceUpdate',
+            table: tableName,
+            changed: changedFields,
+            preserved: preservedFields.length
+        });
 
         const preservationRatio = `${preservedFields.length}/${allFields.length}`;
         
@@ -512,8 +517,12 @@ async function processIotEnvData(partialData) {
             timestamp: new Date().toISOString()
         };
 
-        socketService.emitToRoom('device_iot_environment_status', 'deviceDataUpdate', envData);
-        socketService.emitToRoom('all_devices', 'deviceDataUpdate', envData);
+        // ✅ FIX: Use correct socketService method
+        socketService.broadcastMqttData('iot-environment', 'IoT Environment Status', envData, {
+            type: 'environmentUpdate',
+            changed: changedFields,
+            preserved: preservedFields.length
+        });
 
         // ✅ 6. Enhanced success logging
         const preservationRatio = `${preservedFields.length}/${allFields.length}`;

@@ -34,7 +34,7 @@ async function setupAdmin() {
   await prisma.user_roles.create({
     data: {
       user_id: admin.id,
-      role_id: role!.id,
+      role_id: role.id,
       organization_id: null,
       department_id: null,
       assigned_by: admin.id,

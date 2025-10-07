@@ -261,8 +261,8 @@ export const login = async (req, res) => {
                 tokens: {
                     access_token: sessionData.data.access_token,
                     refresh_token: sessionData.data.refresh_token,  // ✅ Add this
-                    access_token_expires_in: 1800,
-                    refresh_token_expires_in: 604800,  // ✅ Add this
+                    access_token_expires_in: sessionData.data.expires_in, // ✅ Use from SessionService
+                    refresh_token_expires_in: sessionData.data.refresh_expires_in,  // ✅ Use from SessionService
                     token_type: 'Bearer'
                 },
                 session: {
@@ -389,7 +389,7 @@ export const refreshToken = async (req, res) => {
                 tokens: {
                     access_token: result.data.access_token,
                     // ✅ Optional: Return new refresh_token if rotated
-                    access_token_expires_in:1800,// Consistent
+                    access_token_expires_in: result.data.expires_in, // ✅ Use from SessionService
                     token_type: 'Bearer'
                 },
                 session: {
@@ -431,35 +431,51 @@ export const refreshToken = async (req, res) => {
 export const logout = async (req, res) => {
     try {
         const refreshToken = req.cookies?.refresh_token;
+        let bearerToken = null;
+        if (req.headers.authorization?.startsWith('Bearer ')) {
+            bearerToken = req.headers.authorization.substring(7);
+        }
         const accessToken = req.cookies?.access_token;
         const sessionId = req.session?.session_id;
         const userId = req.user?.id;
 
+        const logoutMethod = refreshToken ? 'refresh_token' : 
+                           bearerToken ? 'bearer_token' :
+                           accessToken ? 'access_token' : 
+                           sessionId ? 'session_id' : 'no_auth';
+
         console.log('🚪 Logout request:', {
             hasRefreshToken: !!refreshToken,
+            hasBearerToken: !!bearerToken,
             hasAccessToken: !!accessToken,
             sessionId,
-            userId
+            userId,
+            logoutMethod
         });
 
-        // Try to invalidate session using available tokens
+        // Try to invalidate session (non-blocking)
         let logoutResult = null;
-        
-        if (refreshToken) {
-            // ✅ Fix: Use logout method with refresh token
-            logoutResult = await sessionService.logout(refreshToken);
-        } else if (accessToken) {
-            // Fallback to access token
-            logoutResult = await sessionService.logout(accessToken);
-        } else if (sessionId) {
-            // Direct session deactivation
-            await sessionService.deactivateSession(sessionId);
-            logoutResult = { success: true };
+        try {
+            if (refreshToken) {
+                logoutResult = await sessionService.logout(refreshToken);
+            } else if (bearerToken) {
+                logoutResult = await sessionService.logout(bearerToken);
+            } else if (accessToken) {
+                logoutResult = await sessionService.logout(accessToken);
+            } else if (sessionId) {
+                await sessionService.deactivateSession(sessionId);
+                logoutResult = { success: true };
+            } else {
+                logoutResult = { success: true, message: 'No active session found' };
+            }
+        } catch (sessionError) {
+            console.warn('⚠️ Session invalidation failed:', sessionError.message);
+            logoutResult = { success: false, error: sessionError.message };
         }
 
-        // Log logout activity
+        // Log logout activity (non-blocking)
         if (userId) {
-            await auditService.logActivity(
+            auditService.logActivity(
                 userId,
                 'LOGOUT',
                 'auth',
@@ -467,41 +483,61 @@ export const logout = async (req, res) => {
                 {
                     ip: req.ip,
                     userAgent: req.headers['user-agent'],
-                    logoutMethod: refreshToken ? 'refresh_token' : 
-                                 accessToken ? 'access_token' : 'session_id'
+                    logoutMethod,
+                    sessionInvalidated: logoutResult?.success ?? false
                 },
                 req.user?.organization_id
-            );
+            ).catch(err => {
+                console.error('❌ Failed to log logout activity:', err);
+            });
         }
 
-        // Always clear cookies regardless of result
+        // Always clear cookies
         clearAuthCookies(res);
 
-        console.log('✅ Logout completed:', logoutResult);
+        // ✅ FIX: Clear cache headers to force permission refresh
+        res.set({
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Clear-Site-Data': '"cache", "cookies", "storage"' // ✅ Clear all client-side data
+        });
+
+        console.log('✅ Logout completed:', { logoutMethod, result: logoutResult });
 
         return res.json({
             success: true,
             message: 'Logged out successfully',
             data: {
                 session: {
-                    session_id: sessionId,
+                    session_id: sessionId || null,
                     logged_out_at: new Date().toISOString(),
                     ip_address: req.ip,
-                    logout_method: refreshToken ? 'refresh_token' : 
-                                 accessToken ? 'access_token' : 'session_id'
+                    logout_method: logoutMethod,
+                    session_invalidated: logoutResult?.success ?? false
                 },
                 user: userId ? {
                     id: userId,
                     username: req.user?.username
-                } : null
+                } : null,
+                // ✅ Instruct client to clear all cache
+                cache_cleared: true,
+                force_refresh: true
             }
         });
 
     } catch (error) {
-        console.error('Logout error:', error);
+        console.error('❌ Logout error:', error);
         
         // Always clear cookies even on error
         clearAuthCookies(res);
+        
+        // Clear cache headers even on error
+        res.set({
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        });
         
         return res.status(500).json({
             success: false,
@@ -885,23 +921,20 @@ export const getMe = async (req, res) => {
 };
 
 // ✅ Permissions endpoint with caching support  
+/**
+ * ✅ Permissions endpoint with USER-SPECIFIC caching
+ */
 export const getPermissions = async (req, res) => {
     try {
-        // ✅ Debug JWT payload
-        console.log('🔍 JWT Payload:', req.user);
-        
         const userId = req.user.sub || req.user.id || req.user.user_id;
         
         if (!userId) {
-            console.error('❌ No user ID found in JWT:', req.user);
             return res.status(401).json({
                 success: false,
-                message: 'Invalid token - user ID not found',
-                debug: process.env.NODE_ENV === 'development' ? req.user : undefined
+                message: 'Invalid token - user ID not found'
             });
         }
 
-        // ✅ Use same Raw SQL as login for consistency
         const users = await prisma.$queryRaw`
             SELECT u.id, u.username, u.full_name, u.email, 
                    u.organization_id, u.department_id,
@@ -927,8 +960,6 @@ export const getPermissions = async (req, res) => {
                        '[]'::json
                    ) as roles
             FROM users u
-            LEFT JOIN organizations o ON u.organization_id = o.id
-            LEFT JOIN departments d ON u.department_id = d.id
             LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = true
             LEFT JOIN roles r ON ur.role_id = r.id AND r.is_active = true
             WHERE u.id = ${userId}::uuid
@@ -945,29 +976,19 @@ export const getPermissions = async (req, res) => {
         }
 
         const user = users[0];
-        
-        // Parse roles (same as login)
         const roles = typeof user.roles === 'string' 
             ? JSON.parse(user.roles) 
             : (user.roles || []);
 
-        console.log('🔍 Raw roles data:', user.roles);
-        console.log('🔍 Parsed roles:', roles);
-
-        // Get all unique permissions
         const allPermissions = [...new Set(
             roles.flatMap(role => role.permissions || [])
         )];
 
-        console.log('🔍 All permissions:', allPermissions);
-
-        // Create permission map for O(1) lookup
         const permissionMap = {};
         allPermissions.forEach(permission => {
             permissionMap[permission] = true;
         });
 
-        // Group permissions by scope for easier frontend handling
         const permissionsByScope = {
             global: allPermissions.filter(p => p.includes('system.')),
             organization: allPermissions.filter(p => p.includes('organization.')),
@@ -989,11 +1010,21 @@ export const getPermissions = async (req, res) => {
             )
         };
 
-        // Set cache headers for 15 minutes
+        // ✅ USER-SPECIFIC cache with ETag
+        const cacheKey = `${userId}-${JSON.stringify(allPermissions)}`;
+        const etag = Buffer.from(cacheKey).toString('base64');
+
+        // ✅ Check if client has same permissions (ETag)
+        if (req.headers['if-none-match'] === `"${etag}"`) {
+            return res.status(304).send(); // Not Modified
+        }
+
+        // ✅ Set cache headers with USER-SPECIFIC ETag
         res.set({
             'Cache-Control': 'private, max-age=900', // 15 minutes
-            'ETag': `"${Buffer.from(JSON.stringify(allPermissions)).toString('base64')}"`,
-            'Last-Modified': new Date().toUTCString()
+            'ETag': `"${etag}"`,
+            'Last-Modified': new Date().toUTCString(),
+            'Vary': 'Authorization' // ✅ Cache varies by user token
         });
 
         return res.json({
@@ -1005,11 +1036,8 @@ export const getPermissions = async (req, res) => {
                 permissions_by_scope: permissionsByScope,
                 total: allPermissions.length,
                 cached_until: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-                debug: process.env.NODE_ENV === 'development' ? {
-                    user_id: userId,
-                    roles_count: roles.length,
-                    raw_roles: user.roles
-                } : undefined
+                user_id: userId, // ✅ Include user ID for verification
+                cache_key: etag.substring(0, 16) + '...' // Partial cache key for debugging
             }
         });
 

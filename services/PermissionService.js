@@ -411,6 +411,109 @@ class PermissionService {
   }
 
   /**
+   * Get all permissions with optional filtering
+   * @param {Object} options - Query options
+   * @returns {Promise<Array>} Array of permissions
+   */
+  async getAllPermissions(options = {}) {
+    try {
+      const {
+        group_id = null,
+        search = null,
+        is_active = true,
+        include_groups = false,
+        format = 'array'
+      } = options;
+
+      let where = {};
+      
+      if (is_active !== null) {
+        where.is_active = is_active;
+      }
+      
+      if (group_id) {
+        where.group_id = group_id;
+      }
+      
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } }
+        ];
+      }
+
+      const permissions = await prisma.permissions.findMany({
+        where,
+        include: include_groups ? {
+          permission_groups: true
+        } : false,
+        orderBy: [
+          { priority: 'desc' },
+          { name: 'asc' }
+        ]
+      });
+
+      // Format options
+      if (format === 'grouped') {
+        return this.groupPermissionsByResource(permissions);
+      } else if (format === 'tree') {
+        return this.buildPermissionTree(permissions);
+      }
+
+      return permissions;
+    } catch (error) {
+      console.error('Error getting all permissions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Group permissions by resource
+   * @param {Array} permissions - Array of permissions
+   * @returns {Object} Grouped permissions
+   */
+  groupPermissionsByResource(permissions) {
+    const grouped = {};
+    
+    permissions.forEach(permission => {
+      const resource = permission.resource || 'general';
+      if (!grouped[resource]) {
+        grouped[resource] = [];
+      }
+      grouped[resource].push(permission);
+    });
+
+    return grouped;
+  }
+
+  /**
+   * Build permission tree structure
+   * @param {Array} permissions - Array of permissions
+   * @returns {Object} Tree structure
+   */
+  buildPermissionTree(permissions) {
+    const tree = {};
+    
+    permissions.forEach(permission => {
+      const [resource, action] = permission.name.split('.');
+      
+      if (!tree[resource]) {
+        tree[resource] = {
+          name: resource,
+          permissions: []
+        };
+      }
+      
+      tree[resource].permissions.push({
+        ...permission,
+        action: action || 'default'
+      });
+    });
+
+    return tree;
+  }
+
+  /**
    * Create new permission
    * @param {Object} permissionData - Permission data
    * @returns {Promise<Object>} Created permission
@@ -504,6 +607,191 @@ class PermissionService {
     } catch (error) {
       console.error('Error assigning role:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get permission by ID
+   * @param {string} permissionId - Permission UUID
+   * @param {Object} options - Query options
+   * @returns {Promise<Object|null>} Permission object or null
+   */
+  async getPermissionById(permissionId, options = {}) {
+    try {
+      const { include_roles = false } = options;
+
+      const permission = await prisma.permissions.findUnique({
+        where: { id: permissionId },
+        include: include_roles ? {
+          role_permissions: {
+            include: {
+              roles: {
+                select: {
+                  id: true,
+                  name: true,
+                  description: true
+                }
+              }
+            }
+          }
+        } : false
+      });
+
+      return permission;
+    } catch (error) {
+      console.error('Error getting permission by ID:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update permission
+   * @param {string} permissionId - Permission UUID
+   * @param {Object} updateData - Update data
+   * @returns {Promise<Object>} Update result
+   */
+  async updatePermission(permissionId, updateData) {
+    try {
+      const existingPermission = await prisma.permissions.findUnique({
+        where: { id: permissionId }
+      });
+
+      if (!existingPermission) {
+        return {
+          success: false,
+          error: 'Permission not found'
+        };
+      }
+
+      const updatedPermission = await prisma.permissions.update({
+        where: { id: permissionId },
+        data: {
+          ...updateData,
+          updated_at: new Date()
+        }
+      });
+
+      return {
+        success: true,
+        data: updatedPermission
+      };
+    } catch (error) {
+      console.error('Error updating permission:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Delete permission
+   * @param {string} permissionId - Permission UUID
+   * @param {Object} options - Delete options
+   * @returns {Promise<Object>} Delete result
+   */
+  async deletePermission(permissionId, options = {}) {
+    try {
+      const { force = false } = options;
+
+      // Check if permission is in use
+      const usageCount = await prisma.role_permissions.count({
+        where: { permission_id: permissionId }
+      });
+
+      if (usageCount > 0 && !force) {
+        return {
+          success: false,
+          error: `Permission is assigned to ${usageCount} role(s). Use force=true to delete anyway.`,
+          usage_count: usageCount
+        };
+      }
+
+      // Soft delete or hard delete
+      if (force) {
+        // Hard delete - remove from roles first
+        await prisma.role_permissions.deleteMany({
+          where: { permission_id: permissionId }
+        });
+        
+        await prisma.permissions.delete({
+          where: { id: permissionId }
+        });
+      } else {
+        // Soft delete
+        await prisma.permissions.update({
+          where: { id: permissionId },
+          data: { is_active: false }
+        });
+      }
+
+      return {
+        success: true,
+        message: force ? 'Permission deleted permanently' : 'Permission deactivated'
+      };
+    } catch (error) {
+      console.error('Error deleting permission:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get all permission groups
+   * @param {Object} options - Query options
+   * @returns {Promise<Array>} Array of permission groups
+   */
+  async getAllPermissionGroups(options = {}) {
+    try {
+      const { include_permissions = false } = options;
+
+      const groups = await prisma.permission_groups.findMany({
+        where: { is_active: true },
+        include: include_permissions ? {
+          permissions: {
+            where: { is_active: true },
+            orderBy: { name: 'asc' }
+          }
+        } : false,
+        orderBy: { name: 'asc' }
+      });
+
+      return groups;
+    } catch (error) {
+      console.error('Error getting permission groups:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Create permission group
+   * @param {Object} groupData - Group data
+   * @returns {Promise<Object>} Created group result
+   */
+  async createPermissionGroup(groupData) {
+    try {
+      const group = await prisma.permission_groups.create({
+        data: {
+          name: groupData.name,
+          description: groupData.description || '',
+          color: groupData.color || '#6B7280',
+          icon: groupData.icon || 'folder',
+          sort_order: groupData.sort_order || 0
+        }
+      });
+
+      return {
+        success: true,
+        data: group
+      };
+    } catch (error) {
+      console.error('Error creating permission group:', error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 }
