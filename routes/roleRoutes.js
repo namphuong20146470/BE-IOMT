@@ -67,5 +67,6 @@ router.get('/roles/stats', authMiddleware, rolesController.getRoleStats);
  * @access Private - requires 'user.read' permission
  */
 router.get('/roles/users/:userId', authMiddleware, rolesController.getUserActiveRoles);
-
+// NEW: Update role permissions
+router.put('/roles/:roleId/permissions', authMiddleware, rolesController.updateRolePermissions);
 export default router;

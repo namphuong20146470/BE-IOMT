@@ -191,6 +191,69 @@ export const updateRole = async (req, res) => {
     }
 };
 
+// Thêm endpoint này vào file roleController.js
+
+// Cập nhật permissions cho role (PUT /roles/:roleId/permissions)
+export const updateRolePermissions = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        // Check permission
+        const hasPermission = await permissionService.hasPermission(userId, 'role.update');
+        if (!hasPermission) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+
+        const { roleId } = req.params;
+        const { permission_ids } = req.body;
+
+        // Validate request body
+        if (!permission_ids || !Array.isArray(permission_ids)) {
+            return res.status(400).json({ 
+                error: 'permission_ids is required and must be an array' 
+            });
+        }
+
+        // Get existing role first
+        const existingRole = await roleService.getRoleById(roleId);
+        if (!existingRole) {
+            return res.status(404).json({ 
+                success: false,
+                error: 'Role not found' 
+            });
+        }
+
+        // Check if role is system role (optional - prevent modification of system roles)
+        if (existingRole.is_system_role) {
+            return res.status(403).json({ 
+                success: false,
+                error: 'Cannot modify permissions of system roles' 
+            });
+        }
+
+        // Update role permissions
+        const result = await roleService.updateRolePermissions(roleId, permission_ids, userId);
+
+        if (!result.success) {
+            return res.status(400).json({
+                success: false,
+                error: result.error
+            });
+        }
+
+        return res.json({
+            success: true,
+            data: result.data,
+            message: 'Role permissions updated successfully'
+        });
+    } catch (err) {
+        console.error('Error updating role permissions:', err);
+        return res.status(500).json({ error: err.message });
+    }
+};
 // Xóa role (DELETE /roles/:id)
 export const deleteRole = async (req, res) => {
     try {

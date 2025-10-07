@@ -249,6 +249,79 @@ class RoleService {
   }
 
   /**
+ * Update permissions for a role
+ * @param {string} roleId - Role ID
+ * @param {string[]} permissionIds - Array of permission IDs to assign
+ * @param {string} updatedBy - User ID making the update
+ */
+async updateRolePermissions(roleId, permissionIds, updatedBy) {
+    try {
+        // Validate permission IDs exist
+        const { data: validPermissions, error: permError } = await supabase
+            .from('permissions')
+            .select('id')
+            .in('id', permissionIds);
+
+        if (permError) throw permError;
+
+        const validPermissionIds = validPermissions.map(p => p.id);
+        const invalidIds = permissionIds.filter(id => !validPermissionIds.includes(id));
+
+        if (invalidIds.length > 0) {
+            return {
+                success: false,
+                error: `Invalid permission IDs: ${invalidIds.join(', ')}`
+            };
+        }
+
+        // Delete existing role-permission mappings
+        const { error: deleteError } = await supabase
+            .from('role_permissions')
+            .delete()
+            .eq('role_id', roleId);
+
+        if (deleteError) throw deleteError;
+
+        // Insert new role-permission mappings
+        if (permissionIds.length > 0) {
+            const mappings = permissionIds.map(permId => ({
+                role_id: roleId,
+                permission_id: permId,
+                granted_by: updatedBy,
+                granted_at: new Date().toISOString()
+            }));
+
+            const { error: insertError } = await supabase
+                .from('role_permissions')
+                .insert(mappings);
+
+            if (insertError) throw insertError;
+        }
+
+        // Update role's updated_at timestamp
+        const { error: updateError } = await supabase
+            .from('roles')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', roleId);
+
+        if (updateError) throw updateError;
+
+        // Fetch updated role with permissions
+        const updatedRole = await this.getRoleById(roleId, true);
+
+        return {
+            success: true,
+            data: updatedRole
+        };
+    } catch (err) {
+        console.error('Error updating role permissions:', err);
+        return {
+            success: false,
+            error: err.message
+        };
+    }
+}
+  /**
    * Get all roles (for Super Admin)
    * @param {Object} options - Query options
    * @returns {Promise<Array>} All roles across all organizations
