@@ -7,6 +7,7 @@ function getVietnamDate() {
 }
 
 // Lấy toàn bộ role (GET /roles)
+// ✅ SỬA Backend: roleController.js
 export const getAllRoles = async (req, res) => {
     try {
         const userId = req.user?.id;
@@ -14,7 +15,6 @@ export const getAllRoles = async (req, res) => {
             return res.status(401).json({ error: 'Authentication required' });
         }
 
-        // Check permission
         const hasPermission = await permissionService.hasPermission(userId, 'role.read');
         if (!hasPermission) {
             return res.status(403).json({ error: 'Insufficient permissions' });
@@ -28,14 +28,16 @@ export const getAllRoles = async (req, res) => {
             is_active = 'true'
         } = req.query;
 
-        // Use organization_id from query parameter, fallback to user's organization
-        // Super Admin can query other organizations, regular users get their own org
         const userOrgId = req.user?.organization_id;
         const isSuperAdmin = req.user?.is_super_admin || req.user?.roles?.some(r => r.is_system_role);
         
         let organization_id;
-        if (queryOrgId) {
-            // If organization_id specified in query
+        
+        // ✅ FIXED: Super Admin có thể query không cần organization_id
+        if (isSuperAdmin && !queryOrgId && !userOrgId) {
+            // Super Admin without organization - get all roles including system roles
+            organization_id = null; // Signal to get all roles
+        } else if (queryOrgId) {
             if (isSuperAdmin || queryOrgId === userOrgId) {
                 organization_id = queryOrgId;
             } else {
@@ -44,11 +46,11 @@ export const getAllRoles = async (req, res) => {
                 });
             }
         } else {
-            // No organization_id in query, use user's organization
             organization_id = userOrgId;
         }
 
-        if (!organization_id) {
+        // ✅ FIXED: Chỉ require organization_id nếu không phải Super Admin
+        if (!organization_id && !isSuperAdmin) {
             return res.status(400).json({ 
                 error: 'Organization ID is required. Please provide organization_id or ensure user has organization.' 
             });
@@ -61,7 +63,14 @@ export const getAllRoles = async (req, res) => {
             search: search || null
         };
 
-        const roles = await roleService.getRolesByOrganization(organization_id, options);
+        // ✅ FIXED: Xử lý cả 2 trường hợp
+        let roles;
+        if (organization_id === null && isSuperAdmin) {
+            // Get all roles (system + all organizations)
+            roles = await roleService.getAllRoles(options);
+        } else {
+            roles = await roleService.getRolesByOrganization(organization_id, options);
+        }
 
         return res.json({
             success: true,

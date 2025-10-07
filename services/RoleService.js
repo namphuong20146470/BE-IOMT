@@ -161,7 +161,7 @@ class RoleService {
 
   /**
    * Get roles by organization with filtering options
-   * @param {string} organizationId - Organization UUID
+   * @param {string|null} organizationId - Organization UUID (null for Super Admin to get all roles)
    * @param {Object} options - Filtering options
    * @returns {Promise<Array>} Array of roles
    */
@@ -174,17 +174,29 @@ class RoleService {
         search = null
       } = options;
 
-      const where = {
+      // ✅ FIXED: Handle null organization_id for Super Admin
+      let where = {
         AND: [
-          { is_active: isActive },
-          {
-            OR: [
-              { organization_id: organizationId },
-              ...(includeSystemRoles ? [{ is_system_role: true }] : [])
-            ]
-          }
+          { is_active: isActive }
         ]
       };
+
+      // If organization_id is null (Super Admin), get all roles
+      // If organization_id is provided, filter by org + system roles
+      if (organizationId) {
+        where.AND.push({
+          OR: [
+            { organization_id: organizationId },
+            ...(includeSystemRoles ? [{ is_system_role: true }] : [])
+          ]
+        });
+      } else {
+        // Super Admin case: get all roles (optionally exclude system roles)
+        if (!includeSystemRoles) {
+          where.AND.push({ is_system_role: false });
+        }
+        // If includeSystemRoles is true, no additional filter needed (get all)
+      }
 
       if (search) {
         where.AND.push({
@@ -232,6 +244,77 @@ class RoleService {
       }));
     } catch (error) {
       console.error('Error getting organization roles:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all roles (for Super Admin)
+   * @param {Object} options - Query options
+   * @returns {Promise<Array>} All roles across all organizations
+   */
+  async getAllRoles(options = {}) {
+    try {
+      const {
+        includeSystemRoles = true,
+        includePermissions = false,
+        isActive = true,
+        search = null
+      } = options;
+
+      let where = {
+        is_active: isActive
+      };
+
+      if (!includeSystemRoles) {
+        where.is_system_role = false;
+      }
+
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } }
+        ];
+      }
+
+      const roles = await prisma.roles.findMany({
+        where,
+        include: {
+          organizations: true,
+          role_permissions: includePermissions ? {
+            include: {
+              permissions: {
+                include: {
+                  permission_groups: true
+                }
+              }
+            }
+          } : false,
+          _count: {
+            select: {
+              user_roles: {
+                where: { is_active: true }
+              }
+            }
+          }
+        },
+        orderBy: [
+          { is_system_role: 'desc' },
+          { organizations: { name: 'asc' } },
+          { sort_order: 'asc' },
+          { name: 'asc' }
+        ]
+      });
+
+      return roles.map(role => ({
+        ...role,
+        permissions: includePermissions ? role.role_permissions?.map(rp => rp.permissions) : undefined,
+        user_count: role._count.user_roles,
+        role_permissions: undefined,
+        _count: undefined
+      }));
+    } catch (error) {
+      console.error('Error getting all roles:', error);
       return [];
     }
   }
