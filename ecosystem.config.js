@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name: "be-dx",
+    name: "iomt",
     script: "./index.js",
     instances: "max",
     exec_mode: "cluster",

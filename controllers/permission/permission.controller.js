@@ -24,11 +24,11 @@ export const assignPermissionToRole = async (req, res) => {
         }
 
         // Check permission
-        const hasPermission = await permissionService.hasPermission(userId, 'role.update');
+        const hasPermission = await permissionService.hasPermission(userId, 'role.manage');
         if (!hasPermission) {
             return res.status(403).json({ 
                 success: false, 
-                error: 'Insufficient permissions. Required: role.update' 
+                error: 'Insufficient permissions. Required: role.manage' 
             });
         }
 
@@ -224,6 +224,14 @@ export const getRolePermissions = async (req, res) => {
 export const updateRolePermissions = async (req, res) => {
     try {
         const userId = req.user?.id;
+        
+        // ✅ DEBUG: Check user info
+        console.log('🔍 DEBUG - User Info:', {
+            userId,
+            username: req.user?.username,
+            roles: req.user?.roles
+        });
+
         if (!userId) {
             return res.status(401).json({ 
                 success: false, 
@@ -231,11 +239,18 @@ export const updateRolePermissions = async (req, res) => {
             });
         }
 
-        const hasPermission = await permissionService.hasPermission(userId, 'role.update');
         if (!hasPermission) {
+            // ✅ DEBUG: Get user's actual permissions
+            const userPerms = await permissionService.getUserPermissions(userId);
+            console.log('🔍 User actual permissions:', userPerms);
+
             return res.status(403).json({ 
-                success: false, 
-                error: 'Insufficient permissions. Required: role.update' 
+                success: false,  
+                error: 'Insufficient permissions. Required: role.manage',
+                debug: {
+                    required: 'role.manage',
+                    user_permissions: userPerms?.map(p => p.code) || []
+                }
             });
         }
 
@@ -253,6 +268,8 @@ export const updateRolePermissions = async (req, res) => {
 
         // Get current permissions
         const currentRole = await roleService.getRoleById(roleId, true);
+        
+
         if (!currentRole) {
             return res.status(404).json({ 
                 success: false, 
@@ -267,13 +284,18 @@ export const updateRolePermissions = async (req, res) => {
         const toRemove = currentPermissionIds.filter(id => !permission_ids.includes(id));
 
         console.log(`📊 Changes: +${toAdd.length} permissions, -${toRemove.length} permissions`);
+        console.log('📊 To Add:', toAdd);
+        console.log('📊 To Remove:', toRemove);
 
         // Execute changes
         const results = [];
 
         // Add new permissions
         if (toAdd.length > 0) {
+            console.log('➕ Adding permissions...');
             const addResult = await roleService.assignPermissionsToRole(roleId, toAdd, userId);
+            console.log('➕ Add result:', addResult);
+            
             results.push({ 
                 action: 'added', 
                 count: toAdd.length, 
@@ -284,8 +306,11 @@ export const updateRolePermissions = async (req, res) => {
 
         // Remove old permissions
         if (toRemove.length > 0) {
+            console.log('➖ Removing permissions...');
             for (const permId of toRemove) {
                 const removeResult = await roleService.removePermissionFromRole(roleId, permId, userId);
+                console.log(`➖ Removed ${permId}:`, removeResult);
+                
                 results.push({ 
                     action: 'removed', 
                     permission_id: permId, 
@@ -302,6 +327,8 @@ export const updateRolePermissions = async (req, res) => {
             details: 'Bulk permission update'
         });
 
+        console.log('✅ Permission update completed successfully');
+
         return res.json({
             success: true,
             data: {
@@ -317,6 +344,8 @@ export const updateRolePermissions = async (req, res) => {
 
     } catch (error) {
         console.error('❌ Error updating role permissions:', error);
+        console.error('❌ Stack trace:', error.stack);
+        
         return res.status(500).json({ 
             success: false, 
             error: 'Internal server error',

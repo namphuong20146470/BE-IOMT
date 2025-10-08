@@ -23,49 +23,62 @@ class RoleService {
   async createRole(roleData, createdBy) {
     try {
       // Validate required fields
-      if (!roleData.name || !roleData.organization_id) {
+      if (!roleData.name) {
         return {
           success: false,
-          error: 'Role name and organization are required'
+          error: 'Role name is required'
         };
       }
+
+      // organization_id can be null for system-wide roles (super admin)
+      const organizationId = roleData.organization_id || null;
 
       // Check for duplicate role name in organization
       const existingRole = await prisma.roles.findFirst({
         where: {
           name: roleData.name,
-          organization_id: roleData.organization_id,
+          ...(organizationId 
+            ? { organizations: { id: organizationId } }
+            : { organizations: null }
+          ),
           is_active: true
         }
       });
 
       if (existingRole) {
+        const scopeMessage = organizationId 
+          ? 'in the organization' 
+          : 'as a system-wide role';
         return {
           success: false,
-          error: 'Role with this name already exists in the organization'
+          error: `Role with this name already exists ${scopeMessage}`
+        };
+      }
+
+      // Prepare create data (only use fields that exist in schema)
+      const createData = {
+        name: roleData.name,
+        description: roleData.description || '',
+        color: roleData.color || '#6B7280',
+        icon: roleData.icon || 'user',
+        is_custom: roleData.is_custom !== false,
+        is_system_role: roleData.is_system_role || false,
+        sort_order: roleData.sort_order || 0
+        // Removed metadata - not in schema
+        // Removed users connection - will set created_by separately if field exists
+      };
+
+      // Add organization connection only if organizationId is provided
+      if (organizationId) {
+        createData.organizations = {
+          connect: { id: organizationId }
         };
       }
 
       const role = await prisma.roles.create({
-        data: {
-          name: roleData.name,
-          description: roleData.description || '',
-          organization_id: roleData.organization_id,
-          color: roleData.color || '#6B7280',
-          icon: roleData.icon || 'user',
-          is_custom: roleData.is_custom !== false,
-          is_system_role: roleData.is_system_role || false,
-          sort_order: roleData.sort_order || 0,
-          metadata: roleData.metadata || {},
-          created_by: createdBy
-        },
+        data: createData,
         include: {
-          organizations: true,
-          users: {
-            select: {
-              full_name: true
-            }
-          }
+          organizations: true
         }
       });
 
@@ -77,14 +90,17 @@ class RoleService {
         resource_id: role.id,
         new_values: {
           name: role.name,
-          organization_name: role.organizations.name
+          organization_name: role.organizations?.name || 'System-wide',
+          is_system_role: organizationId === null
         }
       });
 
       // Clear cache
       this.clearRoleCache();
       
-      console.log(`✅ Created role: ${role.name} for organization: ${role.organizations.name}`);
+      const orgInfo = role.organizations?.name || 'System-wide (all organizations)';
+      console.log(`✅ Created role: ${role.name} for: ${orgInfo}`);
+      
       return { success: true, data: role };
     } catch (error) {
       console.error('Error creating role:', error);
@@ -1531,6 +1547,78 @@ async updateRolePermissions(roleId, permissionIds, updatedBy) {
   }
 
   /**
+   * Assign single permission to role
+   * @param {string} roleId - Role UUID
+   * @param {string} permissionId - Permission UUID
+   * @param {string} assignedBy - Assigner user UUID
+   * @returns {Promise<Object>} Assignment result
+   */
+  async assignPermissionToRole(roleId, permissionId, assignedBy) {
+    try {
+      // Check if permission exists
+      const permission = await prisma.permissions.findUnique({
+        where: { id: permissionId }
+      });
+
+      if (!permission) {
+        return {
+          success: false,
+          error: 'Permission not found'
+        };
+      }
+
+      // Check if assignment already exists
+      const existing = await prisma.role_permissions.findFirst({
+        where: {
+          role_id: roleId,
+          permission_id: permissionId
+        }
+      });
+
+      if (existing) {
+        return {
+          success: true,
+          data: existing,
+          message: 'Permission already assigned to role'
+        };
+      }
+
+      // Create new assignment
+      const assignment = await prisma.role_permissions.create({
+        data: {
+          role_id: roleId,
+          permission_id: permissionId
+        },
+        include: {
+          permissions: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              resource: true,
+              action: true
+            }
+          }
+        }
+      });
+
+      // Clear role cache
+      this.clearRoleCache();
+
+      console.log(`✅ Assigned permission ${permissionId} to role ${roleId}`);
+
+      return {
+        success: true,
+        data: assignment,
+        message: 'Permission assigned successfully'
+      };
+    } catch (error) {
+      console.error('Error assigning permission to role:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Assign permissions to role
    * @param {string} roleId - Role UUID
    * @param {Array} permissionIds - Array of permission UUIDs
@@ -1600,6 +1688,55 @@ async updateRolePermissions(roleId, permissionIds, updatedBy) {
       };
     } catch (error) {
       console.error('Error assigning permissions to role:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Remove permission from role
+   * @param {string} roleId - Role UUID
+   * @param {string} permissionId - Permission UUID
+   * @param {string} removedBy - Remover user UUID
+   * @returns {Promise<Object>} Removal result
+   */
+  async removePermissionFromRole(roleId, permissionId, removedBy) {
+    try {
+      // Check if assignment exists
+      const assignment = await prisma.role_permissions.findFirst({
+        where: {
+          role_id: roleId,
+          permission_id: permissionId
+        }
+      });
+
+      if (!assignment) {
+        return {
+          success: false,
+          error: 'Permission assignment not found for this role'
+        };
+      }
+
+      // Remove the assignment
+      await prisma.role_permissions.delete({
+        where: { id: assignment.id }
+      });
+
+      // Clear role cache
+      this.clearRoleCache();
+
+      console.log(`✅ Removed permission ${permissionId} from role ${roleId}`);
+
+      return {
+        success: true,
+        data: {
+          role_id: roleId,
+          permission_id: permissionId,
+          removed_by: removedBy,
+          removed_at: new Date()
+        }
+      };
+    } catch (error) {
+      console.error('Error removing permission from role:', error);
       return { success: false, error: error.message };
     }
   }

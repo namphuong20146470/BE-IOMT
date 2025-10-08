@@ -97,12 +97,24 @@ export const createRole = async (req, res) => {
             return res.status(403).json({ error: 'Insufficient permissions' });
         }
 
-        const { name, description, organization_id, color, icon, sort_order, metadata } = req.body;
+        const { name, description, organization_id: bodyOrgId, color, icon, sort_order, metadata } = req.body;
+        
+        // Handle organization_id logic
+        let organization_id;
+        
+        if (req.user.organization_id === null) {
+            // Super admin case: allow null for system-wide roles
+            // Or use bodyOrgId if provided for specific organization
+            organization_id = bodyOrgId || null;
+        } else {
+            // Regular user: must use their organization_id (secure)
+            organization_id = req.user.organization_id;
+        }
 
         // Validate required fields
-        if (!name || !organization_id) {
+        if (!name) {
             return res.status(400).json({ 
-                error: 'Role name and organization ID are required' 
+                error: 'Role name is required' 
             });
         }
 
@@ -202,7 +214,7 @@ export const updateRolePermissions = async (req, res) => {
         }
 
         // Check permission
-        const hasPermission = await permissionService.hasPermission(userId, 'role.update');
+        const hasPermission = await permissionService.hasPermission(userId, 'role.manage');
         if (!hasPermission) {
             return res.status(403).json({ error: 'Insufficient permissions' });
         }
