@@ -127,7 +127,7 @@ export const getDeviceModels = async (req, res) => {
         }
 
         if (search) {
-            whereConditions.push(`(dm.name ILIKE $${paramIndex} OR dm.device_code ILIKE $${paramIndex})`);
+            whereConditions.push(`(dm.name ILIKE $${paramIndex} OR dm.model_number ILIKE $${paramIndex})`);
             params.push(`%${search}%`);
             paramIndex++;
         }
@@ -138,7 +138,7 @@ export const getDeviceModels = async (req, res) => {
 
         const models = await prisma.$queryRawUnsafe(`
             SELECT 
-                dm.id, dm.name, dm.device_code, dm.specifications,
+                dm.id, dm.name, dm.model_number, dm.specifications,
                 dc.name as category_name, dc.description as category_description,
                 m.name as manufacturer_name, m.country as manufacturer_country,
                 s.name as supplier_name

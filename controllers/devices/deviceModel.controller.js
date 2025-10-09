@@ -107,12 +107,12 @@ export const getDeviceModelById = async (req, res) => {
 // Create device model
 export const createDeviceModel = async (req, res) => {
     try {
-        const { category_id, name, manufacturer, specifications } = req.body;
+        const { category_id, name, manufacturer_id, supplier_id, specifications, model_number } = req.body;
 
-        if (!category_id || !name || !manufacturer) {
+        if (!category_id || !name) {
             return res.status(400).json({
                 success: false,
-                message: 'Category ID, name, and manufacturer are required'
+                message: 'Category ID and name are required'
             });
         }
 
@@ -127,11 +127,20 @@ export const createDeviceModel = async (req, res) => {
             });
         }
 
-        // Check for duplicate model name + manufacturer
-        const duplicateCheck = await prisma.$queryRaw`
-            SELECT id FROM device_models 
-            WHERE name = ${name} AND manufacturer = ${manufacturer}
-        `;
+        // Check for duplicate model name + manufacturer (if provided)
+        let duplicateCheck;
+        if (manufacturer_id) {
+            duplicateCheck = await prisma.$queryRaw`
+                SELECT id FROM device_models 
+                WHERE name = ${name} AND manufacturer_id = ${manufacturer_id}::uuid
+            `;
+        } else {
+            duplicateCheck = await prisma.$queryRaw`
+                SELECT id FROM device_models 
+                WHERE name = ${name} AND manufacturer_id IS NULL
+            `;
+        }
+        
         if (duplicateCheck.length > 0) {
             return res.status(400).json({
                 success: false,
@@ -140,8 +149,8 @@ export const createDeviceModel = async (req, res) => {
         }
 
         const newModel = await prisma.$queryRaw`
-            INSERT INTO device_models (category_id, name, manufacturer, specifications)
-            VALUES (${category_id}::uuid, ${name}, ${manufacturer}, ${specifications || null})
+            INSERT INTO device_models (category_id, name, manufacturer_id, supplier_id, specifications, model_number)
+            VALUES (${category_id}::uuid, ${name}, ${manufacturer_id || null}::uuid, ${supplier_id || null}::uuid, ${specifications || null}, ${model_number || null})
             RETURNING *
         `;
 
@@ -164,7 +173,7 @@ export const createDeviceModel = async (req, res) => {
 export const updateDeviceModel = async (req, res) => {
     try {
         const { id } = req.params;
-        const { category_id, name, manufacturer, specifications } = req.body;
+        const { category_id, name, manufacturer_id, supplier_id, specifications, model_number } = req.body;
 
         // Check if model exists
         const existingModel = await prisma.$queryRaw`
@@ -205,9 +214,19 @@ export const updateDeviceModel = async (req, res) => {
             params.push(name);
             paramIndex++;
         }
-        if (manufacturer) {
-            updateFields.push(`manufacturer = $${paramIndex}`);
-            params.push(manufacturer);
+        if (manufacturer_id !== undefined) {
+            updateFields.push(`manufacturer_id = $${paramIndex}::uuid`);
+            params.push(manufacturer_id);
+            paramIndex++;
+        }
+        if (supplier_id !== undefined) {
+            updateFields.push(`supplier_id = $${paramIndex}::uuid`);
+            params.push(supplier_id);
+            paramIndex++;
+        }
+        if (model_number !== undefined) {
+            updateFields.push(`model_number = $${paramIndex}`);
+            params.push(model_number);
             paramIndex++;
         }
         if (specifications !== undefined) {

@@ -25,7 +25,7 @@ model device_models {
   category_id     String            @db.Uuid
   name            String            @db.VarChar(255)
   specifications  String?
-  device_code     String?           @unique(map: "device_models_model_id_key") @db.VarChar(100)
+  model_number    String?           @unique(map: "device_models_model_id_key") @db.VarChar(100)
   manufacturer_id String?           @db.Uuid
   supplier_id     String?           @db.Uuid
   devices         device[]
