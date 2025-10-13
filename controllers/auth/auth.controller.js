@@ -307,16 +307,21 @@ export const login = async (req, res) => {
  */
 export const refreshToken = async (req, res) => {
     try {
-        // ✅ Support both cookie and Bearer token refresh
+        // ✅ Support multiple refresh token sources
         let refreshToken = null;
         let refreshSource = null;
 
-        // Priority 1: Check Authorization header (localStorage)
-        if (req.headers.authorization?.startsWith('Bearer ')) {
+        // Priority 1: Check request body (most common for frontend)
+        if (req.body?.refresh_token) {
+            refreshToken = req.body.refresh_token;
+            refreshSource = 'body';
+        }
+        // Priority 2: Check Authorization header (Bearer token)
+        else if (req.headers.authorization?.startsWith('Bearer ')) {
             refreshToken = req.headers.authorization.substring(7);
             refreshSource = 'bearer';
         }
-        // Priority 2: Check cookie (fallback)
+        // Priority 3: Check cookie (fallback)
         else if (req.cookies?.refresh_token) {
             refreshToken = req.cookies.refresh_token;
             refreshSource = 'cookie';
@@ -327,6 +332,8 @@ export const refreshToken = async (req, res) => {
         console.log('🔄 Refresh token request:', {
             hasRefreshToken: !!refreshToken,
             refreshSource,
+            hasBodyToken: !!req.body?.refresh_token,
+            hasSessionId: !!req.body?.session_id,
             cookies: Object.keys(req.cookies || {}),
             hasAuthHeader: !!req.headers.authorization,
             ipAddress
@@ -337,12 +344,13 @@ export const refreshToken = async (req, res) => {
                 success: false,
                 message: 'Refresh token required',
                 code: 'AUTH_REFRESH_TOKEN_MISSING',
-                hint: 'Provide refresh token via Authorization header or cookie'
+                hint: 'Provide refresh token via request body, Authorization header, or cookie'
             });
         }
 
-        // ✅ Fix: Use refreshAccessToken instead of refreshSession
-        const result = await sessionService.refreshAccessToken(refreshToken, ipAddress);
+        // ✅ Fix: Use refreshAccessToken with optional session_id
+        const sessionId = req.body?.session_id || null;
+        const result = await sessionService.refreshAccessToken(refreshToken, ipAddress, sessionId);
 
         if (!result.success) {
             console.log('❌ Refresh failed:', result.error);
@@ -355,7 +363,7 @@ export const refreshToken = async (req, res) => {
             return res.status(401).json({
                 success: false,
                 message: result.error || 'Invalid or expired refresh token',
-                code: 'AUTH_REFRESH_TOKEN_INVALID'
+                code: '98c7eb759800637b3c21c0cb2b2ad56e891f05967484fd239a70759b9dae5872460270687be3634830b771847fc9c456f2e7328880ea9d4b5c61f2caeb89d3e9'
             });
         }
 

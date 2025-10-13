@@ -95,20 +95,45 @@ class SessionService {
    * @param {string} ipAddress - Client IP address
    * @returns {Promise<Object>} New access token
    */
-  async refreshAccessToken(refreshToken, ipAddress = null) {
+  async refreshAccessToken(refreshToken, ipAddress = null, sessionId = null) {
     try {
+      console.log('🔍 [SessionService] Refresh request:', {
+        hasRefreshToken: !!refreshToken,
+        refreshTokenLength: refreshToken?.length,
+        hasSessionId: !!sessionId,
+        sessionId,
+        ipAddress
+      });
+
       // Hash the refresh token to match stored version
       const hashedRefreshToken = this.hashToken(refreshToken);
+      console.log('🔍 [SessionService] Hashed token preview:', hashedRefreshToken?.substring(0, 20));
+      
+      // Build query with optional session_id constraint
+      let whereClause = {
+        refresh_token: hashedRefreshToken,
+        is_active: true,
+        expires_at: {
+          gt: new Date() // Not expired
+        }
+      };
+
+      // Add session_id constraint if provided
+      if (sessionId) {
+        whereClause.id = sessionId;
+        console.log('🔍 [SessionService] Added session_id constraint:', sessionId);
+      }
+
+      console.log('🔍 [SessionService] Query where clause:', {
+        has_refresh_token: true,
+        is_active: true,
+        expires_after: new Date().toISOString(),
+        has_session_id: !!sessionId
+      });
       
       // Find active session with refresh token
       const session = await prisma.user_sessions.findFirst({
-        where: {
-          refresh_token: hashedRefreshToken,
-          is_active: true,
-          expires_at: {
-            gt: new Date() // Not expired
-          }
-        },
+        where: whereClause,
         include: {
           users: {
             select: {
@@ -124,12 +149,43 @@ class SessionService {
         }
       });
 
+      console.log('🔍 [SessionService] Session found:', !!session);
+      
       if (!session) {
+        console.log('❌ [SessionService] No session found with refresh token');
+        
+        // Debug: Check if any sessions exist for debugging
+        const activeSessions = await prisma.user_sessions.findMany({
+          where: { is_active: true },
+          select: {
+            id: true,
+            refresh_token: true,
+            expires_at: true,
+            users: { select: { username: true } }
+          },
+          take: 3
+        });
+        
+        console.log('🔍 [SessionService] Sample active sessions:', activeSessions.map(s => ({
+          id: s.id,
+          token_preview: s.refresh_token?.substring(0, 20),
+          expires_at: s.expires_at,
+          username: s.users?.username
+        })));
+        
         return {
           success: false,
-          error: 'Invalid or expired refresh token'
+          error: 'Invalid or expired refresh token',
+          code: 'AUTH_REFRESH_TOKEN_INVALID'
         };
       }
+
+      console.log('✅ [SessionService] Session found:', {
+        session_id: session.id,
+        user_id: session.user_id,
+        username: session.users?.username,
+        expires_at: session.expires_at
+      });
 
       // Get full user data with roles (same as login)
       const users = await prisma.$queryRaw`
