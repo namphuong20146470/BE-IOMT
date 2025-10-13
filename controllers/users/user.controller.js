@@ -637,17 +637,22 @@ export const getAllUsers = async (req, res) => {
             }
         }
 
-        // ⭐ NEW: Exclude system users for regular users
-        // Only Super Admin can see system users, and only if explicitly requested
-        if (include_system_users !== 'true' || !isSuperAdmin) {
-            whereConditions.push(`NOT EXISTS (
-                SELECT 1 FROM user_roles ur
-                JOIN roles r ON ur.role_id = r.id
-                WHERE ur.user_id = u.id 
-                  AND r.is_system_role = true
-                  AND ur.is_active = true
-            )`);
-        }
+        // ⭐ FIXED: System user visibility control
+// Logic:
+// - Super Admin: See system users by default (unless include_system_users=false)
+// - Regular users: Never see system users (even if include_system_users=true)
+const shouldExcludeSystemUsers = (include_system_users === 'false') || 
+                                  (!isSuperAdmin && include_system_users !== 'true');
+
+if (shouldExcludeSystemUsers) {
+    whereConditions.push(`NOT EXISTS (
+        SELECT 1 FROM user_roles ur
+        JOIN roles r ON ur.role_id = r.id
+        WHERE ur.user_id = u.id 
+          AND r.is_system_role = true
+          AND ur.is_active = true
+    )`);
+}
 
         const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
