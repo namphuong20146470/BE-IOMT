@@ -138,7 +138,5 @@ junit.xml
 .npm/
 .eslintcache
 .stylelintcache
-
 .certificate.key
-
 .private.crt
