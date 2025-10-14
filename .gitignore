@@ -1,28 +1,144 @@
-# dependencies
+# ==========================================
+# DEPENDENCIES
+# ==========================================
 node_modules/
-
-# env files
-.env
-.env.local
-
-# build output
-dist/
-build/
-
-# logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-logs/
+package-lock.json
+yarn.lock
 
-# Logs
-*.log
+# ==========================================
+# ENVIRONMENT VARIABLES (CRITICAL!)
+# ==========================================
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+.env.test
+config/local.json
+config/production.json
+secrets/
+credentials/
 
-# Prisma lock
+# ==========================================
+# DATABASE & PRISMA
+# ==========================================
 prisma/migrations/migration_lock.toml
+prisma/dev.db
+prisma/*.db
+prisma/*.sqlite
+*.db
+*.sqlite
+*.sqlite3
+database.json
+db.json
 
-# Node
-node_modules/
+# ==========================================
+# SSL CERTIFICATES & KEYS (CRITICAL!)
+# ==========================================
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+certificate.crt
+private.key
+ssl/
+certificates/
 
-# dotenv environment variables files
-*.env
+# ==========================================
+# LOGS & RUNTIME
+# ==========================================
+logs/
+*.log
+log/
+api-*.log
+live-logs.txt
+docker-logs-*.txt
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ==========================================
+# BUILD OUTPUTS
+# ==========================================
+dist/
+build/
+.next/
+out/
+coverage/
+*.lcov
+
+# ==========================================
+# IDE & EDITOR
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ==========================================
+# OS GENERATED
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ==========================================
+# TEMPORARY FILES
+# ==========================================
+tmp/
+temp/
+*.tmp
+*.temp
+*.backup
+*.bak
+*.old
+
+# ==========================================
+# DOCKER & DEPLOYMENT
+# ==========================================
+docker-compose.override.yml
+.dockerignore
+Dockerfile.local
+
+# ==========================================
+# PM2 & PROCESS MANAGEMENT
+# ==========================================
+ecosystem.config.js
+.pm2/
+
+# ==========================================
+# TEST & COVERAGE
+# ==========================================
+.nyc_output/
+coverage/
+test-results/
+junit.xml
+
+# ==========================================
+# MISC
+# ==========================================
+.cache/
+.npm/
+.eslintcache
+.stylelintcache
+
+.certificate.key
+
+.private.crt
