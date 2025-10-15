@@ -38,21 +38,45 @@ model device_models {
 }
 
 model specifications {
-  id              Int           @id @default(autoincrement())
-  device_model_id String        @db.Uuid
-  field_name      String        @db.VarChar(100)
-  field_name_vi   String        @db.VarChar(100)
-  value           String        @db.VarChar(255)
-  unit            String?       @db.VarChar(50)
+  id              Int                   @id @default(autoincrement())
+  device_model_id String                @db.Uuid
+  field_name      String                @db.VarChar(100)
+  field_name_vi   String                @db.VarChar(100)
+  value           String                @db.VarChar(255)
+  unit            String?               @db.VarChar(50)
   description     String?
   display_order   Int?
-  created_at      DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
-  device_model    device_models @relation(fields: [device_model_id], references: [id], onDelete: Cascade)
+  numeric_value   Decimal?              @db.Decimal(15, 4)
+  is_visible      Boolean?              @default(true)
+  created_at      DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+  device_model    device_models         @relation(fields: [device_model_id], references: [id], onDelete: Cascade)
+  specification_field specification_fields @relation(fields: [field_name], references: [field_name], onUpdate: Cascade, onDelete: Restrict)
 
   @@unique([device_model_id, field_name], map: "specifications_device_model_field_unique")
   @@index([device_model_id], map: "idx_specifications_device_model_id")
   @@index([field_name], map: "idx_specifications_field_name")
+  @@index([numeric_value], map: "idx_specifications_numeric")
+  @@index([device_model_id, is_visible, display_order], map: "idx_specifications_visible")
+}
+
+model specification_fields {
+  field_name    String          @id @db.VarChar(100)
+  field_name_vi String          @db.VarChar(100)
+  field_name_en String?         @db.VarChar(100)
+  unit          String?         @db.VarChar(50)
+  category      String?         @db.VarChar(50)
+  data_type     String?         @default("text") @db.VarChar(20)
+  placeholder   String?         @db.VarChar(255)
+  help_text     String?
+  sort_order    Int?            @default(0)
+  is_active     Boolean?        @default(true)
+  created_at    DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime?       @default(now()) @updatedAt @db.Timestamptz(6)
+  specifications specifications[]
+
+  @@index([category, sort_order], map: "idx_spec_fields_category")
+  @@index([is_active], map: "idx_spec_fields_active")
 }
 
 model device {
