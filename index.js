@@ -13,7 +13,8 @@ import actLog from './routes/actLog.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
 import deviceDataRoutes from './routes/deviceDataRoutes.js';
 import authRoutes from './routes/auth.routes.js';
-import roleRoutes from './routes/roleRoutes.js'
+import roleRoutes from './routes/roleRoutes.js';
+import specificationsRoutes from './routes/specificationsRoutes.js';
 
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
@@ -97,6 +98,8 @@ app.use('/iot', iot);
 app.use('/actlog', actLog);
 // Device management routes
 app.use('/devices', deviceRoutes);
+// Specifications routes
+app.use('/specifications', specificationsRoutes);
 // SSL Configuration
 const { options, useHttps } = configureSSL();
 

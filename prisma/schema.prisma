@@ -32,8 +32,27 @@ model device_models {
   category        device_categories @relation(fields: [category_id], references: [id], onUpdate: NoAction)
   manufacturers   manufacturers?    @relation(fields: [manufacturer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   suppliers       suppliers?        @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  spec_details    specifications[]
 
   @@index([category_id], map: "idx_device_models_category")
+}
+
+model specifications {
+  id              Int           @id @default(autoincrement())
+  device_model_id String        @db.Uuid
+  field_name      String        @db.VarChar(100)
+  field_name_vi   String        @db.VarChar(100)
+  value           String        @db.VarChar(255)
+  unit            String?       @db.VarChar(50)
+  description     String?
+  display_order   Int?
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
+  device_model    device_models @relation(fields: [device_model_id], references: [id], onDelete: Cascade)
+
+  @@unique([device_model_id, field_name], map: "specifications_device_model_field_unique")
+  @@index([device_model_id], map: "idx_specifications_device_model_id")
+  @@index([field_name], map: "idx_specifications_field_name")
 }
 
 model device {
