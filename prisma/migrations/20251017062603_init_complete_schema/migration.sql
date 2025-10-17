@@ -1,3 +1,6 @@
+-- Enable UUID extension for PostgreSQL
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- CreateEnum
 CREATE TYPE "device_status" AS ENUM ('active', 'inactive', 'maintenance', 'decommissioned');
 
@@ -44,7 +47,10 @@ CREATE TYPE "schedule_status" AS ENUM ('pending', 'completed', 'overdue', 'cance
 CREATE TYPE "suppression_type" AS ENUM ('manual', 'scheduled', 'maintenance');
 
 -- CreateEnum
-CREATE TYPE "audit_action" AS ENUM ('create', 'read', 'update', 'delete', 'login', 'logout', 'permission_granted', 'permission_revoked', 'role_assigned', 'role_removed', 'access_denied', 'password_changed');
+CREATE TYPE "audit_action" AS ENUM ('create', 'read', 'update', 'delete', 'login', 'logout', 'failed_login', 'permission_granted', 'permission_revoked', 'role_assigned', 'role_removed', 'access_denied', 'password_changed');
+
+-- CreateEnum
+CREATE TYPE "org_status" AS ENUM ('ACTIVE', 'INACTIVE', 'PENDING');
 
 -- CreateTable
 CREATE TABLE "device_categories" (
@@ -61,48 +67,11 @@ CREATE TABLE "device_models" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "category_id" UUID NOT NULL,
     "name" VARCHAR(255) NOT NULL,
-    "specifications" TEXT,
     "model_number" VARCHAR(100),
     "manufacturer_id" UUID,
     "supplier_id" UUID,
 
     CONSTRAINT "device_models_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "specifications" (
-    "id" SERIAL NOT NULL,
-    "device_model_id" UUID NOT NULL,
-    "field_name" VARCHAR(100) NOT NULL,
-    "field_name_vi" VARCHAR(100) NOT NULL,
-    "value" VARCHAR(255) NOT NULL,
-    "unit" VARCHAR(50),
-    "description" TEXT,
-    "display_order" INTEGER,
-    "numeric_value" DECIMAL(15,4),
-    "is_visible" BOOLEAN DEFAULT true,
-    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "specifications_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "specification_fields" (
-    "field_name" VARCHAR(100) NOT NULL,
-    "field_name_vi" VARCHAR(100) NOT NULL,
-    "field_name_en" VARCHAR(100),
-    "unit" VARCHAR(50),
-    "category" VARCHAR(50),
-    "data_type" VARCHAR(20) DEFAULT 'text',
-    "placeholder" VARCHAR(255),
-    "help_text" TEXT,
-    "sort_order" INTEGER DEFAULT 0,
-    "is_active" BOOLEAN DEFAULT true,
-    "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "specification_fields_pkey" PRIMARY KEY ("field_name")
 );
 
 -- CreateTable
@@ -166,9 +135,10 @@ CREATE TABLE "organizations" (
     "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
-    "code" TEXT,
-    "website" TEXT,
+    "code" VARCHAR(50),
+    "website" VARCHAR(255),
     "description" TEXT,
+    "status" "org_status" DEFAULT 'ACTIVE',
 
     CONSTRAINT "organizations_pkey" PRIMARY KEY ("id")
 );
@@ -184,6 +154,102 @@ CREATE TABLE "departments" (
     "updated_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "departments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "auo_display" (
+    "id" SERIAL NOT NULL,
+    "voltage" REAL,
+    "current" REAL,
+    "power_operating" REAL,
+    "frequency" REAL,
+    "power_factor" REAL,
+    "operating_time" interval,
+    "over_voltage_operating" BOOLEAN DEFAULT false,
+    "over_current_operating" BOOLEAN DEFAULT false,
+    "over_power_operating" BOOLEAN DEFAULT false,
+    "status_operating" BOOLEAN DEFAULT false,
+    "under_voltage_operating" BOOLEAN DEFAULT false,
+    "power_socket_status" BOOLEAN DEFAULT false,
+    "timestamp" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "auo_display_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "camera_control_unit" (
+    "id" SERIAL NOT NULL,
+    "voltage" REAL,
+    "current" REAL,
+    "power_operating" REAL,
+    "frequency" REAL,
+    "power_factor" REAL,
+    "operating_time" interval,
+    "over_voltage_operating" BOOLEAN DEFAULT false,
+    "over_current_operating" BOOLEAN DEFAULT false,
+    "over_power_operating" BOOLEAN DEFAULT false,
+    "status_operating" BOOLEAN DEFAULT false,
+    "under_voltage_operating" BOOLEAN DEFAULT false,
+    "power_socket_status" BOOLEAN DEFAULT false,
+    "timestamp" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "camera_control_unit_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "electronic_endoflator" (
+    "id" SERIAL NOT NULL,
+    "voltage" REAL,
+    "current" REAL,
+    "power_operating" REAL,
+    "frequency" REAL,
+    "power_factor" REAL,
+    "operating_time" interval,
+    "over_voltage_operating" BOOLEAN DEFAULT false,
+    "over_current_operating" BOOLEAN DEFAULT false,
+    "over_power_operating" BOOLEAN DEFAULT false,
+    "status_operating" BOOLEAN DEFAULT false,
+    "under_voltage_operating" BOOLEAN DEFAULT false,
+    "power_socket_status" BOOLEAN DEFAULT false,
+    "timestamp" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "electronic_endoflator_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "iot_environment_status" (
+    "id" SERIAL NOT NULL,
+    "leak_current_ma" REAL,
+    "temperature_c" REAL,
+    "humidity_percent" REAL,
+    "over_temperature" BOOLEAN DEFAULT false,
+    "over_humidity" BOOLEAN DEFAULT false,
+    "soft_warning" BOOLEAN DEFAULT false,
+    "strong_warning" BOOLEAN DEFAULT false,
+    "shutdown_warning" BOOLEAN DEFAULT false,
+    "timestamp" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "iot_environment_status_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "led_nova_100" (
+    "id" SERIAL NOT NULL,
+    "voltage" REAL,
+    "current" REAL,
+    "power_operating" REAL,
+    "frequency" REAL,
+    "power_factor" REAL,
+    "operating_time" interval,
+    "over_voltage_operating" BOOLEAN DEFAULT false,
+    "over_current_operating" BOOLEAN DEFAULT false,
+    "over_power_operating" BOOLEAN DEFAULT false,
+    "status_operating" BOOLEAN DEFAULT false,
+    "under_voltage_operating" BOOLEAN DEFAULT false,
+    "power_socket_status" BOOLEAN DEFAULT false,
+    "timestamp" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "led_nova_100_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -720,6 +786,42 @@ CREATE TABLE "user_permission_cache" (
     CONSTRAINT "user_permission_cache_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "specification_fields" (
+    "field_name" VARCHAR(100) NOT NULL,
+    "field_name_vi" VARCHAR(100) NOT NULL,
+    "field_name_en" VARCHAR(100),
+    "unit" VARCHAR(50),
+    "category" VARCHAR(50),
+    "data_type" VARCHAR(20) DEFAULT 'text',
+    "placeholder" VARCHAR(255),
+    "help_text" TEXT,
+    "sort_order" INTEGER DEFAULT 0,
+    "is_active" BOOLEAN DEFAULT true,
+    "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "specification_fields_pkey" PRIMARY KEY ("field_name")
+);
+
+-- CreateTable
+CREATE TABLE "specifications" (
+    "id" SERIAL NOT NULL,
+    "device_model_id" UUID NOT NULL,
+    "field_name" VARCHAR(100) NOT NULL,
+    "field_name_vi" VARCHAR(100) NOT NULL,
+    "value" VARCHAR(255) NOT NULL,
+    "unit" VARCHAR(50),
+    "description" TEXT,
+    "display_order" INTEGER,
+    "created_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+    "numeric_value" DECIMAL(15,4),
+    "is_visible" BOOLEAN DEFAULT true,
+
+    CONSTRAINT "specifications_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE INDEX "idx_device_categories_parent" ON "device_categories"("parent_id");
 
@@ -731,27 +833,6 @@ CREATE UNIQUE INDEX "device_models_model_id_key" ON "device_models"("model_numbe
 
 -- CreateIndex
 CREATE INDEX "idx_device_models_category" ON "device_models"("category_id");
-
--- CreateIndex
-CREATE INDEX "idx_specifications_device_model_id" ON "specifications"("device_model_id");
-
--- CreateIndex
-CREATE INDEX "idx_specifications_field_name" ON "specifications"("field_name");
-
--- CreateIndex
-CREATE INDEX "idx_specifications_numeric" ON "specifications"("numeric_value");
-
--- CreateIndex
-CREATE INDEX "idx_specifications_visible" ON "specifications"("device_model_id", "is_visible", "display_order");
-
--- CreateIndex
-CREATE UNIQUE INDEX "specifications_device_model_field_unique" ON "specifications"("device_model_id", "field_name");
-
--- CreateIndex
-CREATE INDEX "idx_spec_fields_category" ON "specification_fields"("category", "sort_order");
-
--- CreateIndex
-CREATE INDEX "idx_spec_fields_active" ON "specification_fields"("is_active");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "idx_device_serial" ON "device"("serial_number");
@@ -1182,6 +1263,24 @@ CREATE INDEX "idx_user_permission_cache_user" ON "user_permission_cache"("user_i
 -- CreateIndex
 CREATE INDEX "idx_user_permission_cache_expires" ON "user_permission_cache"("expires_at");
 
+-- CreateIndex
+CREATE INDEX "idx_spec_fields_active" ON "specification_fields"("is_active");
+
+-- CreateIndex
+CREATE INDEX "idx_spec_fields_category" ON "specification_fields"("category", "sort_order");
+
+-- CreateIndex
+CREATE INDEX "idx_specifications_device_model_id" ON "specifications"("device_model_id");
+
+-- CreateIndex
+CREATE INDEX "idx_specifications_field_name" ON "specifications"("field_name");
+
+-- CreateIndex
+CREATE INDEX "idx_specifications_visible" ON "specifications"("device_model_id", "is_visible", "display_order");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "specifications_device_model_id_field_name_key" ON "specifications"("device_model_id", "field_name");
+
 -- AddForeignKey
 ALTER TABLE "device_categories" ADD CONSTRAINT "device_categories_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "device_categories"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
 
@@ -1193,12 +1292,6 @@ ALTER TABLE "device_models" ADD CONSTRAINT "device_models_manufacturer_id_fkey" 
 
 -- AddForeignKey
 ALTER TABLE "device_models" ADD CONSTRAINT "device_models_supplier_id_fkey" FOREIGN KEY ("supplier_id") REFERENCES "suppliers"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
-
--- AddForeignKey
-ALTER TABLE "specifications" ADD CONSTRAINT "specifications_device_model_id_fkey" FOREIGN KEY ("device_model_id") REFERENCES "device_models"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "specifications" ADD CONSTRAINT "specifications_field_name_fkey" FOREIGN KEY ("field_name") REFERENCES "specification_fields"("field_name") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "device" ADD CONSTRAINT "device_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "departments"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
@@ -1400,3 +1493,9 @@ ALTER TABLE "users_backup" ADD CONSTRAINT "users_role_id_fkey" FOREIGN KEY ("rol
 
 -- AddForeignKey
 ALTER TABLE "user_permission_cache" ADD CONSTRAINT "fk_user_permission_cache_user" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "specifications" ADD CONSTRAINT "fk_spec_field_name" FOREIGN KEY ("field_name") REFERENCES "specification_fields"("field_name") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "specifications" ADD CONSTRAINT "specifications_device_model_id_fkey" FOREIGN KEY ("device_model_id") REFERENCES "device_models"("id") ON DELETE CASCADE ON UPDATE NO ACTION;

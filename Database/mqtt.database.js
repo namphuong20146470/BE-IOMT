@@ -1,12 +1,10 @@
 import mqtt from 'mqtt';
-import { PrismaClient } from '@prisma/client';
 import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 import socketService from '../services/socketService.js';
+import prisma from '../config/db.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
-
-const prisma = new PrismaClient();
 
 // ==================== CONFIGURATION ====================
 

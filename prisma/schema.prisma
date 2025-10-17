@@ -24,7 +24,6 @@ model device_models {
   id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   category_id     String            @db.Uuid
   name            String            @db.VarChar(255)
-  specifications  String?
   model_number    String?           @unique(map: "device_models_model_id_key") @db.VarChar(100)
   manufacturer_id String?           @db.Uuid
   supplier_id     String?           @db.Uuid
@@ -1073,6 +1072,7 @@ enum audit_action {
   delete
   login
   logout
+  failed_login
   permission_granted
   permission_revoked
   role_assigned

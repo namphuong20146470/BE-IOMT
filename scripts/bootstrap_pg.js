@@ -3,11 +3,11 @@ const { Client } = pkg;
 
 async function bootstrap() {
     const client = new Client({
-        host: '192.168.0.252',
-        port: 5432,
-        database: 'iot',
+        host: 'localhost',
+        port: 5433,
+        database: 'dev_iomt',
         user: 'postgres',
-        password: 'H&ptiot2025'
+        password: 'Hai0947976244'
     });
 
     try {
