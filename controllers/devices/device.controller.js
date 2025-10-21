@@ -336,23 +336,13 @@ export const createDevice = async (req, res) => {
 
         // Check if user is trying to create in different organization
         if (organization_id && organization_id !== userOrgId) {
-            // Only System Admin or Organization Admin can create in different orgs
-            // Chỉ System Admin hoặc Org Admin mới có quyền tạo ở org khác
-const isSystemAdmin = hasPermission(req.user, 'system.admin') &&
-                      user.organization_id === null &&
-                      user.department_id === null;
+            // Only System Admin can create in different orgs
+            const isSystemAdmin = hasPermission(req.user, 'system.admin');
 
-const isOrgAdmin = hasPermission(req.user, 'organization.create') &&
-                   user.organization_id !== null && // Org admin luôn có org_id
-                   user.department_id === null;
-
-const canCreateCrossOrg = isSystemAdmin || isOrgAdmin;
-
-            
-            if (!canCreateCrossOrg) {
+            if (!isSystemAdmin) {
                 return res.status(403).json({
                     success: false,
-                    message: 'Access denied: Cannot create devices in different organization'
+                    message: 'Access denied: Only System Admin can create devices in different organization'
                 });
             }
 

@@ -5,6 +5,12 @@ import jwt from 'jsonwebtoken';
 import sessionService from '../../services/SessionService.js';
 import permissionService from '../../services/PermissionService.js';
 import roleService from '../../services/RoleService.js';
+import { 
+    isSystemAdmin, 
+    isOrganizationAdmin, 
+    getEffectiveOrganizationId,
+    validateOrganizationAccess 
+} from '../../utils/permissionHelpers.js';
 
 const prisma = new PrismaClient();
 
@@ -502,7 +508,7 @@ export const getAllUsers = async (req, res) => {
     try {
         const userId = req.user?.id;
         const userOrgId = req.user?.organization_id;
-        const isSuperAdmin = req.user?.is_super_admin || req.user?.roles?.some(r => r.is_system_role);
+        const isSuperAdmin = isSystemAdmin(req.user);
         
         if (!userId) {
             return res.status(401).json({ 
