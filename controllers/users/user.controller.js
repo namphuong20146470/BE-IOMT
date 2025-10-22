@@ -762,43 +762,7 @@ if (shouldExcludeSystemUsers) {
         });
     }
 };
-export const getUserById = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const user = await prisma.$queryRaw`
-            SELECT u.id, u.username, u.full_name, u.email, u.phone, u.is_active,
-                   u.organization_id, u.department_id,
-                   o.name as organization_name,
-                   d.name as department_name,
-                   u.created_at, u.updated_at
-            FROM users u
-            LEFT JOIN organizations o ON u.organization_id = o.id
-            LEFT JOIN departments d ON u.department_id = d.id
-            WHERE u.id = ${id}::uuid AND u.is_active = true
-        `;
-
-        if (user.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            data: user[0],
-            message: 'User retrieved successfully'
-        });
-    } catch (error) {
-        console.error('Error fetching user:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to retrieve user',
-            error: error.message || 'Unknown error'
-        });
-    }
-};
+// getUserById function moved to bottom of file with enhanced implementation
 
 export const updateUser = async (req, res) => {
     try {
@@ -934,34 +898,9 @@ export const logoutAllSessions = async (req, res) => {
 };
 
 /**
- * Get user's active sessions
+ * Get user's active sessions - moved to enhanced version below
  */
-export const getUserSessions = async (req, res) => {
-    try {
-        const user = req.user;
-        
-        if (!user) {
-            return res.status(401).json({ 
-                success: false,
-                message: 'Not authenticated' 
-            });
-        }
-        
-        const sessions = await sessionService.getUserActiveSessions(user.id);
-        
-        res.json({
-            success: true,
-            data: sessions,
-            total: sessions.length
-        });
-    } catch (error) {
-        console.error('Error getting user sessions:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error'
-        });
-    }
-};
+// export const getUserSessions - enhanced version implemented below
 
 /**
  * Terminate specific session
@@ -1220,6 +1159,658 @@ export const deleteAllUsersExceptAdmin = async (req, res) => {
             success: false,
             error: 'Failed to delete users',
             details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
+};
+
+// ======================
+// USER PROFILE VIEWING
+// ======================
+
+/**
+ * Get user profile (safe for viewing by others)
+ * @route GET /users/:userId/profile
+ */
+export const getUserProfile = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const requestingUser = req.user;
+
+        // Self-viewing doesn't need permission
+        const isSelf = userId === requestingUser.id;
+        
+        // Check permission to view other users
+        if (!isSelf && !await permissionService.hasPermission(requestingUser.id, 'user.read')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot view other user profiles'
+            });
+        }
+
+        // Get user basic profile (safe for viewing by others)
+        const user = await prisma.users.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                username: true,
+                full_name: true,
+                email: isSelf, // Only show email to self
+                phone: isSelf, // Only show phone to self
+                is_active: true,
+                created_at: true,
+                updated_at: true,
+                organizations: {
+                    select: {
+                        id: true,
+                        name: true,
+                        type: true
+                    }
+                },
+                departments: {
+                    select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                        description: true
+                    }
+                },
+                user_roles: {
+                    where: { is_active: true },
+                    include: {
+                        roles: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true,
+                                color: true,
+                                icon: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Format response
+        const response = {
+            id: user.id,
+            username: user.username,
+            full_name: user.full_name,
+            avatar: null, // No avatar field in database
+            is_active: user.is_active,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+            organization: user.organizations ? {
+                id: user.organizations.id,
+                name: user.organizations.name,
+                type: user.organizations.type
+            } : null,
+            department: user.departments ? {
+                id: user.departments.id,
+                name: user.departments.name,
+                code: user.departments.code,
+                description: user.departments.description
+            } : null,
+            roles: user.user_roles.map(ur => ({
+                id: ur.roles.id,
+                name: ur.roles.name,
+                description: ur.roles.description,
+                color: ur.roles.color,
+                icon: ur.roles.icon
+            })),
+            // Include sensitive data only for self
+            ...(isSelf && {
+                email: user.email,
+                phone: user.phone
+            })
+        };
+
+        res.json({
+            success: true,
+            message: 'User profile retrieved successfully',
+            data: response,
+            viewing_self: isSelf
+        });
+
+    } catch (error) {
+        console.error('Error getting user profile:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+/**
+ * Get user by ID (complete info - admin only)
+ * @route GET /users/:userId
+ */
+export const getUserById = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const requestingUser = req.user;
+
+        // Check admin permission for complete user data
+        if (!await permissionService.hasPermission(requestingUser.id, 'user.manage')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Requires user.manage permission'
+            });
+        }
+
+        // Get complete user data
+        const user = await prisma.users.findUnique({
+            where: { id: userId },
+            include: {
+                organizations: {
+                    select: {
+                        id: true,
+                        name: true,
+                        type: true,
+                        address: true,
+                        phone: true,
+                        email: true,
+                        is_active: true
+                    }
+                },
+                departments: {
+                    select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                        description: true,
+                        organization_id: true,
+                        is_active: true
+                    }
+                },
+                user_roles: {
+                    include: {
+                        roles: {
+                            include: {
+                                role_permissions: {
+                                    include: {
+                                        permissions: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Format roles with permissions
+        const roles = user.user_roles.map(ur => ({
+            id: ur.roles.id,
+            name: ur.roles.name,
+            description: ur.roles.description,
+            color: ur.roles.color,
+            icon: ur.roles.icon,
+            is_active: ur.is_active,
+            assigned_at: ur.created_at,
+            permissions: ur.roles.role_permissions.map(rp => ({
+                id: rp.permissions.id,
+                name: rp.permissions.name,
+                description: rp.permissions.description
+            }))
+        }));
+
+        // Get all unique permissions
+        const allPermissions = [...new Set(
+            roles.flatMap(role => role.permissions.map(p => p.name))
+        )];
+
+        const response = {
+            id: user.id,
+            username: user.username,
+            full_name: user.full_name,
+            email: user.email,
+            avatar: null, // No avatar field in database
+            phone: user.phone,
+            is_active: user.is_active,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+            organization: user.organizations,
+            department: user.departments,
+            roles: roles,
+            permissions: allPermissions,
+            security: {
+                account_status: user.is_active ? 'active' : 'inactive',
+                roles_count: roles.length,
+                permissions_count: allPermissions.length,
+                has_admin_access: allPermissions.includes('system.admin')
+            }
+        };
+
+        res.json({
+            success: true,
+            message: 'User data retrieved successfully',
+            data: response
+        });
+
+    } catch (error) {
+        console.error('Error getting user by ID:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// ======================
+// USER ROLE MANAGEMENT
+// ======================
+
+/**
+ * Get user roles
+ * @route GET /users/:userId/roles
+ */
+export const getUserRoles = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const requestingUser = req.user;
+
+        // Check permission
+        if (!await permissionService.hasPermission(requestingUser.id, 'user.read')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot view user roles'
+            });
+        }
+
+        const userRoles = await prisma.user_roles.findMany({
+            where: {
+                user_id: userId,
+                is_active: true
+            },
+            include: {
+                roles: {
+                    include: {
+                        role_permissions: {
+                            include: {
+                                permissions: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const roles = userRoles.map(ur => ({
+            id: ur.roles.id,
+            name: ur.roles.name,
+            description: ur.roles.description,
+            color: ur.roles.color,
+            icon: ur.roles.icon,
+            assigned_at: ur.created_at,
+            permissions: ur.roles.role_permissions.map(rp => rp.permissions.name)
+        }));
+
+        res.json({
+            success: true,
+            message: 'User roles retrieved successfully',
+            data: roles
+        });
+
+    } catch (error) {
+        console.error('Error getting user roles:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Assign roles to user
+ * @route POST /users/:userId/roles
+ */
+export const assignRolesToUser = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { role_ids } = req.body;
+        const requestingUser = req.user;
+
+        // Check permission
+        if (!await permissionService.hasPermission(requestingUser.id, 'user.manage')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot manage user roles'
+            });
+        }
+
+        // Validate user exists
+        const user = await prisma.users.findUnique({
+            where: { id: userId }
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Clear existing roles
+        await prisma.user_roles.deleteMany({
+            where: { user_id: userId }
+        });
+
+        // Add new roles
+        if (role_ids && role_ids.length > 0) {
+            const userRoles = role_ids.map(roleId => ({
+                user_id: userId,
+                role_id: roleId,
+                created_by: requestingUser.id,
+                is_active: true
+            }));
+
+            await prisma.user_roles.createMany({
+                data: userRoles
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Roles assigned successfully',
+            data: {
+                user_id: userId,
+                assigned_roles: role_ids?.length || 0
+            }
+        });
+
+    } catch (error) {
+        console.error('Error assigning roles:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Remove role from user
+ * @route DELETE /users/:userId/roles/:roleId
+ */
+export const removeRoleFromUser = async (req, res) => {
+    try {
+        const { userId, roleId } = req.params;
+        const requestingUser = req.user;
+
+        // Check permission
+        if (!await permissionService.hasPermission(requestingUser.id, 'user.manage')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot manage user roles'
+            });
+        }
+
+        await prisma.user_roles.deleteMany({
+            where: {
+                user_id: userId,
+                role_id: roleId
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Role removed successfully'
+        });
+
+    } catch (error) {
+        console.error('Error removing role:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+// ======================
+// USER SESSION MANAGEMENT
+// ======================
+
+/**
+ * Get user active sessions
+ * @route GET /users/:userId/sessions
+ */
+export const getUserSessions = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const requestingUser = req.user;
+
+        // Only allow viewing own sessions or admin
+        if (userId !== requestingUser.id && !await permissionService.hasPermission(requestingUser.id, 'user.manage')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot view user sessions'
+            });
+        }
+
+        const sessions = await prisma.user_sessions.findMany({
+            where: {
+                user_id: userId,
+                is_active: true
+            },
+            select: {
+                id: true,
+                device_info: true,
+                ip_address: true,
+                created_at: true,
+                expires_at: true,
+                last_activity: true
+            },
+            orderBy: {
+                last_activity: 'desc'
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'User sessions retrieved successfully',
+            data: sessions
+        });
+
+    } catch (error) {
+        console.error('Error getting user sessions:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+// ======================
+// USER STATUS MANAGEMENT  
+// ======================
+
+/**
+ * Deactivate user
+ * @route PATCH /users/:userId/deactivate
+ */
+export const deactivateUser = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const requestingUser = req.user;
+
+        // Check permission
+        if (!await permissionService.hasPermission(requestingUser.id, 'user.manage')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot deactivate users'
+            });
+        }
+
+        // Cannot deactivate self
+        if (userId === requestingUser.id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot deactivate your own account'
+            });
+        }
+
+        await prisma.users.update({
+            where: { id: userId },
+            data: {
+                is_active: false,
+                updated_at: new Date()
+            }
+        });
+
+        // Terminate all user sessions
+        await prisma.user_sessions.updateMany({
+            where: {
+                user_id: userId,
+                is_active: true
+            },
+            data: {
+                is_active: false,
+                terminated_at: new Date(),
+                termination_reason: 'USER_DEACTIVATED'
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'User deactivated successfully'
+        });
+
+    } catch (error) {
+        console.error('Error deactivating user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Activate user
+ * @route PATCH /users/:userId/activate
+ */
+export const activateUser = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const requestingUser = req.user;
+
+        // Check permission
+        if (!await permissionService.hasPermission(requestingUser.id, 'user.manage')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot activate users'
+            });
+        }
+
+        await prisma.users.update({
+            where: { id: userId },
+            data: {
+                is_active: true,
+                updated_at: new Date()
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'User activated successfully'
+        });
+
+    } catch (error) {
+        console.error('Error activating user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+/**
+ * Reset user password (admin function)
+ * @route PATCH /users/:userId/reset-password
+ */
+export const resetUserPassword = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { new_password } = req.body;
+        const requestingUser = req.user;
+
+        // Check permission
+        if (!await permissionService.hasPermission(requestingUser.id, 'user.manage')) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: Cannot reset user passwords'
+            });
+        }
+
+        if (!new_password || new_password.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password must be at least 8 characters'
+            });
+        }
+
+        // Hash new password
+        const newHash = await bcrypt.hash(new_password, 10);
+
+        // Update password
+        await prisma.users.update({
+            where: { id: userId },
+            data: {
+                password_hash: newHash,
+                updated_at: new Date()
+            }
+        });
+
+        // Terminate all user sessions except requesting admin
+        await prisma.user_sessions.updateMany({
+            where: {
+                user_id: userId,
+                is_active: true
+            },
+            data: {
+                is_active: false,
+                terminated_at: new Date(),
+                termination_reason: 'PASSWORD_RESET_BY_ADMIN'
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'User password reset successfully',
+            data: {
+                user_id: userId,
+                reset_by: requestingUser.id,
+                reset_at: new Date().toISOString(),
+                sessions_terminated: true
+            }
+        });
+
+    } catch (error) {
+        console.error('Error resetting user password:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
         });
     }
 };

@@ -63,50 +63,50 @@ const router = express.Router();
 // ====================================================================
 
 // GET /device-categories - Get all categories (hierarchical)
-router.get('/device-categories',authMiddleware, getAllDeviceCategories);
+router.get('/device-categories', authMiddleware, requirePermission('device.read'), getAllDeviceCategories);
 
 // GET /device-categories/root - Get root categories only
-router.get('/device-categories/root', getRootCategories);
+router.get('/device-categories/root', authMiddleware, getRootCategories);
 
 // GET /device-categories/:parentId/children - Get child categories
-router.get('/device-categories/:parentId/children', getChildCategories);
+router.get('/device-categories/:parentId/children', authMiddleware, getChildCategories);
 
 // GET /device-categories/:id/stats - Get category with statistics
-router.get('/device-categories/:id/stats', getCategoryWithStats);
+router.get('/device-categories/:id/stats', authMiddleware, requirePermission('device.read'), getCategoryWithStats);
 
-// POST /device-categories - Create device category
-router.post('/device-categories', authMiddleware, createDeviceCategory);
+// POST /device-categories - Create device category (Admin only)
+router.post('/device-categories', authMiddleware, requirePermission('device.manage'), createDeviceCategory);
 
-// PUT /device-categories/:id - Update device category
-router.put('/device-categories/:id', authMiddleware, updateDeviceCategory);
+// PUT /device-categories/:id - Update device category (Admin only)
+router.put('/device-categories/:id', authMiddleware, requirePermission('device.manage'), updateDeviceCategory);
 
-// DELETE /device-categories/:id - Delete device category
-router.delete('/device-categories/:id', authMiddleware, deleteDeviceCategory);
+// DELETE /device-categories/:id - Delete device category (Admin only)
+router.delete('/device-categories/:id', authMiddleware, requirePermission('device.manage'), deleteDeviceCategory);
 
 // ====================================================================
 // DEVICE MODELS ROUTES
 // ====================================================================
 
 // GET /device-models - Get all device models with filtering
-router.get('/device-models', authMiddleware, getAllDeviceModels);
+router.get('/device-models', authMiddleware, requirePermission('device.read'), getAllDeviceModels);
 
 // GET /device-models/manufacturers - Get manufacturers list
-router.get('/device-models/manufacturers', getManufacturers);
+router.get('/device-models/manufacturers', authMiddleware, getManufacturers);
 
 // GET /device-models/:id - Get device model by ID
-router.get('/device-models/:id', getDeviceModelById);
+router.get('/device-models/:id', authMiddleware, requirePermission('device.read'), getDeviceModelById);
 
 // GET /device-models/category/:categoryId - Get models by category
-router.get('/device-models/category/:categoryId',authMiddleware, getModelsByCategory);
+router.get('/device-models/category/:categoryId', authMiddleware, requirePermission('device.read'), getModelsByCategory);
 
-// POST /device-models - Create device model
-router.post('/device-models', authMiddleware, createDeviceModel);
+// POST /device-models - Create device model (Admin only)
+router.post('/device-models', authMiddleware, requirePermission('device.manage'), createDeviceModel);
 
-// PUT /device-models/:id - Update device model
-router.put('/device-models/:id', authMiddleware, updateDeviceModel);
+// PUT /device-models/:id - Update device model (Admin only)
+router.put('/device-models/:id', authMiddleware, requirePermission('device.manage'), updateDeviceModel);
 
-// DELETE /device-models/:id - Delete device model
-router.delete('/device-models/:id', authMiddleware, deleteDeviceModel);
+// DELETE /device-models/:id - Delete device model (Admin only)
+router.delete('/device-models/:id', authMiddleware, requirePermission('device.manage'), deleteDeviceModel);
 
 // ====================================================================
 // DEVICES ROUTES
@@ -116,19 +116,19 @@ router.delete('/device-models/:id', authMiddleware, deleteDeviceModel);
 router.get('/devices', authMiddleware, requirePermission('device.read'), getAllDevices);
 
 // GET /devices/statistics - Get device statistics
-router.get('/devices/statistics', getDeviceStatistics);
+router.get('/devices/statistics', authMiddleware, requirePermission('device.read'), getDeviceStatistics);
 
 // GET /devices/:id - Get device by ID with full details
-router.get('/devices/:id',authMiddleware, getDeviceById);
+router.get('/devices/:id', authMiddleware, requirePermission('device.read'), getDeviceById);
 
 // POST /devices - Create device
-router.post('/devices', authMiddleware, createDevice);
+router.post('/devices', authMiddleware, requirePermission('device.create'), createDevice);
 
 // PUT /devices/:id - Update device
-router.put('/devices/:id', authMiddleware, updateDevice);
+router.put('/devices/:id', authMiddleware, requirePermission('device.update'), updateDevice);
 
 // DELETE /devices/:id - Delete device
-router.delete('/devices/:id', authMiddleware, deleteDevice);
+router.delete('/devices/:id', authMiddleware, requirePermission('device.delete'), deleteDevice);
 
 // ====================================================================
 // DEVICE CONNECTIVITY ROUTES

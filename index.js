@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import iot from './routes/iotRoutes.js';
 import deviceRoutes from './routes/deviceRoutes.js'
 import userPermissionsRoutes from './routes/userPermissions.routes.js';
+import usersRoutes from './routes/users.routes.js';
 
 import actLog from './routes/actLog.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
@@ -99,7 +100,9 @@ app.use('/iot', iot);
 app.use('/actlog', actLog);
 // Device management routes
 app.use('/devices', deviceRoutes);
-// User permissions management routes
+// User management routes
+app.use('/users', usersRoutes);
+// User permissions management routes (sub-routes under /users)
 app.use('/users', userPermissionsRoutes);
 // Specifications routes
 app.use('/specifications', specificationsRoutes);

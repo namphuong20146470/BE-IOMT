@@ -4,6 +4,7 @@ import auditService from '../../services/AuditService.js';
 import { 
     isSystemAdmin, 
     isOrganizationAdmin, 
+    hasPermission,
     getEffectiveOrganizationId,
     validateOrganizationAccess 
 } from '../../utils/permissionHelpers.js';
@@ -245,7 +246,10 @@ export const updateRolePermissions = async (req, res) => {
             });
         }
 
-        if (!hasPermission) {
+        // Check permission using permissionService
+        const hasUpdatePermission = await permissionService.hasPermission(userId, 'role.manage');
+        
+        if (!hasUpdatePermission) {
             // ✅ DEBUG: Get user's actual permissions
             const userPerms = await permissionService.getUserPermissions(userId);
             console.log('🔍 User actual permissions:', userPerms);

@@ -88,6 +88,14 @@ import jwt from 'jsonwebtoken';
 const router = express.Router();
 
 // Xem dashboard theo quyền ROLES
+// ✅ IMPORTANT: Specific routes MUST come before general routes to avoid conflicts
+// Role-Permission Management (specific routes first)
+router.post('/roles/:roleId/permissions', authMiddleware, assignPermissionToRole);
+router.delete('/roles/:roleId/permissions/:permissionId', authMiddleware, removePermissionFromRole);
+router.get('/roles/:roleId/permissions', authMiddleware, getRolePermissions);
+router.put('/roles/:roleId/permissions', authMiddleware, updateRolePermissions);
+
+// Role CRUD (general routes after specific ones)
 router.get('/roles', authMiddleware, getAllRoles);
 router.post('/roles', authMiddleware, createRole);
 router.put('/roles/:id_role', authMiddleware, updateRole);
@@ -130,21 +138,6 @@ router.put('/departments/:id',authMiddleware, updateDepartment);
 // PERMISSION MANAGEMENT ROUTES
 // ====================================================================
 
-// Role-Permission Management
-router.post('/roles/:roleId/permissions', authMiddleware, assignPermissionToRole);
-router.delete('/roles/:roleId/permissions/:permissionId', authMiddleware, removePermissionFromRole);
-router.get('/roles/:roleId/permissions', authMiddleware, getRolePermissions);
-router.put('/roles/:roleId/permissions', authMiddleware, updateRolePermissions);
-// Add these routes in the appropriate section
-// User Permission Management routes
-router.get('/users/:userId/permissions/debug', debugUserPermissions);
-router.get('/users/:userId/permissions', getUserPermissions);
-router.post('/users/:userId/permissions', assignPermissionToUser);
-
-// ✅ NEW: User Role Management routes
-router.post('/users/:userId/roles', authMiddleware, requirePermission('user.update'), assignRoleToUser);
-router.delete('/users/:userId/roles/:roleId', authMiddleware, requirePermission('user.update'), removeRoleFromUser);
-router.get('/users/:userId/roles', authMiddleware, requirePermission('user.read'), getUserRoles);
 // Permission CRUD
 router.get('/permissions', authMiddleware, getAllPermissions);
 router.post('/permissions', authMiddleware, createPermission);
@@ -155,6 +148,20 @@ router.delete('/permissions/:permissionId', authMiddleware, deletePermission);
 // Permission Groups
 router.get('/permission-groups', authMiddleware, getAllPermissionGroups);
 router.post('/permission-groups', authMiddleware, createPermissionGroup);
+
+// ====================================================================
+// USER PERMISSION AND ROLE MANAGEMENT
+// ====================================================================
+
+// User Permission Management routes
+router.get('/users/:userId/permissions/debug', debugUserPermissions);
+router.get('/users/:userId/permissions', getUserPermissions);
+router.post('/users/:userId/permissions', assignPermissionToUser);
+
+// User Role Management routes
+router.post('/users/:userId/roles', authMiddleware, requirePermission('user.update'), assignRoleToUser);
+router.delete('/users/:userId/roles/:roleId', authMiddleware, requirePermission('user.update'), removeRoleFromUser);
+router.get('/users/:userId/roles', authMiddleware, requirePermission('user.read'), getUserRoles);
 
 // ====================================================================
 // AUDIT LOGS ROUTES

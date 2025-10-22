@@ -294,8 +294,8 @@ export const getCategoryWithStats = async (req, res) => {
         const categoryStats = await prisma.$queryRaw`
             SELECT 
                 dc.id, dc.name, dc.description, dc.parent_id,
-                COUNT(dm.id) as models_count,
-                COUNT(d.id) as devices_count
+                COUNT(dm.id)::integer as models_count,
+                COUNT(d.id)::integer as devices_count
             FROM device_categories dc
             LEFT JOIN device_models dm ON dc.id = dm.category_id
             LEFT JOIN device d ON dm.id = d.model_id
