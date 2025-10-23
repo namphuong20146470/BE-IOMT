@@ -113,7 +113,7 @@ export const getSpecificationCategories = async (req, res) => {
                 category: { not: null }
             },
             _count: {
-                _all: true
+                field_name: true
             },
             orderBy: {
                 category: 'asc'
@@ -122,7 +122,7 @@ export const getSpecificationCategories = async (req, res) => {
 
         const formattedCategories = categories.map(cat => ({
             name: cat.category,
-            field_count: cat._count._all
+            field_count: cat._count.field_name
         }));
 
         res.status(200).json({
@@ -221,7 +221,7 @@ export const getEnhancedModelSpecifications = async (req, res) => {
                 is_visible: true
             },
             include: {
-                specification_field: {
+                specification_fields: {
                     select: {
                         field_name_vi: true,
                         field_name_en: true,
@@ -234,13 +234,13 @@ export const getEnhancedModelSpecifications = async (req, res) => {
             },
             orderBy: [
                 { display_order: 'asc' },
-                { specification_field: { sort_order: 'asc' } },
+                { specification_fields: { sort_order: 'asc' } },
                 { field_name_vi: 'asc' }
             ]
         });
 
         const groupedSpecs = specifications.reduce((groups, spec) => {
-            const category = spec.specification_field?.category || 'general';
+            const category = spec.specification_fields?.category || 'general';
             if (!groups[category]) {
                 groups[category] = [];
             }
@@ -248,14 +248,14 @@ export const getEnhancedModelSpecifications = async (req, res) => {
                 id: spec.id,
                 field_name: spec.field_name,
                 field_name_vi: spec.field_name_vi,
-                field_name_en: spec.specification_field?.field_name_en,
+                field_name_en: spec.specification_fields?.field_name_en,
                 value: spec.value,
                 numeric_value: spec.numeric_value,
-                unit: spec.unit || spec.specification_field?.unit,
+                unit: spec.unit || spec.specification_fields?.unit,
                 description: spec.description,
                 display_order: spec.display_order,
-                data_type: spec.specification_field?.data_type,
-                help_text: spec.specification_field?.help_text
+                data_type: spec.specification_fields?.data_type,
+                help_text: spec.specification_fields?.help_text
             });
             return groups;
         }, {});

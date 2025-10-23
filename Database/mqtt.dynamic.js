@@ -26,9 +26,11 @@ class DynamicMqttManager {
         this.stats = {
             messagesReceived: 0,
             messagesSaved: 0,
-            messagesSkipped: 0,
+            rawDataLogged: 0,
+            fieldsProcessed: 0,
             errors: 0,
             retries: 0,
+            connectionErrors: 0,
             cacheSizeDevices: 0,
             cacheSizeMeasurements: 0
         };
@@ -212,9 +214,11 @@ class DynamicMqttManager {
                 protocol: config.ssl ? 'mqtts' : 'mqtt',
                 clientId: `dynamic-mqtt-${Math.random().toString(16).slice(2, 8)}`,
                 clean: true,
-                connectTimeout: 4000,
-                reconnectPeriod: 1000,
-                rejectUnauthorized: false
+                connectTimeout: 10000, // Increased from 4s to 10s
+                reconnectPeriod: 5000,  // Increased from 1s to 5s
+                rejectUnauthorized: false,
+                // Add DNS resolution options for better connectivity
+                family: 4 // Force IPv4
             };
 
             console.log(`🔌 Connecting to dynamic broker: ${config.host}:${config.port}`);
@@ -224,7 +228,22 @@ class DynamicMqttManager {
             this.setupClientEvents(client, brokerKey, devices);
 
         } catch (error) {
-            console.error(`Error creating dynamic broker connection for ${brokerKey}:`, error);
+            console.error(`❌ Error creating dynamic broker connection for ${brokerKey}:`, error);
+            
+            // Retry with local broker if external broker fails
+            if (brokerKey.includes('broker.hivemq.com')) {
+                console.log(`🔄 Retrying with fallback broker...`);
+                setTimeout(() => {
+                    this.createBrokerConnection(`${brokerKey}-fallback`, {
+                        config: {
+                            host: 'test.mosquitto.org',
+                            port: 1883,
+                            ssl: false
+                        },
+                        devices
+                    });
+                }, 5000);
+            }
         }
     }
 
@@ -251,6 +270,12 @@ class DynamicMqttManager {
 
         client.on('error', (error) => {
             console.error(`❌ MQTT error for ${brokerKey}:`, error);
+            this.stats.connectionErrors++;
+            
+            // Log specific DNS/connection errors
+            if (error.code === 'ENOTFOUND' || error.syscall === 'getaddrinfo') {
+                console.error(`🌐 DNS resolution failed for ${brokerKey}. Check internet connection or try a different broker.`);
+            }
         });
 
         client.on('reconnect', () => {
@@ -292,7 +317,7 @@ class DynamicMqttManager {
             }
 
             if (process.env.DEBUG_MQTT === 'true') {
-                console.log(`📨 Received from ${device.serial_number}:`, incomingData);
+                console.log(`📨 Message ${this.stats.messagesReceived} from ${device.serial_number} (${topic}):`, incomingData);
             }
 
             // Process with optimized delta logic
@@ -339,33 +364,30 @@ class DynamicMqttManager {
             // STEP 1: Get current state from cache
             let currentState = this.deviceStateCache.get(deviceId) || {};
             
-            // STEP 2: Detect changes with smart comparison
-            const { changedFields, unchangedFields } = this.detectChanges(incomingData, currentState);
+            // STEP 2: Process ALL incoming fields (MQTT already filtered at device)
+            const processedFields = this.processAllFields(incomingData, currentState);
             
             // STEP 3: Merge to get full state
-            const fullState = this.mergeState(currentState, changedFields);
+            const fullState = this.mergeState(currentState, processedFields);
             
-            const changedCount = Object.keys(changedFields).length;
-            const unchangedCount = Object.keys(unchangedFields).length;
+            const changedFields = processedFields; // All fields are considered "changed" from MQTT
             
-            console.log(`📊 Device ${device.serial_number}: ${changedCount} changed, ${unchangedCount} unchanged`);
+            console.log(`📊 Device ${device.serial_number}: Processing all ${Object.keys(incomingData).length} fields from MQTT`);
             
-            // STEP 4: Save only if there are changes
-            if (changedCount > 0) {
-                await this.saveBatchOptimized(deviceId, changedFields, fullState, incomingData);
-                
-                // Update cache
-                this.deviceStateCache.set(deviceId, fullState);
-                this.stats.cacheSizeDevices = this.deviceStateCache.size;
-                
-                // STEP 5: Check device warnings with full state
-                await this.checkWarnings(device, fullState);
-                
-                this.stats.messagesSaved++;
-            } else {
-                console.log(`⏭️  No changes for ${device.serial_number}, skipping save`);
-                this.stats.messagesSkipped++;
-            }
+            // STEP 4: Always save all data - MQTT already filtered at device level
+            await this.saveRawDataLog(deviceId, incomingData);
+            await this.saveBatchOptimized(deviceId, changedFields, fullState, incomingData);
+            
+            // Update cache with full state
+            this.deviceStateCache.set(deviceId, fullState);
+            this.stats.cacheSizeDevices = this.deviceStateCache.size;
+            
+            // STEP 5: Check device warnings with full state
+            await this.checkWarnings(device, fullState);
+            
+            this.stats.messagesSaved++;
+            this.stats.fieldsProcessed += Object.keys(processedFields).length;
+            console.log(`✅ Processed and saved data for ${device.serial_number} (${Object.keys(processedFields).length} fields, Total: ${this.stats.messagesSaved} messages)`)
             
             // Update last_connected timestamp
             await this.updateDeviceLastConnected(deviceId);
@@ -377,9 +399,8 @@ class DynamicMqttManager {
         }
     }
 
-    detectChanges(incomingData, currentState) {
-        const changedFields = {};
-        const unchangedFields = {};
+    processAllFields(incomingData, currentState) {
+        const processedFields = {};
         
         for (const [key, value] of Object.entries(incomingData)) {
             // Skip metadata fields
@@ -387,21 +408,22 @@ class DynamicMqttManager {
                 continue;
             }
             
-            const currentValue = currentState[key]?.value;
             const currentDataType = currentState[key]?.dataType;
             
             // Parse value with proper type handling
-            const newValue = this.parseValue(value, currentDataType);
+            const processedValue = this.parseValue(value, currentDataType);
             
-            // Detect change
-            if (currentValue === undefined || currentValue !== newValue) {
-                changedFields[key] = newValue;
-            } else {
-                unchangedFields[key] = currentValue;
+            // Always include all fields from MQTT (device already filtered)
+            processedFields[key] = processedValue;
+            
+            if (process.env.DEBUG_MQTT === 'true') {
+                const currentValue = currentState[key]?.value;
+                const isActualChange = currentValue === undefined || currentValue !== processedValue;
+                console.log(`   📊 ${key}: ${currentValue} → ${processedValue} ${isActualChange ? '(NEW/CHANGED)' : '(SAME)'}`);
             }
         }
         
-        return { changedFields, unchangedFields };
+        return processedFields;
     }
 
     parseValue(value, expectedType) {
@@ -425,10 +447,10 @@ class DynamicMqttManager {
         }
     }
 
-    mergeState(currentState, changedFields) {
+    mergeState(currentState, processedFields) {
         const merged = { ...currentState };
         
-        for (const [key, value] of Object.entries(changedFields)) {
+        for (const [key, value] of Object.entries(processedFields)) {
             merged[key] = {
                 value: value,
                 updated_at: new Date(),
@@ -470,52 +492,65 @@ class DynamicMqttManager {
 
     // ===== OPTIMIZED DATABASE OPERATIONS =====
 
-    async saveBatchOptimized(deviceId, changedFields, fullState, rawData, retryCount = 0) {
+    async saveRawDataLog(deviceId, rawData) {
+        try {
+            await prisma.$queryRaw`
+                INSERT INTO device_data_logs (
+                    device_id, data_json, timestamp
+                ) VALUES (
+                    ${deviceId}::uuid,
+                    ${JSON.stringify(rawData)}::jsonb,
+                    ${new Date()}
+                )
+            `;
+            
+            this.stats.rawDataLogged++;
+            
+            if (process.env.DEBUG_MQTT === 'true') {
+                console.log(`📝 Raw data logged for device ${deviceId}: ${Object.keys(rawData).length} fields (Total logged: ${this.stats.rawDataLogged})`);
+            }
+            
+        } catch (error) {
+            console.error(`❌ Error saving raw data log for device ${deviceId}:`, error);
+            // Don't throw - this shouldn't break the main flow
+        }
+    }
+
+    async saveBatchOptimized(deviceId, allFields, fullState, rawData, retryCount = 0) {
         try {
             await prisma.$transaction(async (tx) => {
                 const timestamp = new Date();
                 
-                // 1. Save raw data to logs
-                await tx.$queryRaw`
-                    INSERT INTO device_data_logs (
-                        device_id, data_json, timestamp
-                    ) VALUES (
-                        ${deviceId}::uuid,
-                        ${JSON.stringify(rawData)}::jsonb,
-                        ${timestamp}
-                    )
-                `;
+                // 1. Save ALL fields from MQTT to history (device already filtered)
+                await this.saveAllFieldsToHistory(tx, deviceId, allFields, timestamp);
                 
-                // 2. Save ONLY changed fields to history
-                await this.saveChangedFieldsToHistory(tx, deviceId, changedFields, timestamp);
-                
-                // 3. Update ALL fields in latest_data (full state)
+                // 2. Update ALL fields in latest_data (full state)
                 await this.updateLatestDataBatch(tx, deviceId, fullState, timestamp);
             });
             
             // 🔥 Emit real-time data to Socket.IO clients after successful save
-            this.emitRealtimeData(deviceId, changedFields, fullState);
+            this.emitRealtimeData(deviceId, allFields, fullState);
             
-            console.log(`💾 Saved ${Object.keys(changedFields).length} changed fields for device ${deviceId}`);
+            console.log(`💾 Saved ${Object.keys(allFields).length} fields for device ${deviceId}`);
             
         } catch (error) {
             if (retryCount < 3 && this.isRetryableError(error)) {
                 this.stats.retries++;
                 console.warn(`🔄 Retrying save for device ${deviceId}, attempt ${retryCount + 1}`);
                 await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-                return this.saveBatchOptimized(deviceId, changedFields, fullState, rawData, retryCount + 1);
+                return this.saveBatchOptimized(deviceId, allFields, fullState, rawData, retryCount + 1);
             }
             
             // Add to retry queue if max retries exceeded
-            this.addToRetryQueue(deviceId, changedFields, fullState, rawData);
+            this.addToRetryQueue(deviceId, allFields, fullState, rawData);
             throw error;
         }
     }
 
-    async saveChangedFieldsToHistory(tx, deviceId, changedFields, timestamp) {
+    async saveAllFieldsToHistory(tx, deviceId, allFields, timestamp) {
         const measurementData = [];
         
-        for (const [fieldName, value] of Object.entries(changedFields)) {
+        for (const [fieldName, value] of Object.entries(allFields)) {
             let measurement = this.measurementCache.get(fieldName);
             
             // Auto-create measurement if not exists
@@ -639,7 +674,7 @@ class DynamicMqttManager {
         );
     }
 
-    addToRetryQueue(deviceId, changedFields, fullState, rawData) {
+    addToRetryQueue(deviceId, allFields, fullState, rawData) {
         if (this.retryQueue.length >= this.maxRetryQueueSize) {
             console.warn('⚠️ Retry queue full, dropping oldest entry');
             this.retryQueue.shift();
@@ -647,7 +682,7 @@ class DynamicMqttManager {
         
         this.retryQueue.push({
             deviceId,
-            changedFields,
+            allFields,
             fullState,
             rawData,
             timestamp: new Date(),
@@ -668,7 +703,7 @@ class DynamicMqttManager {
             try {
                 await this.saveBatchOptimized(
                     item.deviceId,
-                    item.changedFields,
+                    item.allFields,
                     item.fullState,
                     item.rawData,
                     item.retryCount
@@ -852,7 +887,7 @@ class DynamicMqttManager {
 
     // ==================== SIMPLIFIED SOCKET.IO INTEGRATION ====================
     
-    emitRealtimeData(deviceId, changedFields, fullState) {
+    emitRealtimeData(deviceId, allFields, fullState) {
         try {
             // Sử dụng global Socket.IO instance
             if (!global.io) {
@@ -876,14 +911,14 @@ class DynamicMqttManager {
                 deviceName,
                 data: simpleData,
                 metadata: {
-                    changedFields: Object.keys(changedFields),
+                    receivedFields: Object.keys(allFields),
                     lastUpdate: new Date().toISOString(),
                     source: 'mqtt_dynamic'
                 }
             });
 
             if (process.env.DEBUG_MQTT === 'true') {
-                console.log(`🔥 Socket.IO broadcast sent for ${deviceName}`);
+                console.log(`🔥 Socket.IO broadcast sent for ${deviceName} with ${Object.keys(allFields).length} fields`);
             }
 
         } catch (error) {

@@ -63,11 +63,11 @@ export const getSpecificationFields = async (req, res) => {
             by: ['field_name', 'field_name_vi', 'unit'],
             where: whereConditions,
             _count: {
-                _all: true
+                id: true
             },
             orderBy: {
                 _count: {
-                    _all: 'desc'
+                    id: 'desc'
                 }
             },
             take: 50
@@ -92,7 +92,7 @@ export const getSpecificationFields = async (req, res) => {
                     field_name: field.field_name,
                     field_name_vi: field.field_name_vi,
                     unit: field.unit,
-                    usage_count: field._count._all,
+                    usage_count: field._count.id,
                     sample_values: samples.map(s => s.value)
                 };
             })
@@ -233,7 +233,7 @@ export const upsertModelSpecifications = async (req, res) => {
             for (const spec of specifications) {
                 const upserted = await tx.specifications.upsert({
                     where: {
-                        specifications_device_model_field_unique: {
+                        device_model_id_field_name: {
                             device_model_id: device_model_id,
                             field_name: spec.field_name
                         }
@@ -351,11 +351,11 @@ export const getSpecificationStats = async (req, res) => {
         const fieldStats = await prisma.specifications.groupBy({
             by: ['field_name', 'field_name_vi'],
             _count: {
-                _all: true
+                id: true
             },
             orderBy: {
                 _count: {
-                    _all: 'desc'
+                    id: 'desc'
                 }
             },
             take: 20
@@ -378,7 +378,7 @@ export const getSpecificationStats = async (req, res) => {
                     type: 'field_usage',
                     name: stat.field_name_vi,
                     field_name: stat.field_name,
-                    count: stat._count._all,
+                    count: stat._count.id,
                     units: units.map(u => u.unit).filter(Boolean).sort()
                 };
             })
@@ -391,11 +391,11 @@ export const getSpecificationStats = async (req, res) => {
                 unit: { not: null }
             },
             _count: {
-                _all: true
+                id: true
             },
             orderBy: {
                 _count: {
-                    _all: 'desc'
+                    id: 'desc'
                 }
             },
             take: 15
@@ -414,7 +414,7 @@ export const getSpecificationStats = async (req, res) => {
                 return {
                     type: 'unit_usage',
                     name: stat.unit,
-                    count: stat._count._all,
+                    count: stat._count.id,
                     fields: fields.map(f => f.field_name_vi)
                 };
             })
