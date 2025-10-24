@@ -10,7 +10,6 @@ import iot from './routes/iotRoutes.js';
 import deviceRoutes from './routes/deviceRoutes.js'
 import userPermissionsRoutes from './routes/userPermissions.routes.js';
 import usersRoutes from './routes/users.routes.js';
-
 import actLog from './routes/actLog.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
 import deviceDataRoutes from './routes/deviceDataRoutes.js';
