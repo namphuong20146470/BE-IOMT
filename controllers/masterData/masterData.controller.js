@@ -206,7 +206,7 @@ export const getManufacturers = async (req, res) => {
 
         const manufacturers = await prisma.$queryRawUnsafe(`
             SELECT 
-                id, name, country, website, contact_email,
+                id, name, country, website, contact_info,
                 (SELECT COUNT(*)::integer FROM device_models WHERE manufacturer_id = m.id) as model_count
             FROM manufacturers m
             ${whereClause}
@@ -223,6 +223,43 @@ export const getManufacturers = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch manufacturers',
+            error: error.message
+        });
+    }
+};
+
+// Get suppliers
+export const getSuppliers = async (req, res) => {
+    try {
+        const { search } = req.query;
+
+        let whereClause = '';
+        let params = [];
+
+        if (search) {
+            whereClause = 'WHERE name ILIKE $1 OR country ILIKE $1';
+            params.push(`%${search}%`);
+        }
+
+        const suppliers = await prisma.$queryRawUnsafe(`
+            SELECT 
+                id, name, country, website, contact_info,
+                (SELECT COUNT(*)::integer FROM device_models WHERE supplier_id = s.id) as model_count
+            FROM suppliers s
+            ${whereClause}
+            ORDER BY name
+        `, ...params);
+
+        res.status(200).json({
+            success: true,
+            data: suppliers,
+            message: 'Suppliers retrieved successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching suppliers:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch suppliers',
             error: error.message
         });
     }

@@ -65,34 +65,13 @@ export const getAllWarranties = async (req, res) => {
             limit = 50 
         } = req.query;
 
+        // Build WHERE conditions
         let whereConditions = [];
-        let params = [];
-        let paramIndex = 1;
-
         if (organization_id) {
-            whereConditions.push(`d.organization_id = $${paramIndex}::uuid`);
-            params.push(organization_id);
-            paramIndex++;
+            whereConditions.push(`d.organization_id = '${organization_id}'`);
         }
-        
         if (provider) {
-            whereConditions.push(`wi.provider ILIKE $${paramIndex}`);
-            params.push(`%${provider}%`);
-            paramIndex++;
-        }
-
-        // Add status filter in HAVING clause since it's calculated
-        let havingCondition = '';
-        if (status) {
-            havingCondition = `HAVING 
-                CASE 
-                    WHEN wi.warranty_end < CURRENT_DATE THEN 'expired'
-                    WHEN wi.warranty_end < CURRENT_DATE + INTERVAL '30 days' THEN 'expiring_soon'
-                    WHEN wi.warranty_end < CURRENT_DATE + INTERVAL '90 days' THEN 'expiring_3_months'
-                    ELSE 'valid'
-                END = $${paramIndex}`;
-            params.push(status);
-            paramIndex++;
+            whereConditions.push(`wi.provider ILIKE '%${provider}%'`);
         }
 
         const whereClause = whereConditions.length > 0 
@@ -100,15 +79,14 @@ export const getAllWarranties = async (req, res) => {
             : '';
 
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        params.push(parseInt(limit), offset);
 
-        const warranties = await prisma.$queryRawUnsafe(`
+        let mainQuery = `
             SELECT 
                 wi.id, wi.device_id, wi.warranty_start, wi.warranty_end, wi.provider,
                 d.serial_number, d.asset_tag, d.status as device_status,
                 dm.name as model_name, m.name as manufacturer,
                 o.name as organization_name,
-                dept.dept_name as department_name,
+                dept.name as department_name,
                 CASE 
                     WHEN wi.warranty_end < CURRENT_DATE THEN 'expired'
                     WHEN wi.warranty_end < CURRENT_DATE + INTERVAL '30 days' THEN 'expiring_soon'
@@ -121,15 +99,26 @@ export const getAllWarranties = async (req, res) => {
             LEFT JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN organizations o ON d.organization_id = o.id
-            LEFT JOIN departments dept ON d.department_id = dept.dept_id
+            LEFT JOIN departments dept ON d.department_id = dept.id
             ${whereClause}
-            ${havingCondition}
-            ORDER BY wi.warranty_end ASC
-            LIMIT $${paramIndex - 1} OFFSET $${paramIndex}
-        `, ...params);
+        `;
 
-        // Get total count (simpler query without HAVING for count)
-        const countParams = params.slice(0, -2);
+        // Add status filter as subquery if needed
+        if (status) {
+            mainQuery = `
+                SELECT * FROM (${mainQuery}) AS filtered_warranties
+                WHERE warranty_status = '${status}'
+            `;
+        }
+
+        mainQuery += `
+            ORDER BY warranty_end ASC
+            LIMIT ${parseInt(limit)} OFFSET ${offset}
+        `;
+
+        const warranties = await prisma.$queryRawUnsafe(mainQuery);
+
+        // Get total count
         let countQuery = `
             SELECT COUNT(*)::integer as total
             FROM warranty_info wi
@@ -151,12 +140,11 @@ export const getAllWarranties = async (req, res) => {
                     FROM warranty_info wi
                     LEFT JOIN device d ON wi.device_id = d.id
                     ${whereClause}
-                ) sub WHERE sub.warranty_status = $${countParams.length + 1}
+                ) sub WHERE sub.warranty_status = '${status}'
             `;
-            countParams.push(status);
         }
 
-        const totalResult = await prisma.$queryRawUnsafe(countQuery, ...countParams);
+        const totalResult = await prisma.$queryRawUnsafe(countQuery);
         const total = totalResult[0]?.total || 0;
 
         res.status(200).json({
@@ -435,14 +423,14 @@ export const getExpiringWarranties = async (req, res) => {
                 d.serial_number, d.asset_tag,
                 dm.name as model_name, m.name as manufacturer,
                 o.name as organization_name,
-                dept.dept_name as department_name,
+                dept.name as department_name,
                 (wi.warranty_end - CURRENT_DATE) as days_remaining
             FROM warranty_info wi
             LEFT JOIN device d ON wi.device_id = d.id
             LEFT JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN organizations o ON d.organization_id = o.id
-            LEFT JOIN departments dept ON d.department_id = dept.dept_id
+            LEFT JOIN departments dept ON d.department_id = dept.id
             ${whereClause}
             ORDER BY wi.warranty_end ASC
         `, ...params);

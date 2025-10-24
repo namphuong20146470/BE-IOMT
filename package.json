@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
-    "dev": "nodemon index.js",
-    "start": "nodemon index.js",
+    "dev": "cross-env NODE_ENV=development nodemon index.js",
+    "start": "cross-env NODE_ENV=production node index.js",
     "seed": "node prisma/seed.js"
   },
   "keywords": [],
@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "@prisma/client": "^6.5.0",
+    "axios": "^1.12.2",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.2",
     "body-parser": "^1.20.3",

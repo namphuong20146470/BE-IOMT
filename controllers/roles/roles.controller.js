@@ -1,5 +1,11 @@
 import roleService from '../../services/RoleService.js';
 import permissionService from '../../services/PermissionService.js';
+import { 
+    isSystemAdmin, 
+    isOrganizationAdmin, 
+    getEffectiveOrganizationId,
+    validateOrganizationAccess 
+} from '../../utils/permissionHelpers.js';
 
 function getVietnamDate() {
     const now = new Date();
@@ -29,7 +35,7 @@ export const getAllRoles = async (req, res) => {
         } = req.query;
 
         const userOrgId = req.user?.organization_id;
-        const isSuperAdmin = req.user?.is_super_admin || req.user?.roles?.some(r => r.is_system_role);
+        const isSuperAdmin = isSystemAdmin(req.user);
         
         let organization_id;
         
@@ -102,7 +108,7 @@ export const createRole = async (req, res) => {
         // Handle organization_id logic
         let organization_id;
         
-        if (req.user.organization_id === null) {
+        if (isSystemAdmin(req.user)) {
             // Super admin case: allow null for system-wide roles
             // Or use bodyOrgId if provided for specific organization
             organization_id = bodyOrgId || null;

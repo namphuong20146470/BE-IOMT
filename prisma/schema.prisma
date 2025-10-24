@@ -24,7 +24,6 @@ model device_models {
   id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   category_id     String            @db.Uuid
   name            String            @db.VarChar(255)
-  specifications  String?
   model_number    String?           @unique(map: "device_models_model_id_key") @db.VarChar(100)
   manufacturer_id String?           @db.Uuid
   supplier_id     String?           @db.Uuid
@@ -32,6 +31,7 @@ model device_models {
   category        device_categories @relation(fields: [category_id], references: [id], onUpdate: NoAction)
   manufacturers   manufacturers?    @relation(fields: [manufacturer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   suppliers       suppliers?        @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  specifications  specifications[]
 
   @@index([category_id], map: "idx_device_models_category")
 }
@@ -112,9 +112,10 @@ model organizations {
   created_at            DateTime?              @default(now()) @db.Timestamptz(6)
   updated_at            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   is_active             Boolean                @default(true)
-  code                  String?
-  website               String?
+  code                  String?                @db.VarChar(50)
+  website               String?                @db.VarChar(255)
   description           String?
+  status                org_status?            @default(ACTIVE)
   access_policies       access_policies[]
   alert_metrics         alert_metrics[]
   alert_rules           alert_rules[]
@@ -721,24 +722,23 @@ model role_permissions {
 }
 
 model user_roles {
-  id               String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  user_id          String        @db.Uuid
-  role_id          String        @db.Uuid
-  organization_id  String?       @db.Uuid
-  department_id    String?       @db.Uuid
-  valid_from       DateTime?     @default(now()) @db.Timestamptz(6)
-  valid_until      DateTime?     @db.Timestamptz(6)
-  assigned_by      String?       @db.Uuid
-  assigned_at      DateTime?     @default(now()) @db.Timestamptz(6)
-  is_active        Boolean?      @default(true)
+  id               String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id          String         @db.Uuid
+  role_id          String         @db.Uuid
+  organization_id  String?        @db.Uuid
+  department_id    String?        @db.Uuid
+  valid_from       DateTime?      @default(now()) @db.Timestamptz(6)
+  valid_until      DateTime?      @db.Timestamptz(6)
+  assigned_by      String?        @db.Uuid
+  assigned_at      DateTime?      @default(now()) @db.Timestamptz(6)
+  is_active        Boolean?       @default(true)
   notes            String?
-  assigned_by_user users?        @relation("UserRoleAssignedBy", fields: [assigned_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  departments      departments?  @relation(fields: [department_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  assigned_by_user users?         @relation("UserRoleAssignedBy", fields: [assigned_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  departments      departments?   @relation(fields: [department_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   organizations    organizations? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  roles            roles         @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users            users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roles            roles          @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users            users          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  
   @@unique([user_id, role_id, organization_id, department_id])
   @@index([user_id], map: "idx_user_roles_user")
   @@index([role_id], map: "idx_user_roles_role")
@@ -917,6 +917,47 @@ model user_permission_cache {
   @@index([expires_at], map: "idx_user_permission_cache_expires")
 }
 
+model specification_fields {
+  field_name     String           @id @db.VarChar(100)
+  field_name_vi  String           @db.VarChar(100)
+  field_name_en  String?          @db.VarChar(100)
+  unit           String?          @db.VarChar(50)
+  category       String?          @db.VarChar(50)
+  data_type      String?          @default("text") @db.VarChar(20)
+  placeholder    String?          @db.VarChar(255)
+  help_text      String?
+  sort_order     Int?             @default(0)
+  is_active      Boolean?         @default(true)
+  created_at     DateTime?        @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime?        @default(now()) @db.Timestamptz(6)
+  specifications specifications[]
+
+  @@index([is_active], map: "idx_spec_fields_active")
+  @@index([category, sort_order], map: "idx_spec_fields_category")
+}
+
+model specifications {
+  id                   Int                  @id @default(autoincrement())
+  device_model_id      String               @db.Uuid
+  field_name           String               @db.VarChar(100)
+  field_name_vi        String               @db.VarChar(100)
+  value                String               @db.VarChar(255)
+  unit                 String?              @db.VarChar(50)
+  description          String?
+  display_order        Int?
+  created_at           DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?            @default(now()) @db.Timestamp(6)
+  numeric_value        Decimal?             @db.Decimal(15, 4)
+  is_visible           Boolean?             @default(true)
+  specification_fields specification_fields @relation(fields: [field_name], references: [field_name], map: "fk_spec_field_name")
+  device_models        device_models        @relation(fields: [device_model_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([device_model_id, field_name])
+  @@index([device_model_id], map: "idx_specifications_device_model_id")
+  @@index([field_name], map: "idx_specifications_field_name")
+  @@index([device_model_id, is_visible, display_order], map: "idx_specifications_visible")
+}
+
 enum device_status {
   active
   inactive
@@ -1031,10 +1072,17 @@ enum audit_action {
   delete
   login
   logout
+  failed_login
   permission_granted
   permission_revoked
   role_assigned
   role_removed
   access_denied
   password_changed
+}
+
+enum org_status {
+  ACTIVE
+  INACTIVE
+  PENDING
 }

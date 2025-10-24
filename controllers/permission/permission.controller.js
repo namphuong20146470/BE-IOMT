@@ -1,6 +1,13 @@
 import roleService from '../../services/RoleService.js';
 import permissionService from '../../services/PermissionService.js';
 import auditService from '../../services/AuditService.js';
+import { 
+    isSystemAdmin, 
+    isOrganizationAdmin, 
+    hasPermission,
+    getEffectiveOrganizationId,
+    validateOrganizationAccess 
+} from '../../utils/permissionHelpers.js';
 
 // Services are already instantiated, no need to create new instances
 
@@ -239,7 +246,10 @@ export const updateRolePermissions = async (req, res) => {
             });
         }
 
-        if (!hasPermission) {
+        // Check permission using permissionService
+        const hasUpdatePermission = await permissionService.hasPermission(userId, 'role.manage');
+        
+        if (!hasUpdatePermission) {
             // ✅ DEBUG: Get user's actual permissions
             const userPerms = await permissionService.getUserPermissions(userId);
             console.log('🔍 User actual permissions:', userPerms);
@@ -381,7 +391,7 @@ export const getAllPermissions = async (req, res) => {
         }
 
         // ✅ Check if user is Super Admin
-        const isSuperAdmin = req.user?.roles?.some(role => role.is_system_role) || false;
+        const isSuperAdmin = isSystemAdmin(req.user);
 
         const { group_id, search, include_groups, format } = req.query;
 

@@ -140,7 +140,7 @@ export const getAllDevices = async (req, res) => {
                 d.id, d.serial_number, d.asset_tag, d.status,
                 d.purchase_date, d.installation_date, d.created_at, d.updated_at,
                 d.model_id, d.organization_id, d.department_id,
-                dm.name as model_name, m.name as manufacturer, dm.specifications,
+                dm.name as model_name, m.name as manufacturer,
                 dc.name as category_name,
                 o.id as organization_id_ref, o.name as organization_name,
                 dept.id as department_id_ref, dept.name as department_name,
@@ -235,7 +235,7 @@ export const getDeviceById = async (req, res) => {
                 d.id, d.serial_number, d.asset_tag, d.status,
                 d.purchase_date, d.installation_date, d.created_at, d.updated_at,
                 d.model_id, d.organization_id, d.department_id,
-                dm.name as model_name, m.name as manufacturer, dm.specifications,
+                dm.name as model_name, m.name as manufacturer,
                 dc.name as category_name, dc.description as category_description,
                 o.name as organization_name,
                 dept.name as department_name,
@@ -336,23 +336,13 @@ export const createDevice = async (req, res) => {
 
         // Check if user is trying to create in different organization
         if (organization_id && organization_id !== userOrgId) {
-            // Only System Admin or Organization Admin can create in different orgs
-            // Chỉ System Admin hoặc Org Admin mới có quyền tạo ở org khác
-const isSystemAdmin = hasPermission(req.user, 'system.admin') &&
-                      user.organization_id === null &&
-                      user.department_id === null;
+            // Only System Admin can create in different orgs
+            const isSystemAdmin = hasPermission(req.user, 'system.admin');
 
-const isOrgAdmin = hasPermission(req.user, 'organization.create') &&
-                   user.organization_id !== null && // Org admin luôn có org_id
-                   user.department_id === null;
-
-const canCreateCrossOrg = isSystemAdmin || isOrgAdmin;
-
-            
-            if (!canCreateCrossOrg) {
+            if (!isSystemAdmin) {
                 return res.status(403).json({
                     success: false,
-                    message: 'Access denied: Cannot create devices in different organization'
+                    message: 'Access denied: Only System Admin can create devices in different organization'
                 });
             }
 
@@ -380,14 +370,13 @@ const canCreateCrossOrg = isSystemAdmin || isOrgAdmin;
             const deptExists = await prisma.$queryRaw`
                 SELECT id, name FROM departments 
                 WHERE id = ${department_id}::uuid 
-                AND organization_id = ${finalOrganizationId}::uuid 
-                AND is_active = true
+                AND organization_id = ${finalOrganizationId}::uuid
             `;
             
             if (deptExists.length === 0) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Department not found in target organization or inactive'
+                    message: 'Department not found in target organization'
                 });
             }
 
@@ -768,6 +757,87 @@ export const getDeviceStatistics = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch device statistics',
+            error: error.message
+        });
+    }
+};
+
+// Validate asset tag uniqueness
+export const validateAssetTag = async (req, res) => {
+    try {
+        const { asset_tag, organization_id, device_id } = req.query;
+
+        if (!asset_tag) {
+            return res.status(400).json({
+                success: false,
+                message: 'Asset tag is required'
+            });
+        }
+
+        if (!organization_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Organization ID is required'
+            });
+        }
+
+        // Validate UUID format for organization_id
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(organization_id)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid organization ID format'
+            });
+        }
+
+        // Check if asset tag exists (exclude current device if updating)
+        let duplicateAssetTag;
+        
+        if (device_id) {
+            // Validate device_id UUID format if provided
+            if (!uuidRegex.test(device_id)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid device ID format'
+                });
+            }
+            duplicateAssetTag = await prisma.$queryRaw`
+                SELECT id, serial_number FROM device 
+                WHERE organization_id = ${organization_id}::uuid 
+                AND asset_tag = ${asset_tag}
+                AND id != ${device_id}::uuid
+            `;
+        } else {
+            duplicateAssetTag = await prisma.$queryRaw`
+                SELECT id, serial_number FROM device 
+                WHERE organization_id = ${organization_id}::uuid 
+                AND asset_tag = ${asset_tag}
+            `;
+        }
+        
+        const isAvailable = duplicateAssetTag.length === 0;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                asset_tag,
+                organization_id,
+                is_available: isAvailable,
+                conflict: !isAvailable ? {
+                    device_id: duplicateAssetTag[0].id,
+                    serial_number: duplicateAssetTag[0].serial_number
+                } : null
+            },
+            message: isAvailable 
+                ? 'Asset tag is available' 
+                : 'Asset tag already exists in this organization'
+        });
+
+    } catch (error) {
+        console.error('Error validating asset tag:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to validate asset tag',
             error: error.message
         });
     }

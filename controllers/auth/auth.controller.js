@@ -62,7 +62,7 @@ export const login = async (req, res) => {
     try {
         // Validate input
         if (!username || !password) {
-            await auditService.logActivity(null, 'FAILED_LOGIN', 'auth', null, {
+            await auditService.logActivity(null, 'failed_login', 'auth', null, {
                 reason: 'Missing credentials',
                 ip: ipAddress
             });
@@ -115,7 +115,7 @@ export const login = async (req, res) => {
         `;
 
         if (users.length === 0) {
-            await auditService.logActivity(null, 'FAILED_LOGIN', 'auth', null, {
+            await auditService.logActivity(null, 'failed_login', 'auth', null, {
                 reason: 'User not found',
                 username,
                 ip: ipAddress
@@ -154,7 +154,7 @@ export const login = async (req, res) => {
         }
 
         if (!isValidPassword) {
-            await auditService.logActivity(user.id, 'FAILED_LOGIN', 'auth', null, {
+            await auditService.logActivity(user.id, 'failed_login', 'auth', null, {
                 reason: 'Invalid password',
                 username,
                 ip: ipAddress

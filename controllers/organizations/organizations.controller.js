@@ -1,4 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+import { 
+    isSystemAdmin, 
+    isOrganizationAdmin, 
+    getEffectiveOrganizationId,
+    validateOrganizationAccess 
+} from '../../utils/permissionHelpers.js';
 
 const prisma = new PrismaClient();
 
@@ -46,7 +52,7 @@ export const getAllOrganizations = async (req, res) => {
         const userRoles = req.user?.roles || [];
         
         // Lấy thông tin Super Admin từ middleware (đã tính toán sẵn)
-        const isSuperAdmin = req.user?.is_super_admin || false;
+        const isSuperAdmin = isSystemAdmin(req.user);
         const hasFullAccess = req.user?.has_full_org_access || false;
         
         let organizations;

@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
+import { getUserAllPermissions } from '../utils/permissionHelpers.js';
 
 const prisma = new PrismaClient();
 
@@ -88,15 +89,20 @@ export const authMiddleware = async (req, res, next) => {
             };
         }
 
+        // ✅ Load full user permissions from database
+        const userId = decoded.sub || decoded.id;
+        const allPermissions = await getUserAllPermissions(userId);
+
         // ✅ Attach user data to request
         req.user = {
-            id: decoded.sub || decoded.id,
+            id: userId,
             username: decoded.username,
             full_name: decoded.full_name,
             email: decoded.email,
             organization_id: decoded.organization_id,
             department_id: decoded.department_id,
-            roles: decoded.roles || []
+            roles: decoded.roles || [],
+            permissions: allPermissions // Include all permissions (from roles + direct)
         };
 
         req.authSource = tokenSource;
