@@ -31,7 +31,8 @@ import {
     createDevice,
     updateDevice,
     deleteDevice,
-    getDeviceStatistics
+    getDeviceStatistics,
+    validateAssetTag
 } from '../controllers/devices/device.controller.js';
 
 // Device Connectivity Controllers
@@ -117,6 +118,9 @@ router.get('/devices', authMiddleware, requirePermission('device.read'), getAllD
 
 // GET /devices/statistics - Get device statistics
 router.get('/devices/statistics', authMiddleware, requirePermission('device.read'), getDeviceStatistics);
+
+// GET /devices/validate/asset-tag - Validate asset tag uniqueness
+router.get('/devices/validate/asset-tag', authMiddleware, requirePermission('device.read'), validateAssetTag);
 
 // GET /devices/:id - Get device by ID with full details
 router.get('/devices/:id', authMiddleware, requirePermission('device.read'), getDeviceById);
