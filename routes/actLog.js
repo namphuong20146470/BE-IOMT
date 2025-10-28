@@ -9,6 +9,8 @@ import deviceRoutes from './deviceRoutes.js';
 import deviceDataRoutes from './deviceDataRoutes.js';
 // Import MQTT device routes
 import mqttRoutes from './mqttRoutes.js';
+// Import specifications routes
+import specificationsRoutes from './specificationsRoutes.js';
 // Import các controller cần thiết
 import {
     loginUser,
@@ -293,5 +295,8 @@ router.use('/device-processor', deviceDataRoutes);
 
 // MQTT device management routes
 router.use('/mqtt', mqttRoutes);
+
+// Specifications routes
+router.use('/specifications', specificationsRoutes);
 
 export default router;

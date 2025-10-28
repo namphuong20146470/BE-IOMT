@@ -2,15 +2,16 @@ import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import sessionService from '../../services/SessionService.js';
-import permissionService from '../../services/PermissionService.js';
-import roleService from '../../services/RoleService.js';
+import userService from './user.service.js';
+import sessionService from '../../shared/services/SessionService.js';
+import permissionService from '../../shared/services/PermissionService.js';
+import roleService from '../../shared/services/RoleService.js';
 import { 
     isSystemAdmin, 
     isOrganizationAdmin, 
     getEffectiveOrganizationId,
     validateOrganizationAccess 
-} from '../../utils/permissionHelpers.js';
+} from '../../shared/utils/permissionHelpers.js';
 
 const prisma = new PrismaClient();
 

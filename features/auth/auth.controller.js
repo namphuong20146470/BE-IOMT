@@ -1,8 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import sessionService from '../../services/SessionService.js';
-import auditService from '../../services/AuditService.js';
+import sessionService from './auth.service.js';
+import auditService from '../../shared/services/AuditService.js';
 
 const prisma = new PrismaClient();
 

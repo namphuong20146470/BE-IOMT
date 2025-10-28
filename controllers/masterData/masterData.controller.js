@@ -1,10 +1,12 @@
 import { PrismaClient } from '@prisma/client';
+import { isSystemAdmin } from '../../utils/permissionHelpers.js';
 const prisma = new PrismaClient();
 
 // Get organizations accessible to user
 export const getOrganizations = async (req, res) => {
     try {
         const userOrgId = req.user?.organization_id;
+        const isSuperAdmin = isSystemAdmin(req.user);
 
         // Case 1: JWT không có org_id
         if (userOrgId === undefined) {
@@ -16,8 +18,8 @@ export const getOrganizations = async (req, res) => {
 
         let organizations;
 
-        if (userOrgId === null) {
-            // Case 2: System Admin → xem tất cả
+        if (isSuperAdmin) {
+            // Case 2: Super Admin → xem tất cả
             organizations = await prisma.$queryRaw`
                 SELECT 
                     id, name, code, license_number, address, phone, email, 
@@ -62,14 +64,55 @@ export const getDepartments = async (req, res) => {
         
         // **SECURITY: Validate organization access**
         const userOrgId = req.user?.organization_id;
-        if (!userOrgId) {
+        const isSuperAdmin = isSystemAdmin(req.user);
+        
+        if (!isSuperAdmin && !userOrgId) {
             return res.status(403).json({
                 success: false,
                 message: 'User organization not found'
             });
         }
 
-        // If organization_id provided, must match user's organization
+        // Super Admin can access any organization's departments
+        if (isSuperAdmin) {
+            // If organization_id provided, use it; otherwise get all departments
+            const targetOrgId = organization_id;
+            
+            if (targetOrgId) {
+                // Get departments for specific organization
+                const departments = await prisma.$queryRaw`
+                    SELECT 
+                        id, name, code, description, organization_id, created_at
+                    FROM departments 
+                    WHERE organization_id = ${targetOrgId}::uuid
+                    ORDER BY name
+                `;
+                
+                return res.status(200).json({
+                    success: true,
+                    data: departments,
+                    message: 'Departments retrieved successfully'
+                });
+            } else {
+                // Get all departments from all organizations
+                const departments = await prisma.$queryRaw`
+                    SELECT 
+                        d.id, d.name, d.code, d.description, d.organization_id, d.created_at,
+                        o.name as organization_name
+                    FROM departments d
+                    LEFT JOIN organizations o ON d.organization_id = o.id
+                    ORDER BY o.name, d.name
+                `;
+                
+                return res.status(200).json({
+                    success: true,
+                    data: departments,
+                    message: 'All departments retrieved successfully'
+                });
+            }
+        }
+
+        // Regular user: If organization_id provided, must match user's organization
         if (organization_id && organization_id !== userOrgId) {
             return res.status(403).json({
                 success: false,
@@ -82,11 +125,10 @@ export const getDepartments = async (req, res) => {
 
         const departments = await prisma.$queryRaw`
             SELECT 
-                id, name, code, description, manager_name,
-                contact_phone, contact_email, organization_id, created_at
+                id, name, code, description, organization_id, created_at
             FROM departments 
             WHERE organization_id = ${targetOrgId}::uuid
-            AND status = 'active'
+
             ORDER BY name
         `;
 

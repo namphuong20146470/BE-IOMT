@@ -344,6 +344,212 @@ export const deleteSpecification = async (req, res) => {
     }
 };
 
+// Update a specific specification
+export const updateSpecification = async (req, res) => {
+    try {
+        const { device_model_id, spec_id } = req.params;
+        const { value, numeric_value, unit, description, field_name_vi, display_order, is_visible } = req.body;
+
+        // Validate required parameters
+        if (!device_model_id || !spec_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Device model ID and specification ID are required'
+            });
+        }
+
+        // Validate UUID format for device_model_id
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(device_model_id)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid device model ID format'
+            });
+        }
+
+        // Validate spec_id is numeric
+        const specificationId = parseInt(spec_id, 10);
+        if (isNaN(specificationId) || specificationId <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid specification ID'
+            });
+        }
+
+        // Validate at least one field to update
+        if (!value && !numeric_value && !unit && !description && !field_name_vi && 
+            display_order === undefined && is_visible === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least one field must be provided for update'
+            });
+        }
+
+        // Build update data
+        const updateData = {
+            updated_at: new Date()
+        };
+
+        if (value !== undefined) {
+            if (typeof value !== 'string' || value.length > 255) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Value must be a string with maximum 255 characters'
+                });
+            }
+            updateData.value = value;
+        }
+
+        if (numeric_value !== undefined) {
+            if (numeric_value !== null) {
+                const numericVal = parseFloat(numeric_value);
+                if (isNaN(numericVal)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Numeric value must be a valid number'
+                    });
+                }
+                updateData.numeric_value = numericVal;
+            } else {
+                updateData.numeric_value = null;
+            }
+        }
+
+        if (unit !== undefined) {
+            if (unit && (typeof unit !== 'string' || unit.length > 50)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Unit must be a string with maximum 50 characters'
+                });
+            }
+            updateData.unit = unit || null;
+        }
+
+        if (description !== undefined) {
+            if (description && (typeof description !== 'string' || description.length > 500)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Description must be a string with maximum 500 characters'
+                });
+            }
+            updateData.description = description || null;
+        }
+
+        if (field_name_vi !== undefined) {
+            if (!field_name_vi || typeof field_name_vi !== 'string' || field_name_vi.length > 100) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Vietnamese field name must be a string with maximum 100 characters'
+                });
+            }
+            updateData.field_name_vi = field_name_vi;
+        }
+
+        if (display_order !== undefined) {
+            if (display_order !== null) {
+                const order = parseInt(display_order);
+                if (isNaN(order) || order < 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Display order must be a positive integer or null'
+                    });
+                }
+                updateData.display_order = order;
+            } else {
+                updateData.display_order = null;
+            }
+        }
+
+        if (is_visible !== undefined) {
+            updateData.is_visible = Boolean(is_visible);
+        }
+
+        // Update specification with transaction for safety
+        const result = await prisma.$transaction(async (tx) => {
+            // Verify specification exists and belongs to the device model
+            const existingSpec = await tx.specifications.findUnique({
+                where: { 
+                    id: specificationId 
+                },
+                include: {
+                    device_model: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    }
+                }
+            });
+
+            if (!existingSpec) {
+                throw new Error('Specification not found');
+            }
+
+            if (existingSpec.device_model_id !== device_model_id) {
+                throw new Error('Specification does not belong to the specified device model');
+            }
+
+            // Update the specification
+            const updated = await tx.specifications.update({
+                where: { id: specificationId },
+                data: updateData,
+                include: {
+                    device_model: {
+                        select: {
+                            id: true,
+                            name: true,
+                            category: {
+                                select: {
+                                    id: true,
+                                    name: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            return updated;
+        });
+
+        res.status(200).json({
+            success: true,
+            data: result,
+            message: 'Specification updated successfully'
+        });
+
+    } catch (error) {
+        console.error('Error updating specification:', error);
+        
+        if (error.message === 'Specification not found') {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
+
+        if (error.message === 'Specification does not belong to the specified device model') {
+            return res.status(403).json({
+                success: false,
+                message: error.message
+            });
+        }
+
+        if (error.code === 'P2025') {
+            return res.status(404).json({
+                success: false,
+                message: 'Specification not found'
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update specification',
+            error: error.message
+        });
+    }
+};
+
 // Get specification statistics
 export const getSpecificationStats = async (req, res) => {
     try {

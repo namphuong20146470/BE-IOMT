@@ -16,5 +16,6 @@ router.get('/me', authMiddleware, authController.getMe);  // ✅ Full profile fo
 router.get('/permissions', authMiddleware, authController.getPermissions);  // ✅ Permissions with caching
 router.get('/verify', authMiddleware, authController.verifySession);
 router.post('/change-password', authMiddleware, authController.changePassword);
+router.patch('/profile', authMiddleware, authController.updateProfile);  // ✅ Update user profile
 
 export default router;

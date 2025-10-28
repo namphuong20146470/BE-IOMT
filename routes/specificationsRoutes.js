@@ -5,7 +5,8 @@ import {
     getModelSpecifications,
     upsertModelSpecifications,
     deleteSpecification,
-    getSpecificationStats
+    getSpecificationStats,
+    updateSpecification
 } from '../controllers/specifications/specifications.controller.js';
 import {
     getSpecificationFieldsTemplate,
@@ -46,6 +47,9 @@ router.get('/models/:device_model_id', authMiddleware, getModelSpecifications);
 
 // Create or update specifications for a device model
 router.put('/models/:device_model_id', authMiddleware, upsertModelSpecifications);
+
+// Update a specific specification
+router.patch('/models/:device_model_id/specifications/:spec_id', authMiddleware, updateSpecification);
 
 // Delete a specific specification
 router.delete('/:specification_id', authMiddleware, deleteSpecification);

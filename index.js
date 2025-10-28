@@ -7,14 +7,26 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import iot from './routes/iotRoutes.js';
-import deviceRoutes from './routes/deviceRoutes.js'
-import userPermissionsRoutes from './routes/userPermissions.routes.js';
-import usersRoutes from './routes/users.routes.js';
+// ==========================================
+// 🏗️ FEATURE-BASED ARCHITECTURE ROUTES
+// ==========================================
+// Each feature is self-contained with its own:
+// - Controllers (business logic)
+// - Routes (API endpoints) 
+// - Services (data layer)
+// - Validation (input validation)
+// - README (documentation)
 
+// Feature imports
+import authRoutes from './features/auth/auth.routes.js';
+import usersRoutes from './features/users/users.routes.js';
+import userPermissionsRoutes from './features/users/userPermissions.routes.js';
+import deviceRoutes from './features/devices/device.routes.js';
+import deviceDataRoutes from './features/devices/deviceData.routes.js';
+
+// Legacy routes (to be migrated)
 import actLog from './routes/actLog.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
-import deviceDataRoutes from './routes/deviceDataRoutes.js';
-import authRoutes from './routes/auth.routes.js';
 import roleRoutes from './routes/roleRoutes.js';
 import specificationsRoutes from './routes/specificationsRoutes.js';
 
@@ -93,18 +105,37 @@ app.use(cors(corsOptions));
 // Explicit preflight handling
 app.options('*', cors(corsOptions));
 
-// Routes
-app.use('/', deviceDataRoutes, masterDataRoutes)
-app.use('/auth', authRoutes, roleRoutes); // 🔐 JWT Authentication routes
-app.use('/iot', iot);
-app.use('/actlog', actLog);
-// Device management routes
-app.use('/devices', deviceRoutes);
-// User management routes
+// ==========================================
+// 🚀 FEATURE-BASED ROUTES
+// ==========================================
+
+// Authentication & Authorization
+app.use('/auth', authRoutes);
+
+// User Management  
 app.use('/users', usersRoutes);
-// User permissions management routes (sub-routes under /users)
-app.use('/users', userPermissionsRoutes);
-// Specifications routes
+app.use('/users', userPermissionsRoutes); // User permissions sub-routes
+
+// Device Management
+app.use('/devices', deviceRoutes);
+
+// Master Data & Device Data (combined with legacy routes)
+app.use('/', deviceDataRoutes, masterDataRoutes);
+
+// ==========================================
+// 🔄 LEGACY ROUTES (To be migrated)
+// ==========================================
+
+// IoT & MQTT
+app.use('/iot', iot);
+
+// Activity Logs
+app.use('/actlog', actLog);
+
+// Role Management (will move to /permissions)
+app.use('/auth', roleRoutes);
+
+// Specifications
 app.use('/specifications', specificationsRoutes);
 // SSL Configuration
 const { options, useHttps } = configureSSL();
