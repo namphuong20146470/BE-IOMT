@@ -1,6 +1,6 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/authMiddleware.js';
-import { requirePermission } from '../middleware/rbacMiddleware.js';
+import { requirePermission } from '../shared/middleware/rbacMiddleware.js';
 
 import {
     getAllAuoDisplay,

@@ -1,6 +1,6 @@
 import express from 'express';
 import authMiddleware from '../middleware/authMiddleware.js';
-import { requirePermission, requireOrganization } from '../middleware/rbacMiddleware.js';
+import { requirePermission, requireOrganization } from '../shared/middleware/rbacMiddleware.js';
 
 // Device Category Controllers
 import {

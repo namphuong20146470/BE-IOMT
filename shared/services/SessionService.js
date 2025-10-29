@@ -90,10 +90,10 @@ class SessionService {
   }
 
   /**
-   * Refresh access token using refresh token with rotation
-   * @param {string} refreshToken - Current refresh token
+   * Refresh access token using refresh token
+   * @param {string} refreshToken - Refresh token
    * @param {string} ipAddress - Client IP address
-   * @returns {Promise<Object>} New access token AND new refresh token
+   * @returns {Promise<Object>} New access token
    */
   async refreshAccessToken(refreshToken, ipAddress = null, sessionId = null) {
     try {
@@ -263,38 +263,30 @@ class SessionService {
         roles
       };
 
-      // 🚨 SECURITY FIX: Implement Refresh Token Rotation
-      // Generate new refresh token to prevent replay attacks
-      const newRefreshToken = this.generateRefreshToken();
-      const hashedNewRefreshToken = this.hashToken(newRefreshToken);
-
-      // Update session with new refresh token and activity
-      const sessionUpdateData = {
-        refresh_token: hashedNewRefreshToken, // 🚨 Rotate refresh token
+      // Update last activity and IP if different
+      const updateData = {
         last_activity: new Date()
       };
 
       if (ipAddress && ipAddress !== session.ip_address) {
-        sessionUpdateData.ip_address = ipAddress;
+        updateData.ip_address = ipAddress;
       }
 
       await prisma.user_sessions.update({
         where: { id: session.id },
-        data: sessionUpdateData
+        data: updateData
       });
 
       // Generate new access token with full user data
       const accessToken = this.generateAccessToken(userForToken, session.id);
 
-      console.log(`✅ Refreshed tokens for user: ${userWithRoles.username} (Token Rotation Applied)`);
+      console.log(`✅ Refreshed access token for user: ${userWithRoles.username}`);
 
       return {
         success: true,
         data: {
           access_token: accessToken,
-          refresh_token: newRefreshToken, // 🚨 Return NEW refresh token
-          expires_in: this.ACCESS_TOKEN_EXPIRES_SECONDS, // ✅ 1800 giây (30 phút)
-          refresh_expires_in: this.REFRESH_TOKEN_EXPIRES_SECONDS, // ✅ 604800 giây (7 ngày)
+          expires_in: this.ACCESS_TOKEN_EXPIRES_SECONDS, // ✅ 900 giây (15 phút)
           token_type: 'Bearer',
           session_id: session.id,
           created_at: session.created_at,
@@ -403,14 +395,59 @@ class SessionService {
  * @param {string} token - Refresh token (plain text) or JWT access token
  * @returns {Promise<Object>} Logout result
  */
-async logout(sessionId) {
-  // Client luôn gửi session_id từ JWT
-  // Không cần try-catch phức tạp
-  
-  await prisma.user_sessions.update({
-    where: { id: sessionId },
-    data: { is_active: false }
-  });
+async logout(token) {
+    try {
+        let session = null;
+
+        // Try 1: Hash token and find by refresh_token (most common case)
+        const hashedToken = this.hashToken(token);
+        session = await prisma.user_sessions.findFirst({
+            where: {
+                refresh_token: hashedToken,
+                is_active: true
+            }
+        });
+
+        // Try 2: If not found, assume it's a JWT and extract session ID (jti)
+        if (!session) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                if (decoded.jti) {
+                    session = await prisma.user_sessions.findFirst({
+                        where: {
+                            id: decoded.jti, // ✅ Use session UUID from JWT
+                            is_active: true
+                        }
+                    });
+                }
+            } catch (jwtError) {
+                console.log('Token is not a valid JWT, skipping JWT check');
+            }
+        }
+
+        if (!session) {
+            return {
+                success: false,
+                error: 'Session not found or already logged out'
+            };
+        }
+
+        // Deactivate session
+        await this.deactivateSession(session.id);
+
+        console.log(`✅ Logged out session: ${session.id}`);
+        return {
+            success: true,
+            message: 'Logged out successfully',
+            session_id: session.id
+        };
+    } catch (error) {
+        console.error('Error during logout:', error);
+        return {
+            success: false,
+            error: 'Failed to logout'
+        };
+    }
 }
 
   /**
@@ -545,72 +582,35 @@ async logout(sessionId) {
    * @returns {Promise<number>} Number of cleaned sessions
    */
   async cleanupExpiredSessions() {
-  try {
-    // 1. Cleanup expired and inactive sessions
-    const expiredResult = await prisma.user_sessions.updateMany({
-      where: {
-        OR: [
-          { expires_at: { lt: new Date() } },
-          { 
-            last_activity: { 
-              lt: new Date(Date.now() - this.SESSION_TIMEOUT * 2) 
-            } 
-          }
-        ],
-        is_active: true
-      },
-      data: { is_active: false }
-    });
-
-    // 2. Cleanup orphaned sessions (user deleted or inactive)
-    const orphanedResult = await prisma.$executeRaw`
-      UPDATE user_sessions 
-      SET is_active = false, last_activity = NOW()
-      WHERE is_active = true
-      AND user_id NOT IN (
-        SELECT id FROM users WHERE is_active = true
-      )
-    `;
-
-    // 3. Limit sessions per user (keep newest 5 only)
-    const MAX_SESSIONS = 5;
-    const users = await prisma.users.findMany({
-      where: { is_active: true },
-      select: { id: true }
-    });
-
-    let limitedCount = 0;
-    for (const user of users) {
-      const sessions = await prisma.user_sessions.findMany({
-        where: { 
-          user_id: user.id, 
-          is_active: true 
+    try {
+      const result = await prisma.user_sessions.updateMany({
+        where: {
+          OR: [
+            {
+              expires_at: {
+                lt: new Date()
+              }
+            },
+            {
+              last_activity: {
+                lt: new Date(Date.now() - this.SESSION_TIMEOUT * 2) // 1 hour inactive
+              }
+            }
+          ],
+          is_active: true
         },
-        orderBy: { last_activity: 'desc' },
-        select: { id: true }
+        data: {
+          is_active: false
+        }
       });
 
-      if (sessions.length > MAX_SESSIONS) {
-        const toDeactivate = sessions.slice(MAX_SESSIONS);
-        await prisma.user_sessions.updateMany({
-          where: { 
-            id: { in: toDeactivate.map(s => s.id) } 
-          },
-          data: { is_active: false }
-        });
-        limitedCount += toDeactivate.length;
-      }
+      console.log(`🧹 Cleaned up ${result.count} expired sessions`);
+      return result.count;
+    } catch (error) {
+      console.error('Error cleaning up sessions:', error);
+      return 0;
     }
-
-    const totalCleaned = expiredResult.count + orphanedResult + limitedCount;
-    console.log(`🧹 Cleaned up ${totalCleaned} sessions (expired: ${expiredResult.count}, orphaned: ${orphanedResult}, limited: ${limitedCount})`);
-    
-    return totalCleaned;
-  } catch (error) {
-    console.error('Error cleaning up sessions:', error);
-    return 0;
   }
-}
 
   // ==========================================
   // SECURITY & MONITORING
@@ -740,17 +740,21 @@ async logout(sessionId) {
   }
 
   /**
-   * Generate JWT access token
-   * @param {Object} user - User object
+   * Generate JWT access token with permissions array
+   * @param {Object} user - User object with roles
    * @param {string} sessionId - Session UUID (for jti)
    * @returns {string} JWT access token
    */
   generateAccessToken(user, sessionId) {
     const now = Math.floor(Date.now() / 1000);
     
-    // 🚨 SECURITY FIX: Only store role_ids in JWT, not full permissions
-    // This prevents stale permissions in JWT after admin changes
-    const roleIds = (user.roles || []).map(role => role.id);
+    // ✅ Extract unique permissions from all roles
+    const allPermissions = user.roles?.flatMap(role => role.permissions || []) || [];
+    const uniquePermissions = [...new Set(allPermissions)];
+    uniquePermissions.sort(); // Consistent ordering for caching
+    
+    // ✅ Extract role names for quick role checks
+    const roleNames = user.roles?.map(role => role.name) || [];
     
     const payload = {
       sub: user.id, // Subject (user ID)
@@ -760,10 +764,29 @@ async logout(sessionId) {
       email: user.email,
       organization_id: user.organization_id,
       department_id: user.department_id,
-      role_ids: roleIds, // 🚨 Only role IDs, not full role objects
+      
+      // ✅ NEW: Flat permissions array for fast checking
+      permissions: uniquePermissions,
+      
+      // ✅ NEW: Role names for role-based checks
+      role_names: roleNames,
+      
+      // ✅ NEW: Permission version for invalidation (default 0 if not set)
+      perm_version: user.perm_version || 0,
+      
+      // ✅ Keep roles for compatibility (but smaller - no permissions)
+      roles: user.roles?.map(role => ({
+        id: role.id,
+        name: role.name,
+        color: role.color,
+        icon: role.icon
+      })) || [],
+      
       iat: now, // Issued at
-      exp: now + this.ACCESS_TOKEN_EXPIRES_SECONDS // ✅ Consistent 30 phút
+      exp: now + this.ACCESS_TOKEN_EXPIRES_SECONDS // ✅ 30 minutes
     };
+
+    console.log(`🔐 JWT Generated with ${uniquePermissions.length} permissions for ${user.username}`);
 
     return jwt.sign(payload, process.env.JWT_SECRET, {
       algorithm: 'HS256'

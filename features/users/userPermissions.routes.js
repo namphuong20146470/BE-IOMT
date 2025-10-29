@@ -1,5 +1,5 @@
 import express from 'express';
-import { authMiddleware } from '../../middleware/authMiddleware.js';
+import { authMiddleware } from '../../shared/middleware/authMiddleware.js';
 import {
     assignDirectPermissionToUser as assignDirectPermissionsToUser,
     removeDirectPermissionFromUser,

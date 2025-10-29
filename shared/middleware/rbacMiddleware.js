@@ -1,5 +1,5 @@
-import permissionService from '../services/PermissionService.js';
-import auditService from '../services/AuditService.js';
+import permissionService from '../../shared/services/PermissionService.js';
+import auditService from '../../shared/services/AuditService.js';
 
 /**
  * Role-Based Access Control (RBAC) Middleware
@@ -12,13 +12,27 @@ import auditService from '../services/AuditService.js';
  * @returns {boolean} True if Super Admin
  */
 export function isSuperAdmin(user) {
-  if (!user || !user.roles) return false;
+  if (!user) return false;
   
-  return user.roles.some(role => 
-    role.is_system_role === true || 
-    role.name?.toLowerCase().includes('super admin') ||
-    role.name?.toLowerCase() === 'super admin'
-  );
+  // ✅ NEW: Fast check using role_names array from JWT
+  if (user.role_names) {
+    return user.role_names.some(roleName => 
+      roleName?.toLowerCase().includes('super admin') ||
+      roleName?.toLowerCase() === 'super admin'
+    );
+  }
+  
+  // ✅ Fallback: Check roles array (backward compatibility)
+  if (user.roles) {
+    return user.roles.some(role => 
+      role.is_system_role === true || 
+      role.name?.toLowerCase().includes('super admin') ||
+      role.name?.toLowerCase() === 'super admin'
+    );
+  }
+  
+  // ✅ Ultimate fallback: Check permissions directly
+  return user.permissions?.includes('system.admin') || false;
 }
 
 /**
@@ -62,7 +76,7 @@ export function requirePermission(permission, resourceType = null) {
         });
       }
 
-      // ✅ FIXED: Check permissions from JWT token first
+      // ✅ FAST: Check permissions directly from JWT
       let hasPermission = false;
       
       // Check if user is Super Admin (bypass all checks)
@@ -70,30 +84,36 @@ export function requirePermission(permission, resourceType = null) {
         console.log(`✅ Super Admin detected - bypassing permission check`);
         hasPermission = true;
       } else {
-        // Check permissions from JWT token roles
-        const userPermissions = req.user.roles?.flatMap(role => role.permissions || []) || [];
+        // ✅ NEW: Use flat permissions array from JWT (MUCH FASTER!)
+        const userPermissions = req.user.permissions || [];
         hasPermission = userPermissions.includes(permission);
         
-        console.log(`� JWT Token permissions:`, userPermissions.slice(0, 10) + '...');
+        console.log(`🔍 JWT Permissions (${userPermissions.length}):`, userPermissions.slice(0, 5).join(', ') + '...');
         console.log(`🔍 Required permission: ${permission}`);
         console.log(`🔍 Permission found in JWT: ${hasPermission}`);
       }
 
-      // ✅ Fallback: If not found in JWT, check database
-      if (!hasPermission) {
-        console.log(`🔄 Permission not found in JWT, checking database...`);
+      // ✅ OPTIONAL: Database fallback only for critical operations or debugging
+      if (!hasPermission && process.env.RBAC_STRICT_MODE === 'true') {
+        console.log(`🔄 STRICT MODE: Double-checking permission in database...`);
         
         try {
-          hasPermission = await permissionService.hasPermission(
+          const dbPermission = await permissionService.hasPermission(
             req.user.id,
             permission,
             resourceType,
             req.params.id || req.params.resourceId || null
           );
-          console.log(`� Database permission result: ${hasPermission}`);
+          
+          if (dbPermission !== hasPermission) {
+            console.log(`⚠️ Permission mismatch detected! JWT: ${hasPermission}, DB: ${dbPermission}`);
+            // Log discrepancy but trust JWT (since version was already checked)
+          }
+          
+          hasPermission = dbPermission; // Use DB result in strict mode
         } catch (dbError) {
           console.error(`❌ Database permission check failed:`, dbError);
-          // Continue with JWT-only check
+          // Continue with JWT result
         }
       }
 

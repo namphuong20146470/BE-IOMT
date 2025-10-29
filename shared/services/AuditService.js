@@ -8,6 +8,28 @@ class AuditService {
     this.batchTimeout = 5000; // 5 seconds
     this.pendingLogs = [];
     this.batchTimer = null;
+    
+    // Map auth constants to database enum values
+    this.actionMapping = {
+      'LOGIN_SUCCESS': 'login',
+      'LOGIN_FAILED': 'failed_login',
+      'LOGOUT': 'logout',
+      'TOKEN_REFRESH': 'read',
+      'PASSWORD_CHANGE': 'password_changed',
+      'PROFILE_UPDATE': 'update',
+      'SESSION_EXPIRED': 'logout',
+      'ACCOUNT_LOCKED': 'failed_login',
+      'PERMISSION_DENIED': 'access_denied'
+    };
+  }
+
+  /**
+   * Map action constants to database enum values
+   * @param {string} action - Action constant
+   * @returns {string} Database enum value
+   */
+  mapAction(action) {
+    return this.actionMapping[action] || action.toLowerCase();
   }
 
   /**
@@ -32,7 +54,7 @@ class AuditService {
         data: {
           user_id: logData.userId || null,
           organization_id: logData.organizationId || null,
-          action: logData.action,
+          action: this.mapAction(logData.action),
           resource_type: logData.resourceType || null,
           resource_id: logData.resourceId || null,
           old_values: logData.oldValues || null,

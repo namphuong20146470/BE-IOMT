@@ -89,11 +89,48 @@ export const authMiddleware = async (req, res, next) => {
             };
         }
 
-        // ✅ Load full user permissions from database
+        // ✅ Lightweight user validation + permission version check
         const userId = decoded.sub || decoded.id;
-        const allPermissions = await getUserAllPermissions(userId);
+        
+        // Only check user status + version (minimal DB query)
+        const userCheck = await prisma.users.findUnique({
+            where: { id: userId },
+            select: { 
+                id: true, 
+                is_active: true,
+                updated_at: true // Use updated_at as version for now
+            }
+        });
 
-        // ✅ Attach user data to request
+        if (!userCheck || !userCheck.is_active) {
+            return res.status(401).json({
+                success: false,
+                message: 'User not found or inactive',
+                code: 'AUTH_USER_INACTIVE'
+            });
+        }
+
+        // ✅ Simple version check using updated_at timestamp
+        const userVersion = Math.floor(new Date(userCheck.updated_at).getTime() / 1000);
+        if (decoded.perm_version && decoded.perm_version < userVersion - 300) { // 5 min grace period
+            console.log(`⚠️ Permission version mismatch: JWT(${decoded.perm_version}) vs DB(${userVersion})`);
+            
+            // Invalidate session to force fresh login
+            if (req.session?.session_id) {
+                await prisma.user_sessions.update({
+                    where: { id: req.session.session_id },
+                    data: { is_active: false }
+                });
+            }
+            
+            return res.status(401).json({
+                success: false,
+                message: 'Permissions have been updated. Please login again.',
+                code: 'AUTH_PERMISSIONS_CHANGED'
+            });
+        }
+
+        // ✅ Use permissions from JWT (FAST - no DB query needed!)
         req.user = {
             id: userId,
             username: decoded.username,
@@ -101,8 +138,10 @@ export const authMiddleware = async (req, res, next) => {
             email: decoded.email,
             organization_id: decoded.organization_id,
             department_id: decoded.department_id,
-            roles: decoded.roles || [],
-            permissions: allPermissions // Include all permissions (from roles + direct)
+            permissions: decoded.permissions || [], // ← From JWT!
+            role_names: decoded.role_names || [],   // ← From JWT!
+            roles: decoded.roles || [],             // ← Minimal role info from JWT
+            perm_version: decoded.perm_version || 0
         };
 
         req.authSource = tokenSource;

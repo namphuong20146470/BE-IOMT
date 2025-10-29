@@ -1,61 +1,30 @@
-/**
- * 🔐 Authentication Routes
- * Clean route definitions using micro-controllers
- */
-
+// features/auth/auth.routes.js
 import express from 'express';
-import { authMiddleware } from '../../middleware/authMiddleware.js';
-
-// Import micro-controllers
-import * as authController from './controllers/auth.controller.js';
-import * as sessionController from './controllers/session.controller.js';
-import * as profileController from './controllers/profile.controller.js';
-import * as passwordController from './controllers/password.controller.js';
-
-// Import validators
+import * as authController from './auth.controller.js';
+import { authMiddleware } from '../../shared/middleware/authMiddleware.js';
 import { 
     validateLogin, 
     validateChangePassword, 
     validateUpdateProfile,
     validateRefreshToken 
-} from './validators/auth.validator.js';
+} from './auth.validation.js';
 
 const router = express.Router();
 
-// ==========================================
-// PUBLIC ROUTES (No authentication required)
-// ==========================================
-
-// Authentication
+// Public routes
 router.post('/login', validateLogin, authController.login);
-router.post('/refresh', validateRefreshToken, sessionController.refreshToken);
+router.post('/refresh', validateRefreshToken, authController.refreshToken);
 
-// Password Reset (Future implementation)
-router.post('/reset-password-request', passwordController.requestPasswordReset);
-router.post('/reset-password', passwordController.resetPassword);
+// Debug route (DEVELOPMENT ONLY)
+router.post('/debug-token', authController.debugToken);
 
-// Debug Routes (DEVELOPMENT ONLY - Remove in production)
-if (process.env.NODE_ENV !== 'production') {
-    const debugController = await import('./controllers/debug.controller.js');
-    router.post('/debug-token', debugController.debugToken);
-}
-
-// ==========================================  
-// PROTECTED ROUTES (Authentication required)
-// ==========================================
-
-// Session Management
+// Protected routes (require authentication)
 router.post('/logout', authMiddleware, authController.logout);
-router.get('/verify', authMiddleware, sessionController.verifySession);
-router.delete('/sessions/:sessionId', authMiddleware, sessionController.terminateSession);
-router.get('/sessions/statistics', authMiddleware, sessionController.getSessionStatistics);
-
-// Profile Management
-router.get('/profile', authMiddleware, profileController.getProfile);
-router.get('/me', authMiddleware, profileController.getMe);
-router.patch('/profile', authMiddleware, validateUpdateProfile, profileController.updateProfile);
-
-// Password Management
-router.post('/change-password', authMiddleware, validateChangePassword, passwordController.changePassword);
+router.get('/profile', authMiddleware, authController.getProfile);
+router.get('/me', authMiddleware, authController.getMe);  // ✅ Full profile for app init
+router.get('/permissions', authMiddleware, authController.getPermissions);  // ✅ Permissions with caching
+router.get('/verify', authMiddleware, authController.verifySession);
+router.post('/change-password', authMiddleware, validateChangePassword, authController.changePassword);
+router.patch('/profile', authMiddleware, validateUpdateProfile, authController.updateProfile);  // ✅ Update user profile
 
 export default router;
