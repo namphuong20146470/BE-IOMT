@@ -14,7 +14,7 @@ import { HTTP_STATUS, MESSAGES } from '../../../shared/constants/index.js';
  */
 export const getAllUsers = async (req, res) => {
     try {
-        const filters = req.query;
+        const filters = req.query; 
         const pagination = {
             page: parseInt(req.query.page) || 1,
             limit: parseInt(req.query.limit) || 10

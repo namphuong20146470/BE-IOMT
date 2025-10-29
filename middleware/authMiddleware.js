@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { getUserAllPermissions } from '../utils/permissionHelpers.js';
+import permissionCache from '../utils/permissionCache.js';
 
 const prisma = new PrismaClient();
 
@@ -12,13 +13,11 @@ export const authMiddleware = async (req, res, next) => {
         let token = null;
         let tokenSource = null;
 
-        // ✅ Priority 1: Check Authorization Header (localStorage)
+        // Get token from header or cookie
         if (req.headers.authorization?.startsWith('Bearer ')) {
             token = req.headers.authorization.substring(7);
             tokenSource = 'bearer';
-        }
-        // ✅ Priority 2: Check HttpOnly Cookie (fallback)
-        else if (req.cookies?.access_token) {
+        } else if (req.cookies?.access_token) {
             token = req.cookies.access_token;
             tokenSource = 'cookie';
         }
@@ -27,71 +26,104 @@ export const authMiddleware = async (req, res, next) => {
             return res.status(401).json({
                 success: false,
                 message: 'Authentication required',
-                code: 'AUTH_TOKEN_MISSING',
-                hint: 'Provide token via Authorization header or HttpOnly cookie'
+                code: 'AUTH_TOKEN_MISSING'
             });
         }
 
-        // ✅ Verify JWT
+        // Verify JWT
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        console.log('🔍 JWT Decoded:', {
-            jti: decoded.jti,
-            sub: decoded.sub,
-            username: decoded.username,
-            tokenSource,
-            exp: new Date(decoded.exp * 1000).toISOString()
+
+        // 🚨 CRITICAL FIX: ALWAYS validate session regardless of token source
+        if (!decoded.jti) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid token structure - missing session ID',
+                code: 'AUTH_TOKEN_INVALID'
+            });
+        }
+
+        // ✅ Validate session in database (for BOTH bearer and cookie)
+        const session = await prisma.user_sessions.findUnique({
+            where: { id: decoded.jti },
+            select: {
+                id: true,
+                user_id: true,
+                expires_at: true,
+                is_active: true,
+                last_activity: true,
+                ip_address: true
+            }
         });
 
-        // ✅ Session validation (only for cookie-based auth)
-        if (tokenSource === 'cookie') {
-            if (!decoded.jti) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'Invalid token structure - missing session ID',
-                    code: 'AUTH_TOKEN_INVALID'
-                });
-            }
+        // ✅ Check session exists and is active
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                message: 'Session not found',
+                code: 'AUTH_SESSION_NOT_FOUND'
+            });
+        }
 
-            // ✅ FIXED: Correct variable names and validation
-            const session = await prisma.user_sessions.findUnique({
-                where: {
-                    id: decoded.jti
-                },
-                select: {
-                    id: true,
-                    user_id: true,
-                    expires_at: true,
-                    is_active: true,
-                    last_activity: true
+        if (!session.is_active) {
+            return res.status(401).json({
+                success: false,
+                message: 'Session has been revoked',
+                code: 'AUTH_SESSION_REVOKED'
+            });
+        }
+
+        if (new Date() > session.expires_at) {
+            return res.status(401).json({
+                success: false,
+                message: 'Session expired',
+                code: 'AUTH_SESSION_EXPIRED'
+            });
+        }
+
+        // ✅ Check inactivity timeout (30 minutes)
+        const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+        const timeSinceLastActivity = Date.now() - session.last_activity.getTime();
+        
+        if (timeSinceLastActivity > SESSION_TIMEOUT) {
+            // Auto-deactivate due to inactivity
+            await prisma.user_sessions.update({
+                where: { id: session.id },
+                data: { is_active: false }
+            });
+            
+            return res.status(401).json({
+                success: false,
+                message: 'Session timeout due to inactivity',
+                code: 'AUTH_SESSION_TIMEOUT'
+            });
+        }
+
+        // ✅ SECURITY: Check for IP change (optional but recommended)
+        const clientIP = req.ip || req.connection.remoteAddress;
+        if (session.ip_address && session.ip_address !== clientIP) {
+            console.warn(`⚠️ IP changed for session ${session.id}: ${session.ip_address} → ${clientIP}`);
+            
+            // Option 1: Just log (less strict)
+            // Option 2: Require re-auth (more secure)
+            // For now, we'll just update the IP
+            await prisma.user_sessions.update({
+                where: { id: session.id },
+                data: { 
+                    ip_address: clientIP,
+                    last_activity: new Date()
                 }
             });
-
-            console.log('🔍 Session found:', session);
-
-            // ✅ FIXED: Check for null and validate session
-            if (!session || !session.is_active || new Date() > session.expires_at) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'Session expired or invalid',
-                    code: 'AUTH_SESSION_INVALID'
-                });
-            }
-
-            // ✅ Update session activity
+        } else {
+            // ✅ Update last activity
             await prisma.user_sessions.update({
                 where: { id: session.id },
                 data: { last_activity: new Date() }
             });
-
-            req.session = {
-                session_id: decoded.jti,
-                expires_at: session.expires_at
-            };
         }
 
-        // ✅ Load full user permissions from database
+        // 🚀 Load user permissions with caching for better performance
         const userId = decoded.sub || decoded.id;
-        const allPermissions = await getUserAllPermissions(userId);
+        const allPermissions = await permissionCache.getPermissions(userId);
 
         // ✅ Attach user data to request
         req.user = {
@@ -101,17 +133,17 @@ export const authMiddleware = async (req, res, next) => {
             email: decoded.email,
             organization_id: decoded.organization_id,
             department_id: decoded.department_id,
-            roles: decoded.roles || [],
-            permissions: allPermissions // Include all permissions (from roles + direct)
+            role_ids: decoded.role_ids || [], // ✅ Use role_ids from JWT
+            permissions: allPermissions
+        };
+
+        req.session = {
+            session_id: decoded.jti,
+            expires_at: session.expires_at,
+            ip_address: session.ip_address
         };
 
         req.authSource = tokenSource;
-
-        console.log('✅ Authentication successful:', {
-            username: decoded.username,
-            source: tokenSource,
-            hasSession: !!req.session
-        });
 
         next();
 
@@ -138,8 +170,7 @@ export const authMiddleware = async (req, res, next) => {
         return res.status(500).json({
             success: false,
             message: 'Authentication failed',
-            code: 'AUTH_ERROR',
-            debug: process.env.NODE_ENV === 'development' ? error.message : undefined
+            code: 'AUTH_ERROR'
         });
     }
 };

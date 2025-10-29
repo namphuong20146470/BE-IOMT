@@ -1,5 +1,6 @@
-import roleService from '../../services/RoleService.js';
-import permissionService from '../../services/PermissionService.js';
+import roleService from '../../shared/services/RoleService.js';
+import permissionService from '../../shared/services/PermissionService.js';
+import permissionCache from '../../utils/permissionCache.js';
 import { 
     isSystemAdmin, 
     isOrganizationAdmin, 
@@ -404,6 +405,10 @@ export const assignRoleToUser = async (req, res) => {
                 conflicts: result.conflicts
             });
         }
+
+        // 🚀 PERFORMANCE: Invalidate permission cache for affected user
+        permissionCache.invalidate(target_user_id);
+        console.log(`🗑️ Invalidated permission cache for user ${target_user_id} after role assignment`);
 
         return res.status(201).json({
             success: true,

@@ -1,7 +1,7 @@
 import express from 'express';
-import permissionService from '../services/PermissionService.js';
-import roleService from '../services/RoleService.js';
-import auditService from '../services/AuditService.js';
+import permissionService from '../shared/services/PermissionService.js';
+import roleService from '../shared/services/RoleService.js';
+import auditService from '../shared/services/AuditService.js';
 
 const router = express.Router();
 

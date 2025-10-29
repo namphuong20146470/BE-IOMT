@@ -1,5 +1,5 @@
 import express from 'express';
-import { authMiddleware } from '../shared/middleware/authMiddleware.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
 import { requirePermission } from '../shared/middleware/rbacMiddleware.js';
 import { createRole, getAllRoles, deleteRole, updateRole } from '../controllers/roles/roles.controller.js';
 
@@ -27,9 +27,13 @@ import {
 // Import auth controllers
 import {
     login as loginUser,
-    refreshToken,
     logout as logoutAllSessions
-} from '../features/auth/auth.controller.js';
+} from '../features/auth/controllers/auth.controller.js';
+
+// Import session controllers
+import {
+    refreshToken
+} from '../features/auth/controllers/session.controller.js';
 
 // Import session management (if needed)
 // Note: terminateSession, getSessionStatistics may need to be implemented
@@ -94,9 +98,6 @@ import {
     removeRoleFromUser,
     getUserRoles
 } from '../features/users/controllers/user-roles.controller.js';
-
-// Auth related imports
-import { logout } from '../features/auth/auth.controller.js';
 
 // Import JWT for token testing
 import jwt from 'jsonwebtoken';
@@ -201,7 +202,7 @@ router.delete('/logs/all', authMiddleware, deleteAllLogs);          // Delete al
 // Đăng nhập
 router.post('/login', loginUser);
 // Đăng xuất
-router.post('/logout', authMiddleware, logout);
+router.post('/logout', authMiddleware, logoutAllSessions);
 
 // Token test endpoints
 router.get('/auth/test', authMiddleware, (req, res) => {
