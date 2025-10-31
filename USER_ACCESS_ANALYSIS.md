@@ -57,14 +57,14 @@ GET /actlog/users?scope=organization   // Same organization (current behavior)
 ```
 
 ## 📊 Impact Analysis
-
-| Aspect | Current | With Dept Filter |
-|--------|---------|------------------|
-| Users Visible | 4 | 2 |
-| Cross-dept Access | Yes | No |
-| Manager Effectiveness | High | Limited |
-| Data Privacy | Medium | High |
-| Code Changes | None | Moderate |
+------------------------------------------------------
+| Aspect                | Current | With Dept Filter |
+|-----------------------|---------|------------------|
+| Users Visible         | 4       | 2                |
+| Cross-dept Access     | Yes     | No               |
+| Manager Effectiveness | High    | Limited          |
+| Data Privacy          | Medium  | High             |
+| Code Changes          | None    | Moderate         |
 
 ## 🏁 Recommendation
 
