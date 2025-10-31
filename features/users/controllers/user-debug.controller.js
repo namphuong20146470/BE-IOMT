@@ -4,7 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import permissionService from '../../../shared/services/PermissionService.js';
+import permissionService from '../../../shared/services/PermissionService.backup.js';
 import { HTTP_STATUS } from '../../../shared/constants/index.js';
 
 const prisma = new PrismaClient();

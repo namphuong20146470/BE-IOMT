@@ -748,45 +748,25 @@ async logout(token) {
   generateAccessToken(user, sessionId) {
     const now = Math.floor(Date.now() / 1000);
     
-    // ✅ Extract unique permissions from all roles
-    const allPermissions = user.roles?.flatMap(role => role.permissions || []) || [];
-    const uniquePermissions = [...new Set(allPermissions)];
-    uniquePermissions.sort(); // Consistent ordering for caching
-    
-    // ✅ Extract role names for quick role checks
-    const roleNames = user.roles?.map(role => role.name) || [];
-    
+    // ✅ BEST PRACTICE: JWT contains ONLY identity, no permissions/roles
+    // Permissions will be loaded from DB on each request for real-time revocation
     const payload = {
-      sub: user.id, // Subject (user ID)
-      jti: sessionId, // ✅ JWT ID (session UUID)
+      sub: user.id, // Subject (user ID) - PRIMARY identifier
+      jti: sessionId, // JWT ID (session UUID) - for session tracking
       username: user.username,
       full_name: user.full_name,
       email: user.email,
       organization_id: user.organization_id,
       department_id: user.department_id,
       
-      // ✅ NEW: Flat permissions array for fast checking
-      permissions: uniquePermissions,
-      
-      // ✅ NEW: Role names for role-based checks
-      role_names: roleNames,
-      
-      // ✅ NEW: Permission version for invalidation (default 0 if not set)
-      perm_version: user.perm_version || 0,
-      
-      // ✅ Keep roles for compatibility (but smaller - no permissions)
-      roles: user.roles?.map(role => ({
-        id: role.id,
-        name: role.name,
-        color: role.color,
-        icon: role.icon
-      })) || [],
+      // ✅ Permission version for cache invalidation (use updated_at timestamp)
+      perm_version: user.perm_version || Math.floor(Date.now() / 1000),
       
       iat: now, // Issued at
-      exp: now + this.ACCESS_TOKEN_EXPIRES_SECONDS // ✅ 30 minutes
+      exp: now + this.ACCESS_TOKEN_EXPIRES_SECONDS // 30 minutes
     };
 
-    console.log(`🔐 JWT Generated with ${uniquePermissions.length} permissions for ${user.username}`);
+    console.log(`🔐 JWT Generated (identity-only) for ${user.username}`);
 
     return jwt.sign(payload, process.env.JWT_SECRET, {
       algorithm: 'HS256'

@@ -553,9 +553,10 @@ class DynamicMqttManager {
         for (const [fieldName, value] of Object.entries(allFields)) {
             let measurement = this.measurementCache.get(fieldName);
             
-            // Auto-create measurement if not exists
+            // ✅ Double-check pattern to avoid race conditions
             if (!measurement) {
-                measurement = await this.createMeasurement(tx, fieldName, value);
+                // Try to get from DB first (another process might have created it)
+                measurement = await this.getOrCreateMeasurement(tx, fieldName, value);
                 this.measurementCache.set(fieldName, measurement);
                 this.stats.cacheSizeMeasurements = this.measurementCache.size;
             }
@@ -580,11 +581,32 @@ class DynamicMqttManager {
                 timestamp
             ]);
             
-            await tx.$queryRawUnsafe(`
-                INSERT INTO device_data (
-                    device_id, measurement_id, data_payload, timestamp
-                ) VALUES ${values}
-            `, ...params);
+            try {
+                await tx.$queryRawUnsafe(`
+                    INSERT INTO device_data (
+                        device_id, measurement_id, data_payload, timestamp
+                    ) VALUES ${values}
+                `, ...params);
+                
+                console.log(`✅ Saved ${measurementData.length} fields to device_data`);
+            } catch (fkError) {
+                // ✅ Handle foreign key constraint errors gracefully
+                if (fkError.code === 'P2010' && fkError.meta?.code === '23503') {
+                    console.error(`❌ Foreign key constraint error for device_data:`, fkError.meta.message);
+                    console.error(`Measurement IDs:`, measurementData.map(m => m.measurementId));
+                    
+                    // Re-validate measurements exist
+                    for (const m of measurementData) {
+                        const exists = await tx.$queryRaw`
+                            SELECT id FROM measurements WHERE id = ${m.measurementId}
+                        `;
+                        if (exists.length === 0) {
+                            console.error(`❌ Missing measurement ID: ${m.measurementId} for ${m.measurementName}`);
+                        }
+                    }
+                }
+                throw fkError;
+            }
         }
     }
 
@@ -592,8 +614,13 @@ class DynamicMqttManager {
         const updates = [];
         
         for (const [fieldName, fieldData] of Object.entries(fullState)) {
-            const measurement = this.measurementCache.get(fieldName);
-            if (!measurement) continue;
+            let measurement = this.measurementCache.get(fieldName);
+            
+            // ✅ Ensure measurement exists before using it
+            if (!measurement) {
+                measurement = await this.getOrCreateMeasurement(tx, fieldName, fieldData.value);
+                this.measurementCache.set(fieldName, measurement);
+            }
             
             updates.push({
                 deviceId,
@@ -628,9 +655,33 @@ class DynamicMqttManager {
         }
     }
 
+    async getOrCreateMeasurement(tx, fieldName, value) {
+        try {
+            // ✅ First try to get existing measurement
+            const existing = await tx.$queryRaw`
+                SELECT id, name, data_type 
+                FROM measurements 
+                WHERE name = ${fieldName}
+            `;
+            
+            if (existing.length > 0) {
+                console.log(`📋 Found existing measurement: ${fieldName}`);
+                return existing[0];
+            }
+            
+            // ✅ If not found, create with UPSERT to handle race conditions
+            return await this.createMeasurement(tx, fieldName, value);
+            
+        } catch (error) {
+            console.error(`❌ Error in getOrCreateMeasurement for ${fieldName}:`, error);
+            throw error;
+        }
+    }
+
     async createMeasurement(tx, fieldName, value) {
         const dataType = this.inferDataType(value);
         
+        // ✅ Use UPSERT to handle race conditions
         const result = await tx.$queryRaw`
             INSERT INTO measurements (
                 name, data_type, unit, validation_rules
@@ -640,10 +691,14 @@ class DynamicMqttManager {
                 'auto',
                 ${JSON.stringify({ auto_created: true, source: 'mqtt_dynamic' })}::jsonb
             )
+            ON CONFLICT (name) 
+            DO UPDATE SET 
+                data_type = EXCLUDED.data_type,
+                validation_rules = EXCLUDED.validation_rules
             RETURNING id, name, data_type
         `;
         
-        console.log(`📊 Auto-created measurement: ${fieldName} (${dataType})`);
+        console.log(`📊 Auto-created/updated measurement: ${fieldName} (${dataType})`);
         return result[0];
     }
 

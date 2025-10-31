@@ -1,4 +1,4 @@
-import permissionService from '../../shared/services/PermissionService.js';
+import permissionService from '../services/PermissionService.backup.js';
 import auditService from '../../shared/services/AuditService.js';
 
 /**

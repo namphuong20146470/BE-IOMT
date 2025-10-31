@@ -5,7 +5,7 @@
 
 import userService from '../user.service.js';
 import auditService from '../../../shared/services/AuditService.js';
-import permissionService from '../../../shared/services/PermissionService.js';
+import permissionService from '../../../shared/services/PermissionService.backup.js';
 import { HTTP_STATUS, MESSAGES } from '../../../shared/constants/index.js';
 
 /**

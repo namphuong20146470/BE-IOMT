@@ -1,6 +1,6 @@
-import jwt from 'jsonwebtoken';
-import prisma from '../../config/db.js';
-import permissionService from '../services/PermissionService.js';
+const jwt = require('jsonwebtoken');
+const { prisma } = require('../../config/db');
+const permissionService = require('../services/PermissionService');
 
 /**
  * 🔐 AUTHENTICATE - Support both HttpOnly Cookie và Bearer Token
@@ -308,14 +308,13 @@ const invalidateUserPermissions = (userId) => {
     permissionService.invalidateUserCache(userId);
 };
 
-export {
+module.exports = {
     authMiddleware,
     optionalAuth,
     requirePermission,
     requireRole,
     requireAnyPermission,
-    invalidateUserPermissions
+    invalidateUserPermissions,
+    // Default export for compatibility
+    default: authMiddleware
 };
-
-// Default export for compatibility
-export default authMiddleware;

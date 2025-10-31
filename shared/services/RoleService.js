@@ -869,7 +869,7 @@ async updateRolePermissions(roleId, permissionIds, updatedBy) {
       console.log(`🔄 Clearing permission cache for ${usersWithRole.length} users with role ${roleId}`);
 
       // Import PermissionService to clear user caches
-      const { default: permissionService } = await import('./PermissionService.js');
+      const { default: permissionService } = await import('./PermissionService.backup.js');
 
       // Clear cache for each user
       for (const userRole of usersWithRole) {

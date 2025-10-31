@@ -51,10 +51,10 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
     }
 
     try {
-        // ✅ Different queries for different table schemas
         let query;
         
         if (tableName === 'iot_environment_status') {
+            // ✅ Environment có schema riêng
             query = `
                 SELECT 
                     id,
@@ -71,7 +71,9 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
                 ORDER BY timestamp DESC 
                 LIMIT 1
             `;
-        } else if (tableName === 'led_nova_100') {
+        } else {
+            // ✅ TẤT CẢ device tables khác đều dùng schema này
+            // (auo_display, camera_control_unit, electronic_endoflator, led_nova_100)
             query = `
                 SELECT 
                     id,
@@ -92,8 +94,6 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
                 ORDER BY timestamp DESC 
                 LIMIT 1
             `;
-        } else {
-            throw new Error(`Unsupported table for query: ${tableName}`);
         }
         
         const result = await prisma.$queryRawUnsafe(query);
@@ -113,15 +113,14 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
         return null;
     }
 }
-
 // ==================== DUPLICATE + UPDATE STRATEGY ====================
 
 async function duplicateAndUpdateRecord(tableName, newData) {
     try {
-        // ✅ 1. Get COMPLETE latest record (no time window limit)
+        // ✅ 1. Get COMPLETE latest record
         const latestRecord = await getLatestRecord(tableName);
         
-        // ✅ 2. Enhanced logging to debug merge issues
+        // ✅ 2. Enhanced logging
         if (process.env.DEBUG_MQTT === 'true') {
             console.log(`🔍 [${tableName}] Latest record analysis:`);
             if (latestRecord) {
@@ -137,36 +136,20 @@ async function duplicateAndUpdateRecord(tableName, newData) {
             }
         }
         
-        // ✅ 3. If no record exists at all, create minimal record with only MQTT data
+        // ✅ 3. If no record exists, create minimal record
         if (!latestRecord) {
-            console.warn(`⚠️ No latest record found for ${tableName}, trying to find ANY record...`);
-            
-            const anyRecord = await prisma.$queryRawUnsafe(`
-                SELECT * FROM ${tableName} 
-                WHERE id IS NOT NULL 
-                ORDER BY timestamp DESC 
-                LIMIT 1
-            `);
-            
-            if (anyRecord && anyRecord[0]) {
-                console.log(`✅ Found fallback record from ${anyRecord[0].timestamp}`);
-                return await mergeWithRecord(tableName, anyRecord[0], newData);
-            } else {
-                // ✅ IMPROVED: Only create fields that MQTT actually provides
-                console.warn(`⚠️ Table ${tableName} is completely empty, creating minimal record`);
-                return createMinimalRecord(tableName, newData);
-            }
+            console.warn(`⚠️ Table ${tableName} is empty, creating minimal record with MQTT data only`);
+            return createMinimalRecord(tableName, newData);
         }
 
         // ✅ 4. Merge with found record
-        return await mergeWithRecord(tableName, latestRecord, newData);
+        return mergeWithRecord(tableName, latestRecord, newData);
         
     } catch (error) {
         console.error(`❌ Error in duplicate+update for ${tableName}:`, error);
         throw error;
     }
 }
-
 // ✅ NEW: Separate merge function with better null handling
 async function mergeWithRecord(tableName, sourceRecord, newData) {
     // ✅ 2. Log merge strategy
