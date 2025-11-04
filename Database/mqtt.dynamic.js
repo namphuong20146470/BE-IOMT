@@ -518,6 +518,10 @@ class DynamicMqttManager {
 
     async saveBatchOptimized(deviceId, allFields, fullState, rawData, retryCount = 0) {
         try {
+            // ✅ STEP 1: Pre-create all measurements OUTSIDE transaction to avoid rollback issues
+            await this.ensureMeasurementsExist(allFields, fullState);
+            
+            // ✅ STEP 2: Execute data save in transaction with validated measurements
             await prisma.$transaction(async (tx) => {
                 const timestamp = new Date();
                 
@@ -534,6 +538,9 @@ class DynamicMqttManager {
             console.log(`💾 Saved ${Object.keys(allFields).length} fields for device ${deviceId}`);
             
         } catch (error) {
+            // ✅ Clear measurement cache on error to force refresh
+            this.clearMeasurementCacheForFields(allFields, fullState);
+            
             if (retryCount < 3 && this.isRetryableError(error)) {
                 this.stats.retries++;
                 console.warn(`🔄 Retrying save for device ${deviceId}, attempt ${retryCount + 1}`);
@@ -547,18 +554,56 @@ class DynamicMqttManager {
         }
     }
 
+    // ✅ NEW: Ensure all measurements exist before transaction
+    async ensureMeasurementsExist(allFields, fullState) {
+        const allFieldNames = new Set([
+            ...Object.keys(allFields),
+            ...Object.keys(fullState)
+        ]);
+
+        for (const fieldName of allFieldNames) {
+            let measurement = this.measurementCache.get(fieldName);
+            
+            if (!measurement) {
+                // Create measurement outside transaction
+                measurement = await this.getOrCreateMeasurementSafe(fieldName, 
+                    allFields[fieldName] || fullState[fieldName]?.value);
+                
+                if (measurement) {
+                    this.measurementCache.set(fieldName, measurement);
+                    this.stats.cacheSizeMeasurements = this.measurementCache.size;
+                }
+            }
+        }
+    }
+
+    // ✅ NEW: Clear cache for specific fields on error
+    clearMeasurementCacheForFields(allFields, fullState) {
+        const allFieldNames = new Set([
+            ...Object.keys(allFields),
+            ...Object.keys(fullState)
+        ]);
+
+        for (const fieldName of allFieldNames) {
+            this.measurementCache.delete(fieldName);
+        }
+        
+        this.stats.cacheSizeMeasurements = this.measurementCache.size;
+        console.log(`🧹 Cleared measurement cache for ${allFieldNames.size} fields`);
+    }
+
     async saveAllFieldsToHistory(tx, deviceId, allFields, timestamp) {
         const measurementData = [];
         
         for (const [fieldName, value] of Object.entries(allFields)) {
             let measurement = this.measurementCache.get(fieldName);
             
-            // ✅ Double-check pattern to avoid race conditions
+            // ✅ Validate measurement exists (should exist from pre-creation step)
             if (!measurement) {
-                // Try to get from DB first (another process might have created it)
+                console.error(`❌ Missing measurement in cache for ${fieldName}`);
+                // Try emergency creation within transaction
                 measurement = await this.getOrCreateMeasurement(tx, fieldName, value);
                 this.measurementCache.set(fieldName, measurement);
-                this.stats.cacheSizeMeasurements = this.measurementCache.size;
             }
             
             measurementData.push({
@@ -622,15 +667,24 @@ class DynamicMqttManager {
                 this.measurementCache.set(fieldName, measurement);
             }
             
-            updates.push({
-                deviceId,
-                measurementId: measurement.id,
-                value: fieldData.value,
-                updatedAt: fieldData.updated_at || timestamp
-            });
+            // ✅ CRITICAL FIX: Only insert numeric values to device_latest_data
+            // Skip text values like "18:29:32" as latest_value column is Float type
+            const value = fieldData.value;
+            if (typeof value === 'number' || 
+                (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(parseFloat(value)))) {
+                
+                updates.push({
+                    deviceId,
+                    measurementId: measurement.id,
+                    value: typeof value === 'number' ? value : parseFloat(value),
+                    updatedAt: fieldData.updated_at || timestamp
+                });
+            } else {
+                console.log(`⏭️ Skipping non-numeric value for latest_data: ${fieldName}=${value} (${typeof value})`);
+            }
         }
         
-        // Batch upsert
+        // Batch upsert - all values are numeric now
         if (updates.length > 0) {
             const values = updates.map((u, idx) => 
                 `($${idx * 4 + 1}::uuid, $${idx * 4 + 2}::uuid, $${idx * 4 + 3}::float, $${idx * 4 + 4})`
@@ -704,13 +758,62 @@ class DynamicMqttManager {
 
     inferDataType(value) {
         if (typeof value === 'number') {
-            return Number.isInteger(value) ? 'integer' : 'numeric';
+            return 'numeric'; // ✅ Use 'numeric' instead of 'integer' (matches enum)
         } else if (typeof value === 'boolean') {
             return 'boolean';
         } else if (typeof value === 'object' && value !== null) {
             return 'json';
+        } else if (typeof value === 'string') {
+            // ✅ Enhanced string type detection
+            if (/^[\d.+-]+$/.test(value) && !isNaN(parseFloat(value))) {
+                return 'numeric'; // Numeric string that can be parsed
+            }
+            // For time strings like "18:27:53", dates, etc. - store as text
         }
-        return 'text';
+        return 'text'; // Default to text for all strings including time values
+    }
+
+    // ✅ NEW: Safe measurement creation outside transaction
+    async getOrCreateMeasurementSafe(fieldName, value) {
+        try {
+            // First try to find existing using raw query (faster)
+            const existing = await prisma.$queryRaw`
+                SELECT id, name, data_type 
+                FROM measurements 
+                WHERE name = ${fieldName}
+            `;
+            
+            if (existing.length > 0) {
+                console.log(`📋 Found existing measurement (safe): ${fieldName}`);
+                return existing[0];
+            }
+            
+            // Create new measurement using UPSERT for safety
+            const dataType = this.inferDataType(value);
+            const result = await prisma.$queryRaw`
+                INSERT INTO measurements (
+                    name, data_type, unit, validation_rules
+                ) VALUES (
+                    ${fieldName},
+                    ${dataType}::measurement_data_type,
+                    'auto',
+                    ${JSON.stringify({ auto_created: true, source: 'mqtt_dynamic_safe' })}::jsonb
+                )
+                ON CONFLICT (name) 
+                DO UPDATE SET 
+                    data_type = EXCLUDED.data_type,
+                    validation_rules = EXCLUDED.validation_rules
+                RETURNING id, name, data_type
+            `;
+            
+            console.log(`📊 Safe auto-created measurement: ${fieldName} (${dataType})`);
+            return result[0];
+            
+        } catch (error) {
+            console.error(`❌ Error in safe measurement creation ${fieldName}:`, error.message);
+            // Don't throw - this is pre-creation, let transaction handle it
+            return null;
+        }
     }
 
     // ===== ERROR HANDLING & RETRY =====

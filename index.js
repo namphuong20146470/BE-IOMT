@@ -61,7 +61,10 @@ const allowedOrigins = [
 // Middleware
 app.use(express.json());
 app.use(cookieParser()); // 🍪 Enable cookie parsing for HttpOnly cookies
-
+// const io = new Server();
+// io.on('connection', (socket) => {
+//   console.log('New client connected:', socket.id);
+// });
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
