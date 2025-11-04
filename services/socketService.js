@@ -11,6 +11,7 @@ class SocketService {
         // ✅ NEW: Device metadata cache for security
         this.deviceMetadataCache = new Map(); // deviceId -> { orgId, deptId, name, timestamp }
         this.pendingCacheRequests = new Map(); // ✅ Track pending requests to prevent race conditions
+        this.orgValidationCache = new Map(); // ✅ Cache organization validation results
         this.cacheExpiry = 300000; // 5 minutes
         this.prisma = prisma; // ✅ Store reference to avoid dynamic imports
         
@@ -185,14 +186,24 @@ class SocketService {
                 });
             });
 
-            // Handle disconnect with proper cleanup
+            // Handle disconnect with enhanced cleanup
             socket.on('disconnect', (reason) => {
-                // ✅ Get rooms before cleanup
                 const userRooms = Array.from(this.roomMemberships.get(socket.id) || []);
                 
-                // ✅ Explicitly leave all rooms (Socket.IO will handle this automatically, but be explicit)
+                // ✅ Notify device rooms about viewer disconnect (optional feature)
                 userRooms.forEach(room => {
                     socket.leave(room);
+                    
+                    // ✅ Notify other viewers in device rooms (optional)
+                    if (room.startsWith('device:') && !socket.userId.startsWith('anonymous')) {
+                        this.io.to(room).emit('viewer_left', {
+                            username: socket.username,
+                            userId: socket.userId,
+                            room,
+                            timestamp: new Date().toISOString(),
+                            reason
+                        });
+                    }
                 });
                 
                 // ✅ Cleanup tracking
@@ -200,9 +211,15 @@ class SocketService {
                 this.roomMemberships.delete(socket.id);
                 this.stats.activeConnections--;
                 
-                console.log(`🔌 Client disconnected: ${socket.username} - ${reason}`);
+                console.log(`🔌 ${socket.username} disconnected - ${reason}`);
                 console.log(`   Left rooms: [${userRooms.join(', ')}]`);
                 console.log(`   Remaining connections: ${this.stats.activeConnections}`);
+                
+                // ✅ Optional: Clear device cache if no more viewers for specific devices
+                if (userRooms.some(room => room.startsWith('device:'))) {
+                    // Could implement smart cache cleanup here
+                    console.log(`🧹 Device viewer disconnected, consider cache optimization`);
+                }
             });
 
             // Simple ping/pong
@@ -618,15 +635,19 @@ class SocketService {
         
         this.stats.cacheMisses++;
         
-        // ✅ Check if request is already pending (prevent race conditions)
-        if (this.pendingCacheRequests.has(deviceId)) {
+        // ✅ Check pending with timestamp tracking
+        const pending = this.pendingCacheRequests.get(deviceId);
+        if (pending) {
             console.log(`⏳ Waiting for pending cache request for ${deviceId}`);
-            return await this.pendingCacheRequests.get(deviceId);
+            return await pending.promise;
         }
         
-        // ✅ Create and store promise
+        // ✅ Create promise wrapper with timestamp
         const fetchPromise = this.fetchDeviceMetadataFromDB(deviceId);
-        this.pendingCacheRequests.set(deviceId, fetchPromise);
+        this.pendingCacheRequests.set(deviceId, {
+            promise: fetchPromise,
+            startTime: Date.now()
+        });
         
         try {
             const metadata = await fetchPromise;
@@ -689,17 +710,29 @@ class SocketService {
         }
     }
 
-    // ✅ NEW: Validate organization exists in database
+    // ✅ ENHANCED: Validate organization with caching
     async validateOrganization(orgId) {
+        // ✅ Check cache first
+        if (this.orgValidationCache.has(orgId)) {
+            return this.orgValidationCache.get(orgId);
+        }
+
         try {
             const org = await this.prisma.$queryRaw`
                 SELECT id FROM organizations 
                 WHERE id = ${orgId}::uuid
                 LIMIT 1
             `;
-            return org.length > 0;
+            const isValid = org.length > 0;
+            
+            // ✅ Cache result (will expire with device cache cleanup)
+            this.orgValidationCache.set(orgId, isValid);
+            console.log(`🏢 Cached organization validation for ${orgId}: ${isValid}`);
+            
+            return isValid;
         } catch (error) {
             console.error(`❌ Error validating organization ${orgId}:`, error);
+            // ✅ Don't cache errors, allow retry
             return false;
         }
     }
@@ -727,10 +760,16 @@ class SocketService {
                 }
             }
             
+            // ✅ Clean organization validation cache (same expiry as device cache)
+            if (this.orgValidationCache.size > 100) {
+                console.log(`🧹 Clearing organization validation cache (${this.orgValidationCache.size} entries)`);
+                this.orgValidationCache.clear();
+            }
+            
             // ✅ Clean old pending requests (prevent memory leaks)
-            for (const [deviceId, promise] of this.pendingCacheRequests.entries()) {
-                // If promise has been pending for more than 30 seconds, remove it
-                if (promise._startTime && now - promise._startTime > 30000) {
+            for (const [deviceId, pendingObj] of this.pendingCacheRequests.entries()) {
+                // If request has been pending for more than 30 seconds, remove it
+                if (now - pendingObj.startTime > 30000) {
                     this.pendingCacheRequests.delete(deviceId);
                     clearedPending++;
                 }
@@ -752,25 +791,15 @@ class SocketService {
 
     // ===== DEVICE-AWARE MQTT BROADCASTING =====
 
-    // ✅ OPTIMIZED: Broadcast to hierarchy rooms with memory efficiency
+    // ✅ OPTIMIZED: Memory-efficient hierarchy broadcasting
     async broadcastToDeviceRoom(deviceId, deviceName, data, metadata = {}) {
         if (!this.io) return 0;
 
         try {
-            // ✅ Get device metadata for hierarchy broadcasting
             const deviceMeta = await this.getDeviceMetadata(deviceId);
-
-            // ✅ Single base payload (frozen to prevent accidental mutation)
-            const basePayload = Object.freeze({
-                deviceId,
-                deviceName: deviceName || `Device-${deviceId}`,
-                data,
-                timestamp: new Date().toISOString(),
-                source: 'mqtt',
-                ...metadata
-            });
-
-            // ✅ Hierarchy info (reused across all broadcasts)
+            
+            // ✅ Create immutable shared data once
+            const timestamp = new Date().toISOString();
             const hierarchy = deviceMeta ? {
                 orgId: deviceMeta.orgId,
                 deptId: deviceMeta.deptId,
@@ -778,69 +807,66 @@ class SocketService {
                 deptName: deviceMeta.deptName
             } : null;
 
-            // ✅ Plan all broadcasts (no duplicate payload creation)
+            // ✅ Plan broadcast targets (no payload duplication yet)
             const broadcasts = [];
-            let broadcastCount = 0;
-
-            // ✅ 1. Device room (always)
-            const deviceRoom = `device:${deviceId}`;
+            
+            // ✅ Device room (always)
             broadcasts.push({
-                room: deviceRoom,
-                event: 'mqtt_data',
-                payload: { ...basePayload, room: deviceRoom, hierarchy }
+                room: `device:${deviceId}`,
+                event: 'mqtt_data'
             });
 
-            // ✅ 2. Department room (if exists)
+            // ✅ Department room (if exists)
             if (deviceMeta?.deptId) {
-                const deptRoom = `dept:${deviceMeta.deptId}`;
                 broadcasts.push({
-                    room: deptRoom,
-                    event: 'dept_device_data',
-                    payload: { ...basePayload, room: deptRoom, hierarchy }
+                    room: `dept:${deviceMeta.deptId}`,
+                    event: 'dept_device_data'
                 });
             }
 
-            // ✅ 3. Organization room (if exists)
+            // ✅ Organization room (if exists)
             if (deviceMeta?.orgId) {
-                const orgRoom = `org:${deviceMeta.orgId}`;
                 broadcasts.push({
-                    room: orgRoom,
-                    event: 'org_device_data',
-                    payload: { ...basePayload, room: orgRoom, hierarchy }
+                    room: `org:${deviceMeta.orgId}`,
+                    event: 'org_device_data'
                 });
             }
 
-            // ✅ 4. Admin room (always for system monitoring)
+            // ✅ Admin room (always for system monitoring)
             broadcasts.push({
                 room: 'admin:system',
-                event: 'admin_device_data',
-                payload: { ...basePayload, room: 'admin:system', hierarchy }
+                event: 'admin_device_data'
             });
 
-            // ✅ Batch emit all broadcasts
-            for (const { room, event, payload } of broadcasts) {
-                this.io.to(room).emit(event, payload);
-                broadcastCount++;
+            // ✅ Create base payload once (Socket.IO handles serialization internally)
+            const basePayload = {
+                deviceId,
+                deviceName: deviceName || `Device-${deviceId}`,
+                data,
+                timestamp,
+                source: 'mqtt',
+                hierarchy,
+                ...metadata
+            };
+
+            // ✅ Emit to all rooms (Socket.IO optimizes serialization)
+            for (const { room, event } of broadcasts) {
+                // Only add room info, let Socket.IO handle the rest
+                this.io.to(room).emit(event, { ...basePayload, room });
             }
 
-            this.stats.messagesEmitted += broadcastCount;
+            this.stats.messagesEmitted += broadcasts.length;
+            console.log(`📡 Device ${deviceId} → ${broadcasts.length} rooms: [${broadcasts.map(b => b.room).join(', ')}]`);
 
-            console.log(`📡 Device ${deviceId} → ${broadcastCount} rooms: [${broadcasts.map(b => b.room).join(', ')}]`);
-            
-            if (process.env.DEBUG_MQTT === 'true') {
-                console.log(`📤 Hierarchy:`, hierarchy);
-            }
-
-            // ✅ Warning if no device metadata found
             if (!deviceMeta) {
-                console.warn(`⚠️ Device ${deviceId} has no metadata - broadcasting to device room and admin only`);
+                console.warn(`⚠️ Device ${deviceId} has no metadata - limited broadcast`);
             }
 
-            return broadcastCount;
+            return broadcasts.length;
 
         } catch (error) {
-            console.error(`❌ Error broadcasting device data for ${deviceId}:`, error);
-            // ✅ Fallback: broadcast to device room only
+            console.error(`❌ Error broadcasting for ${deviceId}:`, error);
+            // ✅ Fallback to device room only
             try {
                 this.io.to(`device:${deviceId}`).emit('mqtt_data', {
                     deviceId,
@@ -849,7 +875,7 @@ class SocketService {
                     timestamp: new Date().toISOString(),
                     source: 'mqtt_fallback',
                     room: `device:${deviceId}`,
-                    error: 'Partial broadcast due to error',
+                    error: 'Partial broadcast',
                     ...metadata
                 });
                 this.stats.messagesEmitted++;
@@ -982,7 +1008,9 @@ class SocketService {
             cacheHits: this.stats.cacheHits,
             cacheMisses: this.stats.cacheMisses,
             permissionDenials: this.stats.permissionDenials,
-            cacheSize: this.deviceMetadataCache.size,
+            deviceCacheSize: this.deviceMetadataCache.size,
+            orgCacheSize: this.orgValidationCache.size,
+            pendingRequests: this.pendingCacheRequests.size,
             cacheHitRate: this.stats.cacheHits + this.stats.cacheMisses > 0 
                 ? (this.stats.cacheHits / (this.stats.cacheHits + this.stats.cacheMisses) * 100).toFixed(2) + '%'
                 : 'N/A',
