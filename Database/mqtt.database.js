@@ -91,7 +91,7 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
                     power_socket_status,
                     timestamp
                 FROM ${tableName} 
-                ORDER BY timestamp DESC 
+                ORDER BY timestamp DESC  
                 LIMIT 1
             `;
         }
