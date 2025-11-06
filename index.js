@@ -23,6 +23,10 @@ import usersRoutes from './features/users/users.routes.js';
 import userPermissionsRoutes from './features/users/userPermissions.routes.js';
 import deviceRoutes from './features/devices/device.routes.js';
 import deviceDataRoutes from './features/devices/deviceData.routes.js';
+import organizationsRoutes from './features/organizations/organizations.routes.js';
+import departmentsRoutes from './features/departments/departments.routes.js';
+import maintenanceRoutes from './features/maintenance/maintenance.routes.js';
+import alertsRoutes from './features/alerts/alerts.routes.js';
 
 // Legacy routes (to be migrated)
 import actLog from './routes/actLog.js';
@@ -121,6 +125,18 @@ app.use('/users', userPermissionsRoutes); // User permissions sub-routes
 
 // Device Management
 app.use('/devices', deviceRoutes);
+
+// Organization Management
+app.use('/', organizationsRoutes);
+
+// Department Management  
+app.use('/', departmentsRoutes);
+
+// Maintenance Management
+app.use('/', maintenanceRoutes);
+
+// Alerts & Warnings (Formalized)
+app.use('/', alertsRoutes);
 
 // Master Data & Device Data (combined with legacy routes)
 app.use('/', deviceDataRoutes, masterDataRoutes);

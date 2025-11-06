@@ -1179,13 +1179,13 @@ class DynamicMqttManager {
         this.deviceTopics.clear();
     }
 
-    // ==================== SIMPLIFIED SOCKET.IO INTEGRATION ====================
+    // ==================== SECURE SOCKET.IO INTEGRATION ====================
     
     emitRealtimeData(deviceId, allFields, fullState) {
         try {
-            // Sử dụng global Socket.IO instance
-            if (!global.io) {
-                console.warn('⚠️ Socket.IO not available');
+            // ✅ Use secure SocketService instead of global io
+            if (!socketService || !socketService.isReady()) {
+                console.warn('⚠️ SocketService not available or not ready');
                 return;
             }
 
@@ -1199,7 +1199,7 @@ class DynamicMqttManager {
                 simpleData[key] = fieldData.value;
             }
 
-            // ✅ NEW: Room-based broadcasting instead of global
+            // ✅ Prepare secure payload with device metadata
             const payload = {
                 deviceId,
                 deviceName,
@@ -1207,24 +1207,21 @@ class DynamicMqttManager {
                 metadata: {
                     receivedFields: Object.keys(allFields),
                     lastUpdate: new Date().toISOString(),
-                    source: 'mqtt_dynamic'
+                    source: 'mqtt_dynamic',
+                    modelName: device?.model_name,
+                    manufacturer: device?.manufacturer
                 }
             };
 
-            // ✅ Broadcast to specific device room
-            payload.room = `device:${deviceId}`;
-            global.io.to(`device:${deviceId}`).emit('mqtt_data', payload);
-            
-            // ✅ Also broadcast to 'device:all' room for users monitoring all devices  
-            payload.room = 'device:all';
-            global.io.to('device:all').emit('mqtt_data', payload);
+            // ✅ Use secure hierarchy-based broadcasting
+            socketService.broadcastToDeviceRoom(deviceId, 'mqtt_data', payload);
 
             if (process.env.DEBUG_MQTT === 'true') {
-                console.log(`🔥 Socket.IO room broadcast sent for ${deviceName}: rooms [device:${deviceId}, device:all] with ${Object.keys(allFields).length} fields`);
+                console.log(`� Secure broadcast sent for ${deviceName} (${deviceId}): ${Object.keys(allFields).length} fields`);
             }
 
         } catch (error) {
-            console.error('❌ Error emitting real-time data:', error);
+            console.error('❌ Error emitting secure real-time data:', error);
         }
     }
 

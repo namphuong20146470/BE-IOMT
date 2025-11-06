@@ -57,6 +57,13 @@ import {
     getExpiringWarranties
 } from '../../controllers/devices/warranty.controller.js';
 
+// Device History Controllers
+import {
+    getDeviceHistory,
+    getDeviceRealtimeData,
+    getDeviceDataSummary
+} from '../../controllers/devices/deviceHistory.controller.js';
+
 const router = express.Router();
 
 // ====================================================================
@@ -133,6 +140,31 @@ router.put('/devices/:id', authMiddleware, requirePermission('device.update'), u
 
 // DELETE /devices/:id - Delete device
 router.delete('/devices/:id', authMiddleware, requirePermission('device.delete'), deleteDevice);
+
+// ====================================================================
+// DEVICE DATA & HISTORY ROUTES
+// ====================================================================
+
+// GET /devices/:id/realtime - Get latest sensor data for device
+router.get('/devices/:id/realtime', 
+    authMiddleware, 
+    requirePermission('device.read'), 
+    getDeviceRealtimeData
+);
+
+// GET /devices/:id/history - Get sensor data history for device
+router.get('/devices/:id/history', 
+    authMiddleware, 
+    requirePermission('device.read'), 
+    getDeviceHistory
+);
+
+// GET /devices/:id/summary - Get data statistics summary for device
+router.get('/devices/:id/summary', 
+    authMiddleware, 
+    requirePermission('device.read'), 
+    getDeviceDataSummary
+);
 
 // ====================================================================
 // DEVICE CONNECTIVITY ROUTES

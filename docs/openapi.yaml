@@ -1,0 +1,1374 @@
+openapi: 3.0.3
+info:
+  title: IoMT Device Management System API
+  description: |-
+    API cho hệ thống quản lý thiết bị y tế IoMT (Internet of Medical Things).
+    
+    Hệ thống cung cấp các chức năng:
+    - Quản lý thiết bị y tế (Device Management)
+    - Giám sát real-time qua MQTT
+    - Quản lý bảo trì và bảo hành
+    - Quản lý vòng đời thiết bị
+    - Hệ thống cảnh báo tự động
+    - Quản lý người dùng và phân quyền
+    
+    ## Authentication
+    API sử dụng Bearer Token (JWT) để xác thực. 
+    Include token trong header: `Authorization: Bearer <token>`
+    
+    ## Rate Limiting
+    - 300 requests/minute per API key
+    - Header `X-RateLimit-Remaining` cho biết số request còn lại
+    
+    Links:
+    - [Documentation](https://iomt.hoangphucthanh.vn/docs)
+    - [Support](mailto:support@iomt.com)
+  version: 1.0.0
+  contact:
+    email: support@iomt.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: https://iomt.hoangphucthanh.vn/api/v1
+    description: Production server
+  - url: http://localhost:3000/api/v1
+    description: Local development server
+
+tags:
+  - name: Authentication
+    description: Đăng nhập, đăng xuất, quản lý token
+  - name: Users
+    description: Quản lý người dùng
+  - name: Roles & Permissions
+    description: Quản lý vai trò và quyền hạn
+  - name: Organizations
+    description: Quản lý tổ chức bệnh viện
+  - name: Departments
+    description: Quản lý phòng ban/khoa
+  - name: Devices
+    description: Quản lý thiết bị y tế
+  - name: Device Categories
+    description: Quản lý danh mục thiết bị
+  - name: Device Models
+    description: Quản lý model thiết bị
+  - name: MQTT & IoT
+    description: Kết nối và giám sát thiết bị IoT
+  - name: Device Data
+    description: Dữ liệu sensor real-time
+  - name: Maintenance
+    description: Quản lý bảo trì thiết bị
+  - name: Alerts & Warnings
+    description: Hệ thống cảnh báo
+
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Đăng nhập vào hệ thống
+      description: Xác thực người dùng và trả về JWT token
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  format: password
+                  example: password123
+      responses:
+        '200':
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  token_type:
+                    type: string
+                    example: Bearer
+                  expires_in:
+                    type: integer
+                    example: 3600
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Làm mới access token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token mới
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Lấy thông tin user hiện tại
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Thông tin user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /users:
+    get:
+      tags:
+        - Users
+      summary: Lấy danh sách người dùng
+      operationId: getUsers
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Danh sách người dùng
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+    post:
+      tags:
+        - Users
+      summary: Tạo người dùng mới
+      operationId: createUser
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '201':
+          description: Tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Users
+      summary: Lấy thông tin user theo ID
+      operationId: getUserById
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Thông tin user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    put:
+      tags:
+        - Users
+      summary: Cập nhật thông tin user
+      operationId: updateUser
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+  /organizations:
+    get:
+      tags:
+        - Organizations
+      summary: Lấy danh sách tổ chức
+      operationId: getOrganizations
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Danh sách tổ chức
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Organization'
+    post:
+      tags:
+        - Organizations
+      summary: Tạo tổ chức mới
+      operationId: createOrganization
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreate'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /organizations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Organizations
+      summary: Lấy thông tin tổ chức theo ID
+      operationId: getOrganizationById
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Thông tin tổ chức
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+    put:
+      tags:
+        - Organizations
+      summary: Cập nhật thông tin tổ chức
+      operationId: updateOrganization
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdate'
+      responses:
+        '200':
+          description: Cập nhật thành công
+    delete:
+      tags:
+        - Organizations
+      summary: Xóa tổ chức
+      operationId: deleteOrganization
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Xóa thành công
+
+  /departments:
+    get:
+      tags:
+        - Departments
+      summary: Lấy danh sách phòng ban
+      operationId: getDepartments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Danh sách phòng ban
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Department'
+    post:
+      tags:
+        - Departments
+      summary: Tạo phòng ban mới
+      operationId: createDepartment
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepartmentCreate'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /departments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Departments
+      summary: Lấy thông tin phòng ban theo ID
+      operationId: getDepartmentById
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Thông tin phòng ban
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Department'
+    put:
+      tags:
+        - Departments
+      summary: Cập nhật phòng ban
+      operationId: updateDepartment
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepartmentUpdate'
+      responses:
+        '200':
+          description: Cập nhật thành công
+    delete:
+      tags:
+        - Departments
+      summary: Xóa phòng ban
+      operationId: deleteDepartment
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Xóa thành công
+
+  /devices/categories:
+    get:
+      tags:
+        - Device Categories
+      summary: Lấy danh sách loại thiết bị
+      operationId: getDeviceCategories
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Danh sách loại thiết bị
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceCategory'
+    post:
+      tags:
+        - Device Categories
+      summary: Tạo loại thiết bị mới
+      operationId: createDeviceCategory
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /devices/models:
+    get:
+      tags:
+        - Device Models
+      summary: Lấy danh sách model thiết bị
+      operationId: getDeviceModels
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Danh sách models
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceModel'
+    post:
+      tags:
+        - Device Models
+      summary: Tạo model thiết bị mới
+      operationId: createDeviceModel
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceModelCreate'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /devices:
+    get:
+      tags:
+        - Devices
+      summary: Lấy danh sách thiết bị
+      operationId: getDevices
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, maintenance, retired, inactive]
+      responses:
+        '200':
+          description: Danh sách thiết bị
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+    post:
+      tags:
+        - Devices
+      summary: Thêm thiết bị mới
+      operationId: createDevice
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCreate'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /devices/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Devices
+      summary: Lấy thông tin thiết bị
+      operationId: getDeviceById
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Thông tin thiết bị
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+    put:
+      tags:
+        - Devices
+      summary: Cập nhật thiết bị
+      operationId: updateDevice
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceUpdate'
+      responses:
+        '200':
+          description: Cập nhật thành công
+    delete:
+      tags:
+        - Devices
+      summary: Xóa thiết bị
+      operationId: deleteDevice
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Xóa thành công
+
+  /devices/{id}/realtime:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Device Data
+      summary: Lấy dữ liệu real-time mới nhất
+      operationId: getDeviceRealtimeData
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Dữ liệu real-time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorData'
+
+  /devices/{id}/history:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Device Data
+      summary: Lấy lịch sử dữ liệu sensor
+      operationId: getDeviceHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: start_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Lịch sử dữ liệu
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SensorData'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /mqtt/devices:
+    get:
+      tags:
+        - MQTT & IoT
+      summary: Lấy danh sách cấu hình MQTT
+      operationId: getMqttDevices
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Danh sách cấu hình MQTT
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MqttDevice'
+    post:
+      tags:
+        - MQTT & IoT
+      summary: Tạo kết nối MQTT cho thiết bị
+      operationId: createMqttDevice
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MqttDeviceCreate'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /alerts:
+    get:
+      tags:
+        - Alerts & Warnings
+      summary: Lấy danh sách cảnh báo
+      operationId: getAlerts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, acknowledged, resolved]
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Danh sách cảnh báo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Alert'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /alerts/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      tags:
+        - Alerts & Warnings
+      summary: Cập nhật trạng thái cảnh báo
+      operationId: updateAlertStatus
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [new, acknowledged, resolved]
+                resolution_notes:
+                  type: string
+      responses:
+        '200':
+          description: Cập nhật thành công
+
+  /maintenance/schedules:
+    get:
+      tags:
+        - Maintenance
+      summary: Lấy lịch bảo trì
+      operationId: getMaintenanceSchedules
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Danh sách lịch bảo trì
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MaintenanceSchedule'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+    post:
+      tags:
+        - Maintenance
+      summary: Tạo lịch bảo trì mới
+      operationId: createMaintenanceSchedule
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceScheduleCreate'
+      responses:
+        '201':
+          description: Tạo thành công
+
+  /maintenance/records:
+    get:
+      tags:
+        - Maintenance
+      summary: Lấy lịch sử bảo trì
+      operationId: getMaintenanceRecords
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Lịch sử bảo trì
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MaintenanceRecord'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+
+  responses:
+    UnauthorizedError:
+      description: Chưa xác thực hoặc token không hợp lệ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ForbiddenError:
+      description: Không có quyền truy cập
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFoundError:
+      description: Không tìm thấy resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: UNAUTHORIZED
+        message:
+          type: string
+          example: Invalid or expired token
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 150
+        total_pages:
+          type: integer
+          example: 8
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, technician, operator]
+        organization_id:
+          type: string
+          format: uuid
+        department_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+
+    UserCreate:
+      type: object
+      required:
+        - username
+        - password
+        - email
+        - organization_id
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        organization_id:
+          type: string
+          format: uuid
+        department_id:
+          type: string
+          format: uuid
+
+    UserUpdate:
+      type: object
+      properties:
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        department_id:
+          type: string
+          format: uuid
+
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Bệnh viện Đa khoa Trung ương
+        type:
+          type: string
+          enum: [hospital, clinic, laboratory]
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
+
+    OrganizationCreate:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [hospital, clinic, laboratory]
+        address:
+          type: string
+        phone:
+          type: string
+
+    OrganizationUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [hospital, clinic, laboratory]
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+
+    Department:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    DepartmentCreate:
+      type: object
+      required:
+        - organization_id
+        - name
+        - code
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+
+    DepartmentUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+
+    DeviceCategory:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    DeviceModel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        model_number:
+          type: string
+        manufacturer_id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        specifications:
+          type: object
+          additionalProperties: true
+        warranty_period:
+          type: integer
+          description: Thời hạn bảo hành (tháng)
+        created_at:
+          type: string
+          format: date-time
+
+    DeviceModelCreate:
+      type: object
+      required:
+        - name
+        - model_number
+        - category_id
+      properties:
+        name:
+          type: string
+        model_number:
+          type: string
+        manufacturer_id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        specifications:
+          type: object
+          additionalProperties: true
+        warranty_period:
+          type: integer
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_code:
+          type: string
+        serial_number:
+          type: string
+        model_id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        department_id:
+          type: string
+          format: uuid
+        location:
+          type: string
+        status:
+          type: string
+          enum: [active, maintenance, retired, inactive]
+        purchase_date:
+          type: string
+          format: date
+        warranty_expiry_date:
+          type: string
+          format: date
+        created_at:
+          type: string
+          format: date-time
+
+    DeviceCreate:
+      type: object
+      required:
+        - model_id
+        - serial_number
+        - organization_id
+      properties:
+        model_id:
+          type: string
+          format: uuid
+        serial_number:
+          type: string
+        organization_id:
+          type: string
+          format: uuid
+        department_id:
+          type: string
+          format: uuid
+        location:
+          type: string
+        purchase_date:
+          type: string
+          format: date
+
+    DeviceUpdate:
+      type: object
+      properties:
+        department_id:
+          type: string
+          format: uuid
+        location:
+          type: string
+        status:
+          type: string
+          enum: [active, maintenance, retired, inactive]
+
+    MqttDevice:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        mqtt_user:
+          type: string
+        mqtt_topic:
+          type: string
+        broker_host:
+          type: string
+        broker_port:
+          type: integer
+        is_active:
+          type: boolean
+        last_seen:
+          type: string
+          format: date-time
+
+    MqttDeviceCreate:
+      type: object
+      required:
+        - device_id
+        - mqtt_user
+        - mqtt_topic
+        - broker_host
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        mqtt_user:
+          type: string
+        mqtt_pass:
+          type: string
+          format: password
+        mqtt_topic:
+          type: string
+        broker_host:
+          type: string
+        broker_port:
+          type: integer
+          default: 1883
+
+    SensorData:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [normal, warning, critical]
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        alert_type:
+          type: string
+          enum: [threshold, offline, maintenance]
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        message:
+          type: string
+        status:
+          type: string
+          enum: [new, acknowledged, resolved]
+        created_at:
+          type: string
+          format: date-time
+
+    MaintenanceSchedule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        maintenance_type:
+          type: string
+          enum: [preventive, corrective, calibration]
+        scheduled_date:
+          type: string
+          format: date-time
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, quarterly, yearly]
+        status:
+          type: string
+          enum: [pending, completed, overdue]
+        created_at:
+          type: string
+          format: date-time
+
+    MaintenanceScheduleCreate:
+      type: object
+      required:
+        - device_id
+        - maintenance_type
+        - scheduled_date
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        maintenance_type:
+          type: string
+          enum: [preventive, corrective, calibration]
+        scheduled_date:
+          type: string
+          format: date-time
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, quarterly, yearly]
+
+    MaintenanceRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        performed_date:
+          type: string
+          format: date-time
+        maintenance_type:
+          type: string
+          enum: [preventive, corrective, calibration]
+        description:
+          type: string
+        cost:
+          type: number
+        created_at:
+          type: string
+          format: date-time
