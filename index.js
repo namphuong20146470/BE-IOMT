@@ -7,6 +7,12 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import iot from './routes/iotRoutes.js';
+
+// Swagger UI imports
+import swaggerUI from 'swagger-ui-express';
+import YAML from 'yaml';
+import fs from 'fs';
+
 // ==========================================
 // 🏗️ FEATURE-BASED ARCHITECTURE ROUTES
 // ==========================================
@@ -112,6 +118,13 @@ app.use(cors(corsOptions));
 // Explicit preflight handling
 app.options('*', cors(corsOptions));
 
+// ==========================================
+// 📚 SWAGGER UI DOCUMENTATION
+// ==========================================
+const file  = fs.readFileSync('./swagger.yaml', 'utf8')
+const swaggerDocument = YAML.parse(file)
+
+app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocument));
 // ==========================================
 // 🚀 FEATURE-BASED ROUTES
 // ==========================================
