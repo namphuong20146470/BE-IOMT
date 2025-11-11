@@ -57,19 +57,6 @@ export const getAllDeviceModels = async (req, res) => {
                     select: {
                         id: true
                     }
-                },
-                specifications: {
-                    include: {
-                        specification_fields: {
-                            select: {
-                                field_name: true,
-                                field_name_vi: true,
-                                field_name_en: true,
-                                unit: true,
-                                data_type: true
-                            }
-                        }
-                    }
                 }
             },
             orderBy: [
@@ -89,16 +76,7 @@ export const getAllDeviceModels = async (req, res) => {
             category_name: model.category?.name,
             category_description: model.category?.description,
             devices_count: model.devices.length,
-            specifications: model.specifications.map(spec => ({
-                id: spec.id,
-                field_name: spec.specification_fields?.field_name,
-                field_name_vi: spec.specification_fields?.field_name_vi,
-                field_name_en: spec.specification_fields?.field_name_en,
-                value: spec.value,
-                unit: spec.specification_fields?.unit,
-                data_type: spec.specification_fields?.data_type
-            })),
-            created_at: model.created_at,
+            specifications: model.specifications || {}, // JSONB format
             created_at: model.created_at,
             updated_at: model.updated_at
         }));
@@ -136,6 +114,22 @@ export const getDeviceModelById = async (req, res) => {
                         description: true
                     }
                 },
+                manufacturers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true,
+                        website: true
+                    }
+                },
+                suppliers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true,
+                        website: true
+                    }
+                },
                 devices: {
                     select: {
                         id: true,
@@ -143,25 +137,6 @@ export const getDeviceModelById = async (req, res) => {
                         asset_tag: true,
                         status: true,
                         location: true
-                    }
-                },
-                specifications: {
-                    include: {
-                        specification_fields: {
-                            select: {
-                                field_name: true,
-                                field_name_vi: true,
-                                field_name_en: true,
-                                unit: true,
-                                category: true,
-                                data_type: true,
-                                placeholder: true,
-                                help_text: true
-                            }
-                        }
-                    },
-                    orderBy: {
-                        display_order: 'asc'
                     }
                 }
             }
@@ -174,36 +149,22 @@ export const getDeviceModelById = async (req, res) => {
             });
         }
 
-        // Format specifications
+        // Format model with JSONB specifications
         const formattedModel = {
             id: model.id,
             name: model.name,
-            manufacturer: model.manufacturer,
+            manufacturer: model.manufacturers?.name || null,
+            manufacturer_id: model.manufacturer_id,
+            manufacturer_info: model.manufacturers,
+            supplier_id: model.supplier_id,
+            supplier_info: model.suppliers,
             model_number: model.model_number,
-            description: model.description,
             category: model.category,
             devices_count: model.devices.length,
             devices: model.devices,
             created_at: model.created_at,
             updated_at: model.updated_at,
-            specifications: model.specifications?.map(spec => ({
-                id: spec.id,
-                field_name: spec.specification_fields?.field_name,
-                field_name_vi: spec.specification_fields?.field_name_vi,
-                field_name_en: spec.specification_fields?.field_name_en,
-                value: spec.value,
-                unit: spec.unit || spec.specification_fields?.unit,
-                description: spec.description,
-                display_order: spec.display_order,
-                numeric_value: spec.numeric_value,
-                is_visible: spec.is_visible,
-                category: spec.specification_fields?.category,
-                data_type: spec.specification_fields?.data_type,
-                placeholder: spec.specification_fields?.placeholder,
-                help_text: spec.specification_fields?.help_text,
-                created_at: spec.created_at,
-                updated_at: spec.updated_at
-            })) || []
+            specifications: model.specifications || {} // JSONB format
         };
 
         res.status(200).json({
@@ -221,10 +182,17 @@ export const getDeviceModelById = async (req, res) => {
     }
 };
 
-// Create device model (Simple version)
+// Create device model with JSONB specifications support
 export const createDeviceModel = async (req, res) => {
     try {
-        const { category_id, name, manufacturer, model_number, description } = req.body;
+        const { 
+            category_id, 
+            name, 
+            manufacturer_id, 
+            supplier_id,
+            model_number, 
+            specifications 
+        } = req.body;
 
         // 📋 Basic validation
         if (!category_id || !name) {
@@ -267,6 +235,57 @@ export const createDeviceModel = async (req, res) => {
             });
         }
 
+        // ✅ Validate manufacturer if provided
+        if (manufacturer_id) {
+            const manufacturerExists = await prisma.manufacturers.findUnique({
+                where: { id: manufacturer_id }
+            });
+            
+            if (!manufacturerExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Manufacturer not found'
+                });
+            }
+        }
+
+        // ✅ Validate supplier if provided
+        if (supplier_id) {
+            const supplierExists = await prisma.suppliers.findUnique({
+                where: { id: supplier_id }
+            });
+            
+            if (!supplierExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Supplier not found'
+                });
+            }
+        }
+
+        // ✅ Validate specifications JSON structure
+        let validatedSpecs = {};
+        if (specifications) {
+            try {
+                validatedSpecs = typeof specifications === 'string' 
+                    ? JSON.parse(specifications) 
+                    : specifications;
+                
+                // Basic validation - ensure it's an object
+                if (typeof validatedSpecs !== 'object' || Array.isArray(validatedSpecs)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Specifications must be a valid JSON object'
+                    });
+                }
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid specifications JSON format'
+                });
+            }
+        }
+
         // 🔍 Simple duplicate check (by name only for simplicity)
         const duplicateCheck = await prisma.device_models.findFirst({
             where: {
@@ -289,14 +308,15 @@ export const createDeviceModel = async (req, res) => {
             });
         }
 
-        // 🆕 Create new model (simplified)
+        // 🆕 Create new model with JSONB specifications
         const newModel = await prisma.device_models.create({
             data: {
                 category_id,
                 name: trimmedName,
-                manufacturer: manufacturer?.trim() || null,
+                manufacturer_id: manufacturer_id || null,
+                supplier_id: supplier_id || null,
                 model_number: model_number?.trim() || null,
-                description: description?.trim() || null,
+                specifications: validatedSpecs,
                 created_at: new Date(),
                 updated_at: new Date()
             },
@@ -306,6 +326,20 @@ export const createDeviceModel = async (req, res) => {
                         id: true,
                         name: true,
                         description: true
+                    }
+                },
+                manufacturers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true
+                    }
+                },
+                suppliers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true
                     }
                 }
             }
@@ -318,19 +352,22 @@ export const createDeviceModel = async (req, res) => {
             data: {
                 id: newModel.id,
                 name: newModel.name,
-                manufacturer: newModel.manufacturer,
+                manufacturer_id: newModel.manufacturer_id,
+                manufacturer: newModel.manufacturers,
+                supplier_id: newModel.supplier_id,
+                supplier: newModel.suppliers,
                 model_number: newModel.model_number,
-                description: newModel.description,
                 category_id: newModel.category_id,
                 category: newModel.category,
+                specifications: newModel.specifications,
                 created_at: newModel.created_at,
                 updated_at: newModel.updated_at
             },
             message: 'Device model created successfully',
-            next_step: {
-                action: 'add_specifications',
-                endpoint: `/specifications/models/${newModel.id}`,
-                description: 'You can now add technical specifications to this model'
+            specifications_info: {
+                format: 'JSONB',
+                description: 'Specifications are stored in flexible JSONB format',
+                example_update: `PUT /devices/models/${newModel.id} with {"specifications": {"electrical": {"voltage": "220V"}}}`
             }
         });
     } catch (error) {
@@ -359,11 +396,18 @@ export const createDeviceModel = async (req, res) => {
     }
 };
 
-// Update device model
+// Update device model with JSONB specifications support
 export const updateDeviceModel = async (req, res) => {
     try {
         const { id } = req.params;
-        const { category_id, name, manufacturer, model_number, description } = req.body;
+        const { 
+            category_id, 
+            name, 
+            manufacturer_id, 
+            supplier_id,
+            model_number, 
+            specifications 
+        } = req.body;
 
         // Check if model exists
         const existingModel = await prisma.device_models.findUnique({
@@ -391,6 +435,34 @@ export const updateDeviceModel = async (req, res) => {
             }
         }
 
+        // Check manufacturer exists (if provided)
+        if (manufacturer_id) {
+            const manufacturerExists = await prisma.manufacturers.findUnique({
+                where: { id: manufacturer_id }
+            });
+            
+            if (!manufacturerExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Manufacturer not found'
+                });
+            }
+        }
+
+        // Check supplier exists (if provided)
+        if (supplier_id) {
+            const supplierExists = await prisma.suppliers.findUnique({
+                where: { id: supplier_id }
+            });
+            
+            if (!supplierExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Supplier not found'
+                });
+            }
+        }
+
         // Build update data
         const updateData = {
             updated_at: new Date()
@@ -398,9 +470,38 @@ export const updateDeviceModel = async (req, res) => {
 
         if (category_id !== undefined) updateData.category_id = category_id;
         if (name !== undefined) updateData.name = name;
-        if (manufacturer !== undefined) updateData.manufacturer = manufacturer;
+        if (manufacturer_id !== undefined) updateData.manufacturer_id = manufacturer_id;
+        if (supplier_id !== undefined) updateData.supplier_id = supplier_id;
         if (model_number !== undefined) updateData.model_number = model_number;
-        if (description !== undefined) updateData.description = description;
+
+        // Handle specifications update
+        if (specifications !== undefined) {
+            try {
+                let validatedSpecs = typeof specifications === 'string' 
+                    ? JSON.parse(specifications) 
+                    : specifications;
+                
+                // If null, set to empty object
+                if (validatedSpecs === null) {
+                    validatedSpecs = {};
+                }
+                
+                // Validate it's an object
+                if (typeof validatedSpecs !== 'object' || Array.isArray(validatedSpecs)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Specifications must be a valid JSON object'
+                    });
+                }
+                
+                updateData.specifications = validatedSpecs;
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid specifications JSON format'
+                });
+            }
+        }
 
         const updatedModel = await prisma.device_models.update({
             where: { id: id },
@@ -411,6 +512,20 @@ export const updateDeviceModel = async (req, res) => {
                         id: true,
                         name: true,
                         description: true
+                    }
+                },
+                manufacturers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true
+                    }
+                },
+                suppliers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true
                     }
                 }
             }
@@ -472,7 +587,7 @@ export const getModelsByCategory = async (req, res) => {
         const { categoryId } = req.params;
         const { include_specs = 'false' } = req.query;
 
-        // Use Prisma ORM instead of raw SQL to avoid schema issues
+        // Use Prisma ORM with updated JSONB specifications
         const models = await prisma.device_models.findMany({
             where: {
                 category_id: categoryId
@@ -485,63 +600,45 @@ export const getModelsByCategory = async (req, res) => {
                         description: true
                     }
                 },
+                manufacturers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true
+                    }
+                },
+                suppliers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true
+                    }
+                },
                 devices: {
                     select: {
                         id: true
                     }
-                },
-                ...(include_specs === 'true' && {
-                    specifications: {
-                        include: {
-                            specification_fields: {
-                                select: {
-                                    field_name: true,
-                                    field_name_vi: true,
-                                    field_name_en: true,
-                                    unit: true,
-                                    category: true,
-                                    data_type: true,
-                                    placeholder: true,
-                                    help_text: true
-                                }
-                            }
-                        }
-                    }
-                })
+                }
             },
             orderBy: {
                 name: 'asc'
             }
         });
 
-        // Format response
+        // Format response with JSONB specifications
         const formattedModels = models.map(model => ({
             id: model.id,
             name: model.name,
-            manufacturer: model.manufacturer,
+            manufacturer: model.manufacturers?.name || null,
+            manufacturer_info: model.manufacturers,
+            supplier_info: model.suppliers,
             model_number: model.model_number,
-            description: model.description,
             category: model.category,
             devices_count: model.devices.length,
             created_at: model.created_at,
             updated_at: model.updated_at,
             ...(include_specs === 'true' && {
-                specifications: model.specifications?.map(spec => ({
-                    id: spec.id,
-                    field_name: spec.specification_fields?.field_name,
-                    field_name_vi: spec.specification_fields?.field_name_vi,
-                    field_name_en: spec.specification_fields?.field_name_en,
-                    value: spec.value,
-                    unit: spec.unit || spec.specification_fields?.unit,
-                    description: spec.description,
-                    display_order: spec.display_order,
-                    numeric_value: spec.numeric_value,
-                    is_visible: spec.is_visible,
-                    category: spec.specification_fields?.category,
-                    data_type: spec.specification_fields?.data_type,
-                    placeholder: spec.specification_fields?.placeholder,
-                    help_text: spec.specification_fields?.help_text
-                })) || []
+                specifications: model.specifications || {} // JSONB format
             })
         }));
 
