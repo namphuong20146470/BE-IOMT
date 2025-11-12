@@ -1,145 +1,280 @@
-# BE-DX
+# 🏥 IoMT Backend System
+
+## 📋 Tổng Quan
+
+Hệ thống backend cho **Internet of Medical Things (IoMT)** - quản lý thiết bị y tế, theo dõi bệnh nhân và tích hợp các hệ thống bệnh viện.
+
+## 🚀 Tính Năng Chính
+
+- **🔐 Authentication & Authorization**: JWT + Role-based access control
+- **🏥 Device Management**: Quản lý thiết bị y tế với real-time monitoring
+- **📊 Real-time Data**: Socket.IO + MQTT integration  
+- **👥 User Management**: Phân quyền chi tiết theo cá nhân và vai trò
+- **🏢 Organization Structure**: Quản lý tổ chức, phòng ban phân cấp
+- **📋 Audit Logging**: Theo dõi tất cả hoạt động hệ thống
+- **🔒 Healthcare Security**: Tuân thủ HIPAA, GDPR compliance
+
+## 🏗️ Cấu Trúc Project
+
+```
+iomt-backend/
+├── 📁 docs/                    # 📚 Documentation
+│   ├── api/                   # API documentation  
+│   ├── security/              # Security guidelines
+│   └── guides/                # Development guides
+├── 📁 features/               # 🎯 Feature modules
+│   ├── auth/                  # Authentication system
+│   ├── devices/               # Device management
+│   ├── users/                 # User management  
+│   └── organizations/         # Organization structure
+├── 📁 tests/                  # 🧪 Testing suite
+│   ├── unit/                  # Unit tests
+│   └── integration/           # API integration tests
+├── 📁 scripts/                # 🛠️ Automation scripts
+│   ├── database/              # DB seeding, migration
+│   ├── deployment/            # Docker, deployment
+│   └── security/              # Security validation
+├── 📁 middleware/             # Express middleware
+├── 📁 services/               # Business logic services
+├── 📁 utils/                  # Helper utilities
+└── 📁 config/                 # Configuration files
+```
+
+## ⚡ Quick Start
 # Run this command in PowerShell as Administrator
 <!-- 	Mở PORT -->
-netsh advfirewall firewall add rule name="HTTP Redirect 3004" dir=in action=allow protocol=TCP localport=3030
-
-
-2. Kiểm tra và giải phóng port 3030 nếu bị chiếm
-netstat -ano | findstr :3030
-Get-NetTCPConnection -LocalPort 3030 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-
-<!-- #Reload nginx
-.\nginx.exe -s reload
-<!-- #Chạy nginx -->
-<!-- .\nginx.exe
-#start pm2
-pm2 stop index.js --name "iot-server" --> -->
-
-#3. Build lại Docker image từ đầu
-docker-compose build --no-cache
-
-#4. Chạy container bằng Docker Compose
-docker-compose up -d
-#xong nhé 
-
-5. Kiểm tra logs container (giống như chạy npm start)
-docker-compose logs -f
-
-6. Quản lý container
-docker ps
-docker ps -a
-docker logs be-dx-iot-server
-docker stop iot-server
-docker start iot-server
-docker rm -f iot-server
-
-7. Xóa toàn bộ container và image cũ (nếu cần làm sạch)
-docker-compose down
-docker rm -f be-dx-iot-server-1 2>$null
-docker rmi be-dx-iot-server 2>$null
-
-8. Nếu gặp lỗi mạng hoặc Docker, hãy restart Docker service
-Restart-Service docker
-
-#run db
-npx prisma db pull
-npx prisma generate
-# ...existing code...
-
-5. Kiểm tra và xuất logs container
-```powershell
-# Xem logs trực tiếp
-docker-compose logs -f
-
-# Xuất logs ra file
-docker-compose logs > docker-logs.txt
-
-# Xuất logs với timestamp
-docker-compose logs -t > docker-logs-with-time.txt
-
-# Xuất logs real-time ra file
-docker-compose logs -f | Tee-Object -FilePath "live-logs.txt"
+### **1. Prerequisites**
+```bash
+# Required software
+Node.js 18+
+PostgreSQL 14+
+Docker & Docker Compose (optional)
 ```
-# View logs in real-time with Vietnam timezone
-docker-compose logs -f | ForEach-Object {
-    $timestamp = [datetime]::Parse($_.Split('|')[0].Trim()).AddHours(7).ToString("yyyy-MM-dd HH:mm:ss")
-    "$timestamp | $($_.Split('|')[1])"
-} | Tee-Object -FilePath "live-logs-vietnam.txt"
-# ...existing code...
 
+### **2. Installation**
+```bash
+# Clone repository
+git clone https://github.com/your-org/iomt-backend.git
+cd iomt-backend
 
+# Install dependencies
+npm install
 
-<!-- dữ liệu test dưới nhé  -->
+# Setup environment
+cp .env.security.example .env
+# Edit .env với database URL và secrets
 
-netstat -ano | findstr :3030
-Stop-Process -Id 6468 -Force
-<!-- chạy docker nhé  -->
+# Database setup
+npx prisma migrate dev
+npx prisma generate
+npm run seed
+```
+
+### **3. Development Server**
+```bash
+# Start development server
+npm run dev
+
+# Server will run on http://localhost:3030
+```
+
+### **4. Production Deployment**
+```bash
+# Docker deployment
 docker-compose up -d
-<!-- #check log nhé như là chạy npm start  -->
-docker-compose logs -f 
 
-<!-- Xóa toàn bộ container và image cũ -->
+# Check status
+docker-compose ps
+docker-compose logs -f
+```
+
+## 🔐 Security & Access
+
+### **API Documentation**
+- **🔒 Secured Swagger UI**: `https://localhost:3030/secure-api-docs`
+- **Authentication required**: Login first via `/auth/login`
+- **Required roles**: `super_admin`, `admin`, `developer`, `api_user`
+
+### **Port Management**
+```powershell
+# Check port usage
+netstat -ano | findstr :3030
+
+# Free port if occupied  
+Get-NetTCPConnection -LocalPort 3030 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+
+# Open firewall (Windows)
+netsh advfirewall firewall add rule name="IoMT Backend 3030" dir=in action=allow protocol=TCP localport=3030
+```
+
+## 🐳 Docker Management
+
+### **Container Operations**
+```powershell
+# Build và start containers
+docker-compose build --no-cache
+docker-compose up -d
+
+# Monitor logs
+docker-compose logs -f
+
+# Container management
+docker ps                    # Running containers
+docker ps -a                # All containers  
+docker logs iot-server      # View container logs
+docker stop iot-server      # Stop container
+docker start iot-server     # Start container
+docker restart iot-server   # Restart container
+docker rm -f iot-server     # Remove container
+```
+
+### **Cleanup & Troubleshooting**
+```powershell
+# Complete cleanup
 docker-compose down
 docker rm -f be-dx-iot-server-1 2>$null
 docker rmi be-dx-iot-server 2>$null
-
-<!-- # Restart Docker service -->
-Restart-Service docker
-<!-- kiểm tra trạng thái của container -->
-docker ps -a
-
-<!-- # Xem process nào chiếm port 3030 -->
-netstat -ano | findstr :3030
-
-<!-- # Kill tất cả process chiếm port 3030 -->
-Get-NetTCPConnection -LocalPort 3030 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-
-
-<!-- 1. Restart Docker Service Hoàn Toàn -->
-# Stop Docker service
-Stop-Service docker
-
-# Kill tất cả Docker processes
-Get-Process *docker* | Stop-Process -Force
 
 # Restart Docker service
-Start-Service docker
-
-# Đợi Docker khởi động hoàn toàn
+Restart-Service docker
 Start-Sleep -Seconds 10
 
-<!-- quản lý docker  -->
+# Export logs với timestamp
+docker-compose logs -t > docker-logs-with-time.txt
+docker-compose logs -f | Tee-Object -FilePath "live-logs.txt"
+```
 
-# Xem các container đang chạy
-docker ps
+## 💾 Database Operations
 
-# Xem tất cả container (bao gồm đã dừng)
-docker ps -a
+### **Schema Management**
+```bash
+# Pull latest schema from database
+npx prisma db pull
 
-# Xem logs của container
-docker logs iot-server
+# Generate Prisma client
+npx prisma generate
 
-# Xem logs theo thời gian thực
-docker logs -f iot-server
+# Run migrations
+npx prisma migrate dev
 
-# Dừng container
-docker stop iot-server
+# Reset database (careful!)
+npx prisma migrate reset
+```
 
-# Khởi động lại container
-docker start iot-server
+### **Data Seeding**
+```bash
+# Seed all test data
+npm run seed
 
-# Restart container
-docker restart iot-server
+# Seed specific entities
+node scripts/database/seed-devices.js
+node scripts/database/seed-user-permissions-test.js
+```
 
-# Xóa container (phải dừng trước)
-docker rm iot-server
+## 🧪 Testing
 
-# Xóa cả container đang chạy
-docker rm -f iot-server
+### **Run Tests**
+```bash
+# All tests
+npm test
 
+# Specific test categories  
+npm run test:unit           # Unit tests
+npm run test:integration    # API integration tests
+npm run test:coverage       # With coverage report
 
-# Kill all VS Code processes
-taskkill /F /IM code.exe
-# Remove VS Code IPC files
-Remove-Item -Path "$env:APPDATA\Code" -Recurse -Force
-Remove-Item -Path "$env:USERPROFILE\.vscode" -Recurse -Force
+# Individual test files
+npm test tests/unit/test-device-model-creation.js
+```
+
+### **Security Validation**
+```bash
+# Swagger security audit
+node scripts/validate-swagger-security.js
+
+# Dependency vulnerability scan
+npm audit --audit-level moderate
+```
+
+## 📚 Documentation
+
+### **Available Documentation**
+- **[API Documentation](docs/api/README.md)**: Complete API reference
+- **[Security Guide](docs/security/README.md)**: Security implementation và best practices
+- **[Development Guides](docs/guides/README.md)**: Frontend integration và development workflow
+- **[Testing Guide](tests/README.md)**: Testing strategies và examples
+
+### **Quick Links**
+- 🔒 **Swagger UI**: `https://localhost:3030/secure-api-docs` (authentication required)
+- 📮 **Postman Collection**: Import `IoMT-Backend.postman_collection.json`
+- 🐳 **Docker Config**: `docker-compose.yml`
+- ⚙️ **Environment**: `.env.security.example`
+
+## 🤝 Development Workflow
+
+### **Branch Strategy**
+```
+main (production) 
+├── develop (integration)
+├── feature/new-feature
+├── hotfix/critical-fix
+└── release/v2.1.0
+```
+
+### **Pull Request Process**
+1. Create branch từ `develop`
+2. Implement feature với tests  
+3. Update documentation
+4. Run security checks: `npm run security:check`
+5. Create PR với detailed description
+6. Code review từ 2+ members
+7. Merge sau khi pass all checks
+
+## 📞 Support & Contact
+
+### **Team Contacts**
+- **🚨 Security Issues**: `security@iomt.com` (24/7)
+- **🛠️ Technical Support**: `tech-support@iomt.com`
+- **📋 API Questions**: Slack `#api-support`
+- **🐛 Bug Reports**: GitHub Issues
+
+### **Emergency Procedures**
+- **Critical Security**: Email `security@iomt.com` + Slack `#security-alerts`  
+- **System Down**: Phone `+84-xxx-xxx-xxx` (24/7 hotline)
+- **Data Issues**: Contact database admin immediately
+
+## 📊 System Requirements
+
+### **Development Environment**
+- **Node.js**: 18.0.0+
+- **PostgreSQL**: 14.0+  
+- **RAM**: 8GB minimum
+- **Storage**: 10GB available space
+
+### **Production Environment**  
+- **Node.js**: 18 LTS
+- **PostgreSQL**: 14+ với SSL
+- **RAM**: 16GB recommended
+- **CPU**: 4+ cores
+- **Storage**: 100GB+ với backup strategy
+
+## 🔐 Security Notice
+
+**⚠️ QUAN TRỌNG**: Hệ thống này xử lý dữ liệu y tế nhạy cảm. 
+
+- Tuân thủ nghiêm ngặt security guidelines
+- Không share credentials hoặc API keys
+- Report ngay lập tức nếu phát hiện security issues
+- Tất cả truy cập được monitor và audit
+
+---
+
+## 📄 License
+
+Proprietary License - © 2024 IoMT Healthcare Solutions  
+All rights reserved.
+
+---
+
+*Last updated: November 2024*  
+*Version: 2.0.0*
