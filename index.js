@@ -13,6 +13,9 @@ import swaggerUI from 'swagger-ui-express';
 import YAML from 'yaml';
 import fs from 'fs';
 
+// Swagger Security Middleware
+import { swaggerSecurityMiddleware } from './middleware/swaggerSecurity.js';
+
 // ==========================================
 // 🏗️ FEATURE-BASED ARCHITECTURE ROUTES
 // ==========================================
@@ -54,8 +57,8 @@ const app = express();
 const prisma = new PrismaClient();
 
 // Port configuration  
-const port = process.env.PORT || 3005;
-const httpPort = process.env.HTTP_PORT || 3006;
+const port = process.env.PORT || 3030;
+const httpPort = process.env.HTTP_PORT || 3031;
 
 // ✅ Set NODE_ENV for development if not set
 if (!process.env.NODE_ENV) {
@@ -120,12 +123,56 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // ==========================================
-// 📚 SWAGGER UI DOCUMENTATION
+// 📚 SWAGGER UI DOCUMENTATION - SECURED
 // ==========================================
-const file  = fs.readFileSync('./swagger.yaml', 'utf8')
-const swaggerDocument = YAML.parse(file)
+const file = fs.readFileSync('./swagger.yaml', 'utf8');
+const swaggerDocument = YAML.parse(file);
 
-app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocument));
+// 🔐 Swagger UI với đầy đủ bảo mật 
+// Route: /secure-api-docs (thay vì /api-docs để tránh bị scan)
+app.use('/secure-api-docs', 
+    ...swaggerSecurityMiddleware,  // Áp dụng tất cả middleware bảo mật
+    swaggerUI.serve, 
+    swaggerUI.setup(swaggerDocument, {
+        customCss: `
+            .swagger-ui .topbar { display: none !important; }
+            .swagger-ui .info .title { color: #d32f2f !important; }
+            .swagger-ui .info .title:before { 
+                content: "🔒 RESTRICTED ACCESS - "; 
+                color: #d32f2f !important; 
+                font-weight: bold; 
+            }
+            .swagger-ui .info .description { 
+                border: 2px solid #d32f2f !important; 
+                padding: 15px !important; 
+                background-color: #ffebee !important; 
+                border-radius: 8px !important; 
+                margin: 10px 0 !important;
+            }
+        `,
+        customSiteTitle: '🔒 IoMT API Documentation - Restricted Access',
+        customfavIcon: '/favicon-secure.ico',
+        swaggerOptions: {
+            persistAuthorization: false, // Không lưu token trong localStorage
+            displayRequestDuration: true,
+            docExpansion: 'none', // Đóng tất cả sections mặc định
+            defaultModelsExpandDepth: 1,
+            defaultModelExpandDepth: 1,
+            showCommonExtensions: true,
+            showExtensions: true
+        }
+    })
+);
+
+// 🚫 Redirect old /api-docs để tránh confusion 
+app.get('/api-docs*', (req, res) => {
+    res.status(301).json({
+        success: false,
+        message: 'API Documentation has been moved for security reasons',
+        code: 'DOCS_MOVED',
+        hint: 'Contact administrator for new documentation URL'
+    });
+});
 // ==========================================
 // 🚀 FEATURE-BASED ROUTES
 // ==========================================

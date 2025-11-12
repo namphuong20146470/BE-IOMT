@@ -2,34 +2,108 @@ openapi: 3.0.3
 info:
   title: IoMT Device Management System API - Extended
   description: |-
+    # 🏥 **IoMT Device Management System API**
+    
     **Extended API specification** cho hệ thống quản lý thiết bị y tế IoMT.
     
-    Phiên bản này bao gồm:
-    - Core APIs (Authentication, CRUD basics)
-    - Advanced Features (Statistics, Analytics, Dashboard)
-    - Full CRUD Operations cho tất cả entities
-    - Roles & Permissions Management
-    - Real-time subscriptions (Socket.IO + MQTT)
-    - Advanced filtering và search capabilities
+    ## 🔒 **QUAN TRỌNG - BẢo MẬT**
     
-    ## Authentication
-    Bearer Token (JWT): `Authorization: Bearer <token>`
+    **Tài liệu này chứa thông tin nhạy cảm về hệ thống y tế:**
+    - ⚠️ **Chỉ dành cho nhân viên được ủy quyền**
+    - ⚠️ **Không chia sẻ thông tin đăng nhập**  
+    - ⚠️ **Luôn sử dụng HTTPS trong production**
+    - ⚠️ **Báo cáo ngay lập tức nếu phát hiện truy cập bất thường**
     
-    ## Rate Limiting
-    - 300 requests/minute per API key
-    - Header `X-RateLimit-Remaining` cho biết số request còn lại
+    **Truy cập tài liệu này được giám sát và ghi log.**
+    
+    ---
+    
+    ## 🚀 **Tính Năng**
+    
+    - **Core APIs**: Authentication, CRUD operations
+    - **Advanced Features**: Statistics, Analytics, Dashboard
+    - **Full CRUD**: Tất cả entities với validation
+    - **Roles & Permissions**: Hệ thống phân quyền phức tạp
+    - **Real-time**: Socket.IO + MQTT subscriptions
+    - **Search & Filter**: Advanced query capabilities
+    - **Audit Trail**: Theo dõi mọi thay đổi dữ liệu
+    
+    ## 🔐 **Xác Thực**
+    
+    **3 phương thức xác thực được hỗ trợ:**
+    
+    1. **JWT Bearer Token** (khuyến nghị): `Authorization: Bearer <token>`
+    2. **API Key**: `X-API-Key: <key>` (cho service integration)  
+    3. **HttpOnly Cookie**: Tự động sau khi login (cho web apps)
+    
+    **Để bắt đầu:**
+    1. Đăng nhập qua `/auth/login` 
+    2. Sử dụng token nhận được trong header Authorization
+    3. Token hết hạn sau 24h, refresh bằng `/auth/refresh`
+    
+    ## ⚡ **Rate Limiting**
+    
+    - **300 requests/minute** per user/API key
+    - **Swagger UI**: 100 requests/15 phút  
+    - Header `X-RateLimit-Remaining` hiển thị số request còn lại
+    - Header `Retry-After` hiển thị thời gian chờ khi bị limit
+    
+    ## 🛡️ **Bảo Mật**
+    
+    - **TLS 1.2+** bắt buộc cho production
+    - **JWT tokens** có thời hạn và được sign
+    - **Password hashing** với bcrypt + salt
+    - **SQL Injection prevention** với Prisma ORM
+    - **CORS protection** với whitelist domains
+    - **Input validation** với Joi schemas
+    
+    ## 📞 **Hỗ Trợ**
+    
+    **Trong trường hợp khẩn cấp hoặc vấn đề bảo mật:**
+    - 📧 Email: security@iomt.com (urgent)
+    - 📞 Hotline: +84-xxx-xxx-xxx (24/7)
+    - 💬 Slack: #iomt-support
+    
   version: 2.0.0
   contact:
+    name: IoMT Development Team
     email: support@iomt.com
+    url: https://iomt.hoangphucthanh.vn/support
   license:
-    name: Apache 2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0.html
+    name: Proprietary License
+    url: https://iomt.hoangphucthanh.vn/license
 
 servers:
   - url: https://iomt.hoangphucthanh.vn
-    description: Production server
-  - url: http://localhost:3000
-    description: Local development server
+    description: |-
+      🔒 **Production Server** (TLS 1.2+ Required)
+      
+      - All traffic encrypted with HTTPS
+      - Rate limited: 300 req/min per user
+      - Monitored 24/7 với security alerts
+      - Backup every 6 hours
+      
+  - url: http://localhost:3030  
+    description: |-
+      🚧 **Development Server** (HTTPS)
+      
+      - Local development với SSL certificate
+      - Relaxed rate limits
+      - Debug logging enabled
+      - Hot reload support
+      
+  - url: http://localhost:3031
+    description: |-
+      🔄 **HTTP Redirect Server** 
+      
+      - Automatically redirects to HTTPS (3030)
+      - For legacy client compatibility only
+      - No API endpoints served directly
+
+# 🔐 Global Security (Most endpoints require authentication)
+security:
+  - BearerAuth: []
+  - CookieAuth: []
 
 tags:
   - name: Authentication
@@ -1697,6 +1771,43 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: |-
+        🔐 **JWT Authentication**
+        
+        Để truy cập các API endpoints được bảo vệ, bạn cần:
+        1. Đăng nhập qua `/auth/login` để nhận JWT token
+        2. Thêm token vào header: `Authorization: Bearer <your-jwt-token>`
+        
+        **Token có thời hạn sử dụng và cần refresh định kỳ.**
+        
+        **Lưu ý bảo mật:**
+        - Không chia sẻ token với người khác
+        - Không lưu token trong localStorage trên production
+        - Sử dụng HTTPS để bảo vệ token
+        
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |-
+        🔑 **API Key Authentication** (Alternative)
+        
+        Dành cho:
+        - Service-to-service communication
+        - Backend integration
+        - Automation tools
+        
+        Contact administrator để nhận API Key.
+        
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: |-
+        🍪 **HttpOnly Cookie Authentication**
+        
+        Tự động sử dụng sau khi đăng nhập thành công.
+        Được ưu tiên sử dụng trên web applications để tăng bảo mật.
 
   parameters:
     IdPathParam:
