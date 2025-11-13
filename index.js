@@ -190,6 +190,10 @@ app.use('/user-permissions', userPermissionsIndividualRoutes);
 // Device Management
 app.use('/devices', deviceRoutes);
 
+// Dashboard Management
+import dashboardRoutes from './routes/dashboardRoutes.js';
+app.use('/dashboards', dashboardRoutes);
+
 // Organization Management
 app.use('/', organizationsRoutes);
 

@@ -74,11 +74,8 @@ export const swaggerRateLimit = rateLimit({
         retryAfter: '15 minutes'
     },
     standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req) => {
-        // Rate limit theo user ID thay vì IP
-        return req.user?.id || req.ip;
-    }
+    legacyHeaders: false
+    // Bỏ keyGenerator để tránh lỗi IPv6 validation
 });
 
 /**
