@@ -221,10 +221,17 @@ export const getDeviceModelById = async (req, res) => {
     }
 };
 
-// Create device model (Simple version)
+// Create device model (Complete version with all fields)
 export const createDeviceModel = async (req, res) => {
     try {
-        const { category_id, name, manufacturer, model_number, description } = req.body;
+        const { 
+            category_id, 
+            name, 
+            model_number, 
+            manufacturer_id, 
+            supplier_id,
+            specifications 
+        } = req.body;
 
         // 📋 Basic validation
         if (!category_id || !name) {
@@ -254,6 +261,14 @@ export const createDeviceModel = async (req, res) => {
             });
         }
 
+        // Validate model_number length if provided
+        if (model_number && model_number.trim().length > 100) {
+            return res.status(400).json({
+                success: false,
+                message: 'Model number too long (max 100 characters)'
+            });
+        }
+
         // ✅ Check if category exists
         const categoryExists = await prisma.device_categories.findUnique({
             where: { id: category_id },
@@ -267,8 +282,40 @@ export const createDeviceModel = async (req, res) => {
             });
         }
 
-        // 🔍 Simple duplicate check (by name only for simplicity)
-        const duplicateCheck = await prisma.device_models.findFirst({
+        // ✅ Check manufacturer exists if provided
+        if (manufacturer_id) {
+            const manufacturerExists = await prisma.manufacturers.findUnique({
+                where: { id: manufacturer_id },
+                select: { id: true, name: true }
+            });
+            
+            if (!manufacturerExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Manufacturer not found',
+                    hint: 'Use GET /manufacturers to get valid manufacturer IDs'
+                });
+            }
+        }
+
+        // ✅ Check supplier exists if provided
+        if (supplier_id) {
+            const supplierExists = await prisma.suppliers.findUnique({
+                where: { id: supplier_id },
+                select: { id: true, name: true }
+            });
+            
+            if (!supplierExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Supplier not found',
+                    hint: 'Use GET /suppliers to get valid supplier IDs'
+                });
+            }
+        }
+
+        // 🔍 Duplicate check by name
+        const duplicateByName = await prisma.device_models.findFirst({
             where: {
                 name: {
                     equals: trimmedName,
@@ -277,26 +324,65 @@ export const createDeviceModel = async (req, res) => {
             }
         });
         
-        if (duplicateCheck) {
+        if (duplicateByName) {
             return res.status(400).json({
                 success: false,
                 message: 'Device model with this name already exists',
                 existing_model: {
-                    id: duplicateCheck.id,
-                    name: duplicateCheck.name,
-                    manufacturer: duplicateCheck.manufacturer
+                    id: duplicateByName.id,
+                    name: duplicateByName.name,
+                    model_number: duplicateByName.model_number
                 }
             });
         }
 
-        // 🆕 Create new model (simplified)
+        // 🔍 Check model_number uniqueness if provided
+        if (model_number && model_number.trim() !== '') {
+            const duplicateByModelNumber = await prisma.device_models.findFirst({
+                where: {
+                    model_number: model_number.trim()
+                }
+            });
+            
+            if (duplicateByModelNumber) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Model number already exists',
+                    existing_model: {
+                        id: duplicateByModelNumber.id,
+                        name: duplicateByModelNumber.name,
+                        model_number: duplicateByModelNumber.model_number
+                    }
+                });
+            }
+        }
+
+        // Validate and parse specifications JSON
+        let specsJson = {};
+        if (specifications) {
+            if (typeof specifications === 'string') {
+                try {
+                    specsJson = JSON.parse(specifications);
+                } catch (e) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid specifications JSON format'
+                    });
+                }
+            } else if (typeof specifications === 'object') {
+                specsJson = specifications;
+            }
+        }
+
+        // 🆕 Create new model (complete version)
         const newModel = await prisma.device_models.create({
             data: {
                 category_id,
                 name: trimmedName,
-                manufacturer: manufacturer?.trim() || null,
                 model_number: model_number?.trim() || null,
-                description: description?.trim() || null,
+                manufacturer_id: manufacturer_id || null,
+                supplier_id: supplier_id || null,
+                specifications: specsJson,
                 created_at: new Date(),
                 updated_at: new Date()
             },
@@ -306,6 +392,23 @@ export const createDeviceModel = async (req, res) => {
                         id: true,
                         name: true,
                         description: true
+                    }
+                },
+                manufacturers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true,
+                        website: true
+                    }
+                },
+                suppliers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        country: true,
+                        website: true,
+                        contact_info: true
                     }
                 }
             }
@@ -318,20 +421,18 @@ export const createDeviceModel = async (req, res) => {
             data: {
                 id: newModel.id,
                 name: newModel.name,
-                manufacturer: newModel.manufacturer,
                 model_number: newModel.model_number,
-                description: newModel.description,
                 category_id: newModel.category_id,
                 category: newModel.category,
+                manufacturer_id: newModel.manufacturer_id,
+                manufacturer: newModel.manufacturers,
+                supplier_id: newModel.supplier_id,
+                supplier: newModel.suppliers,
+                specifications: newModel.specifications,
                 created_at: newModel.created_at,
                 updated_at: newModel.updated_at
             },
-            message: 'Device model created successfully',
-            next_step: {
-                action: 'add_specifications',
-                endpoint: `/specifications/models/${newModel.id}`,
-                description: 'You can now add technical specifications to this model'
-            }
+            message: 'Device model created successfully'
         });
     } catch (error) {
         console.error('❌ Error creating device model:', error);
@@ -340,14 +441,16 @@ export const createDeviceModel = async (req, res) => {
         if (error.code === 'P2002') {
             return res.status(400).json({
                 success: false,
-                message: 'Device model already exists (unique constraint violation)'
+                message: 'Device model already exists (unique constraint violation)',
+                field: error.meta?.target
             });
         }
         
         if (error.code === 'P2003') {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid category ID (foreign key constraint)'
+                message: 'Invalid foreign key reference',
+                details: 'Check category_id, manufacturer_id, or supplier_id'
             });
         }
 
@@ -603,6 +706,220 @@ export const getManufacturers = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch manufacturers',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
+};
+
+// Get suppliers list
+export const getSuppliers = async (req, res) => {
+    try {
+        // Get all suppliers that have device models
+        const suppliers = await prisma.suppliers.findMany({
+            where: {
+                device_models: {
+                    some: {} // Has at least one device model
+                }
+            },
+            include: {
+                _count: {
+                    select: {
+                        device_models: true
+                    }
+                }
+            },
+            orderBy: {
+                name: 'asc'
+            }
+        });
+
+        // Format response
+        const formattedSuppliers = suppliers.map(item => ({
+            id: item.id,
+            name: item.name,
+            country: item.country,
+            website: item.website,
+            contact_info: item.contact_info,
+            models_count: item._count.device_models
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: formattedSuppliers,
+            count: formattedSuppliers.length,
+            message: 'Suppliers list retrieved successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching suppliers:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch suppliers',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
+};
+
+// ==========================================
+// CREATE MANUFACTURER
+// ==========================================
+export const createManufacturer = async (req, res) => {
+    try {
+        const { name, country, website, contact_info } = req.body;
+
+        console.log('📥 Creating manufacturer:', { name, country, website });
+
+        // Validate required fields
+        if (!name || name.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                message: 'Manufacturer name is required'
+            });
+        }
+
+        // Check duplicate
+        const existing = await prisma.manufacturers.findUnique({
+            where: { name: name.trim() }
+        });
+
+        if (existing) {
+            return res.status(409).json({
+                success: false,
+                message: 'Manufacturer with this name already exists',
+                existing_id: existing.id
+            });
+        }
+
+        // Validate website URL if provided
+        if (website && website.trim() !== '') {
+            try {
+                new URL(website);
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid website URL format'
+                });
+            }
+        }
+
+        // Create manufacturer
+        const manufacturer = await prisma.manufacturers.create({
+            data: {
+                name: name.trim(),
+                country: country?.trim() || null,
+                website: website?.trim() || null,
+                contact_info: contact_info || {}
+            }
+        });
+
+        console.log('✅ Manufacturer created:', manufacturer.id);
+
+        res.status(201).json({
+            success: true,
+            message: 'Manufacturer created successfully',
+            data: {
+                id: manufacturer.id,
+                name: manufacturer.name,
+                country: manufacturer.country,
+                website: manufacturer.website,
+                contact_info: manufacturer.contact_info
+            }
+        });
+    } catch (error) {
+        console.error('❌ Create manufacturer error:', error);
+        
+        if (error.code === 'P2002') {
+            return res.status(409).json({
+                success: false,
+                message: 'Manufacturer name already exists'
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create manufacturer',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
+};
+
+// ==========================================
+// CREATE SUPPLIER
+// ==========================================
+export const createSupplier = async (req, res) => {
+    try {
+        const { name, country, website, contact_info } = req.body;
+
+        console.log('📥 Creating supplier:', { name, country, website });
+
+        // Validate required fields
+        if (!name || name.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                message: 'Supplier name is required'
+            });
+        }
+
+        // Check duplicate
+        const existing = await prisma.suppliers.findUnique({
+            where: { name: name.trim() }
+        });
+
+        if (existing) {
+            return res.status(409).json({
+                success: false,
+                message: 'Supplier with this name already exists',
+                existing_id: existing.id
+            });
+        }
+
+        // Validate website URL if provided
+        if (website && website.trim() !== '') {
+            try {
+                new URL(website);
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid website URL format'
+                });
+            }
+        }
+
+        // Create supplier
+        const supplier = await prisma.suppliers.create({
+            data: {
+                name: name.trim(),
+                country: country?.trim() || null,
+                website: website?.trim() || null,
+                contact_info: contact_info || {}
+            }
+        });
+
+        console.log('✅ Supplier created:', supplier.id);
+
+        res.status(201).json({
+            success: true,
+            message: 'Supplier created successfully',
+            data: {
+                id: supplier.id,
+                name: supplier.name,
+                country: supplier.country,
+                website: supplier.website,
+                contact_info: supplier.contact_info
+            }
+        });
+    } catch (error) {
+        console.error('❌ Create supplier error:', error);
+        
+        if (error.code === 'P2002') {
+            return res.status(409).json({
+                success: false,
+                message: 'Supplier name already exists'
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create supplier',
             error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
         });
     }
