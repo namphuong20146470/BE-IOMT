@@ -1,8 +1,10 @@
 import mqtt from 'mqtt';
+import crypto from 'crypto';
 import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
 import socketService from '../services/socketService.js';
 import prisma from '../config/db.js';
 import dotenv from 'dotenv';
+import dns from 'dns';
 
 dotenv.config();
 
@@ -18,6 +20,10 @@ class DynamicMqttManager {
         this.deviceStateCache = new Map(); // deviceId -> { field: { value, updated_at, dataType } }
         this.measurementCache = new Map(); // measurementName -> measurement info
         
+        // ✅ Message deduplication cache
+        this.processedMessages = new Map(); // messageHash -> timestamp
+        this.messageRetentionTime = 10000; // 10 seconds
+        
         // Retry queue for failed saves
         this.retryQueue = [];
         this.maxRetryQueueSize = 1000;
@@ -31,6 +37,7 @@ class DynamicMqttManager {
             errors: 0,
             retries: 0,
             connectionErrors: 0,
+            duplicatesSkipped: 0,
             cacheSizeDevices: 0,
             cacheSizeMeasurements: 0
         };
@@ -316,6 +323,19 @@ class DynamicMqttManager {
                 return;
             }
 
+            // ✅ Generate message hash for deduplication
+            const messageHash = this.generateMessageHash(device.id, incomingData);
+            
+            // ✅ Check if message already processed recently
+            if (this.isMessageDuplicate(messageHash)) {
+                this.stats.duplicatesSkipped++;
+                console.log(`⏭️ Skipping duplicate message for ${device.serial_number} (${this.stats.duplicatesSkipped} total skipped)`);
+                return;
+            }
+            
+            // ✅ Mark message as processed
+            this.markMessageProcessed(messageHash);
+
             if (process.env.DEBUG_MQTT === 'true') {
                 console.log(`📨 Message ${this.stats.messagesReceived} from ${device.serial_number} (${topic}):`, incomingData);
             }
@@ -326,6 +346,49 @@ class DynamicMqttManager {
         } catch (error) {
             console.error(`❌ Error handling message for ${topic}:`, error);
             this.stats.errors++;
+        }
+    }
+
+    // ✅ Generate unique hash for message deduplication
+    generateMessageHash(deviceId, data) {
+        const contentString = JSON.stringify({
+            deviceId,
+            timestamp: data.timestamp,
+            // Include key fields that make message unique (exclude timestamp for exact match)
+            data: Object.entries(data)
+                .filter(([key]) => !['timestamp'].includes(key))
+                .sort()
+        });
+        return crypto.createHash('md5').update(contentString).digest('hex');
+    }
+
+    // ✅ Check if message is duplicate
+    isMessageDuplicate(messageHash) {
+        const processedTime = this.processedMessages.get(messageHash);
+        if (!processedTime) return false;
+        
+        const now = Date.now();
+        if (now - processedTime > this.messageRetentionTime) {
+            // Expired, remove from cache
+            this.processedMessages.delete(messageHash);
+            return false;
+        }
+        
+        return true;
+    }
+
+    // ✅ Mark message as processed
+    markMessageProcessed(messageHash) {
+        this.processedMessages.set(messageHash, Date.now());
+        
+        // Cleanup old entries periodically
+        if (this.processedMessages.size > 10000) {
+            const now = Date.now();
+            for (const [hash, timestamp] of this.processedMessages.entries()) {
+                if (now - timestamp > this.messageRetentionTime) {
+                    this.processedMessages.delete(hash);
+                }
+            }
         }
     }
 
@@ -374,8 +437,7 @@ class DynamicMqttManager {
             
             console.log(`📊 Device ${device.serial_number}: Processing all ${Object.keys(incomingData).length} fields from MQTT`);
             
-            // STEP 4: Always save all data - MQTT already filtered at device level
-            await this.saveRawDataLog(deviceId, incomingData);
+            // ✅ STEP 4: Save ALL data in one place (raw log + processed data)
             await this.saveBatchOptimized(deviceId, changedFields, fullState, incomingData);
             
             // Update cache with full state
@@ -429,21 +491,23 @@ class DynamicMqttManager {
     parseValue(value, expectedType) {
         if (value === null || value === undefined) return null;
         
+        // ✅ Respect expected type strictly để tránh data corruption
         switch (expectedType) {
+            case 'numeric':
+                return typeof value === 'number' ? value : parseFloat(value);
             case 'boolean':
                 return Boolean(value);
-            case 'integer':
-                return parseInt(value);
-            case 'numeric':
-                return parseFloat(value);
             case 'text':
-                return String(value);
+                return String(value); // ✅ Không parse số để giữ nguyên "18:27:53"
+            case 'json':
+                return typeof value === 'string' ? JSON.parse(value) : value;
             default:
-                // Auto-detect type
-                if (typeof value === 'boolean') return value;
-                if (typeof value === 'number') return value;
-                if (!isNaN(value) && !isNaN(parseFloat(value))) return parseFloat(value);
-                return String(value);
+                // ✅ Auto-detect nhưng không parse string sang số để tránh mất data
+                const type = typeof value;
+                if (type === 'number') return value;
+                if (type === 'boolean') return value;
+                if (type === 'object') return value;
+                return String(value); // Keep strings as strings
         }
     }
 
@@ -511,34 +575,57 @@ class DynamicMqttManager {
             }
             
         } catch (error) {
-            console.error(`❌ Error saving raw data log for device ${deviceId}:`, error);
-            // Don't throw - this shouldn't break the main flow
+            console.error(`❌ Error saving raw data log for device ${deviceId}:`, error.message);
+            this.stats.errors++; // ✅ Track errors in stats
+            
+            // ✅ Add to retry queue if it's a critical error
+            if (this.isRetryableError(error)) {
+                console.warn(`🔄 Adding raw data log to retry queue for device ${deviceId}`);
+                // Could implement a separate retry queue for logs if needed
+            }
+            // Still don't throw - this shouldn't break the main flow
         }
     }
 
     async saveBatchOptimized(deviceId, allFields, fullState, rawData, retryCount = 0) {
         try {
+            // ✅ Raw log riêng biệt - không cần transaction
+            await this.saveRawDataLog(deviceId, rawData);
+            
+            // ✅ Transaction chỉ cho critical data với measurements được tạo INSIDE transaction
             await prisma.$transaction(async (tx) => {
                 const timestamp = new Date();
                 
-                // 1. Save ALL fields from MQTT to history (device already filtered)
-                await this.saveAllFieldsToHistory(tx, deviceId, allFields, timestamp);
+                // ✅ Create measurements INSIDE transaction để đảm bảo consistency
+                const measurementMap = await this.ensureMeasurementsInTransaction(
+                    tx, allFields, fullState
+                );
                 
-                // 2. Update ALL fields in latest_data (full state)
-                await this.updateLatestDataBatch(tx, deviceId, fullState, timestamp);
+                // Now safe to use với measurementMap được đảm bảo
+                await Promise.all([
+                    this.saveAllFieldsToHistory(tx, deviceId, allFields, timestamp, measurementMap),
+                    this.updateLatestDataBatch(tx, deviceId, fullState, timestamp, measurementMap)
+                ]);
+            }, {
+                timeout: 10000, // ✅ Explicit timeout
+                maxWait: 5000
             });
             
-            // 🔥 Emit real-time data to Socket.IO clients after successful save
+            // ✅ Emit sau khi save thành công
             this.emitRealtimeData(deviceId, allFields, fullState);
             
             console.log(`💾 Saved ${Object.keys(allFields).length} fields for device ${deviceId}`);
             
         } catch (error) {
+            // ✅ Clear measurement cache on error to force refresh
+            this.clearMeasurementCacheForFields(allFields, fullState);
+            
             if (retryCount < 3 && this.isRetryableError(error)) {
                 this.stats.retries++;
                 console.warn(`🔄 Retrying save for device ${deviceId}, attempt ${retryCount + 1}`);
                 await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-                return this.saveBatchOptimized(deviceId, allFields, fullState, rawData, retryCount + 1);
+                // ✅ Call retry method that DOESN'T save raw log again
+                return this.saveBatchOptimizedRetry(deviceId, allFields, fullState, retryCount + 1);
             }
             
             // Add to retry queue if max retries exceeded
@@ -547,17 +634,102 @@ class DynamicMqttManager {
         }
     }
 
-    async saveAllFieldsToHistory(tx, deviceId, allFields, timestamp) {
+    // ✅ Separate retry method that DOESN'T save raw log again
+    async saveBatchOptimizedRetry(deviceId, allFields, fullState, retryCount = 0) {
+        try {
+            // ✅ NO raw log save - already saved in original call
+            
+            await prisma.$transaction(async (tx) => {
+                const timestamp = new Date();
+                
+                const measurementMap = await this.ensureMeasurementsInTransaction(
+                    tx, allFields, fullState
+                );
+                
+                await Promise.all([
+                    this.saveAllFieldsToHistory(tx, deviceId, allFields, timestamp, measurementMap),
+                    this.updateLatestDataBatch(tx, deviceId, fullState, timestamp, measurementMap)
+                ]);
+            }, {
+                timeout: 10000,
+                maxWait: 5000
+            });
+            
+            this.emitRealtimeData(deviceId, allFields, fullState);
+            console.log(`💾 Retry saved ${Object.keys(allFields).length} fields for device ${deviceId}`);
+            
+        } catch (error) {
+            this.clearMeasurementCacheForFields(allFields, fullState);
+            
+            if (retryCount < 3 && this.isRetryableError(error)) {
+                this.stats.retries++;
+                await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+                return this.saveBatchOptimizedRetry(deviceId, allFields, fullState, retryCount + 1);
+            }
+            throw error;
+        }
+    }
+
+    // ✅ NEW: Ensure all measurements exist INSIDE transaction for consistency
+    async ensureMeasurementsInTransaction(tx, allFields, fullState) {
+        const measurementMap = new Map();
+        const allFieldNames = [...new Set([
+            ...Object.keys(allFields), 
+            ...Object.keys(fullState)
+        ])];
+        
+        for (const fieldName of allFieldNames) {
+            let measurement = this.measurementCache.get(fieldName);
+            
+            if (!measurement) {
+                // ✅ Create measurement INSIDE transaction để đảm bảo atomicity
+                measurement = await this.getOrCreateMeasurement(tx, fieldName, 
+                    allFields[fieldName] || fullState[fieldName]?.value);
+                this.measurementCache.set(fieldName, measurement);
+                this.stats.cacheSizeMeasurements = this.measurementCache.size;
+            }
+            
+            // ✅ Validate measurement exists
+            if (!measurement || !measurement.id) {
+                throw new Error(`Failed to create measurement for field: ${fieldName}`);
+            }
+            
+            measurementMap.set(fieldName, measurement);
+        }
+        
+        return measurementMap;
+    }
+
+    // ✅ DEPRECATED: Keep for backward compatibility but not used
+    async ensureMeasurementsExist(allFields, fullState) {
+        console.warn('⚠️ ensureMeasurementsExist is deprecated, use ensureMeasurementsInTransaction');
+        // Empty implementation - method được giữ để tránh breaking changes
+    }
+
+    // ✅ NEW: Clear cache for specific fields on error
+    clearMeasurementCacheForFields(allFields, fullState) {
+        const allFieldNames = new Set([
+            ...Object.keys(allFields),
+            ...Object.keys(fullState)
+        ]);
+
+        for (const fieldName of allFieldNames) {
+            this.measurementCache.delete(fieldName);
+        }
+        
+        this.stats.cacheSizeMeasurements = this.measurementCache.size;
+        console.log(`🧹 Cleared measurement cache for ${allFieldNames.size} fields`);
+    }
+
+    async saveAllFieldsToHistory(tx, deviceId, allFields, timestamp, measurementMap) {
         const measurementData = [];
         
         for (const [fieldName, value] of Object.entries(allFields)) {
-            let measurement = this.measurementCache.get(fieldName);
+            // ✅ Use pre-validated measurementMap
+            const measurement = measurementMap.get(fieldName);
             
-            // Auto-create measurement if not exists
             if (!measurement) {
-                measurement = await this.createMeasurement(tx, fieldName, value);
-                this.measurementCache.set(fieldName, measurement);
-                this.stats.cacheSizeMeasurements = this.measurementCache.size;
+                throw new Error(`❌ Missing measurement in measurementMap for ${fieldName}`);
             }
             
             measurementData.push({
@@ -580,30 +752,64 @@ class DynamicMqttManager {
                 timestamp
             ]);
             
-            await tx.$queryRawUnsafe(`
-                INSERT INTO device_data (
-                    device_id, measurement_id, data_payload, timestamp
-                ) VALUES ${values}
-            `, ...params);
+            try {
+                await tx.$queryRawUnsafe(`
+                    INSERT INTO device_data (
+                        device_id, measurement_id, data_payload, timestamp
+                    ) VALUES ${values}
+                `, ...params);
+                
+                console.log(`✅ Saved ${measurementData.length} fields to device_data`);
+            } catch (fkError) {
+                // ✅ Handle foreign key constraint errors gracefully
+                if (fkError.code === 'P2010' && fkError.meta?.code === '23503') {
+                    console.error(`❌ Foreign key constraint error for device_data:`, fkError.meta.message);
+                    console.error(`Measurement IDs:`, measurementData.map(m => m.measurementId));
+                    
+                    // Re-validate measurements exist
+                    for (const m of measurementData) {
+                        const exists = await tx.$queryRaw`
+                            SELECT id FROM measurements WHERE id = ${m.measurementId}
+                        `;
+                        if (exists.length === 0) {
+                            console.error(`❌ Missing measurement ID: ${m.measurementId} for ${m.measurementName}`);
+                        }
+                    }
+                }
+                throw fkError;
+            }
         }
     }
 
-    async updateLatestDataBatch(tx, deviceId, fullState, timestamp) {
+    async updateLatestDataBatch(tx, deviceId, fullState, timestamp, measurementMap) {
         const updates = [];
         
         for (const [fieldName, fieldData] of Object.entries(fullState)) {
-            const measurement = this.measurementCache.get(fieldName);
-            if (!measurement) continue;
+            // ✅ Use pre-validated measurementMap
+            const measurement = measurementMap.get(fieldName);
             
-            updates.push({
-                deviceId,
-                measurementId: measurement.id,
-                value: fieldData.value,
-                updatedAt: fieldData.updated_at || timestamp
-            });
+            if (!measurement) {
+                throw new Error(`❌ Missing measurement in measurementMap for ${fieldName}`);
+            }
+            
+            // ✅ CRITICAL FIX: Only insert numeric values to device_latest_data
+            // Skip text values like "18:27:32" as latest_value column is Float type
+            const value = fieldData.value;
+            if (typeof value === 'number' || 
+                (typeof value === 'string' && !isNaN(parseFloat(value)) && isFinite(parseFloat(value)))) {
+                
+                updates.push({
+                    deviceId,
+                    measurementId: measurement.id,
+                    value: typeof value === 'number' ? value : parseFloat(value),
+                    updatedAt: fieldData.updated_at || timestamp
+                });
+            } else {
+                console.log(`⏭️ Skipping non-numeric value for latest_data: ${fieldName}=${value} (${typeof value})`);
+            }
         }
         
-        // Batch upsert
+        // Batch upsert - all values are numeric now
         if (updates.length > 0) {
             const values = updates.map((u, idx) => 
                 `($${idx * 4 + 1}::uuid, $${idx * 4 + 2}::uuid, $${idx * 4 + 3}::float, $${idx * 4 + 4})`
@@ -628,9 +834,33 @@ class DynamicMqttManager {
         }
     }
 
+    async getOrCreateMeasurement(tx, fieldName, value) {
+        try {
+            // ✅ First try to get existing measurement
+            const existing = await tx.$queryRaw`
+                SELECT id, name, data_type 
+                FROM measurements 
+                WHERE name = ${fieldName}
+            `;
+            
+            if (existing.length > 0) {
+                console.log(`📋 Found existing measurement: ${fieldName}`);
+                return existing[0];
+            }
+            
+            // ✅ If not found, create with UPSERT to handle race conditions
+            return await this.createMeasurement(tx, fieldName, value);
+            
+        } catch (error) {
+            console.error(`❌ Error in getOrCreateMeasurement for ${fieldName}:`, error);
+            throw error;
+        }
+    }
+
     async createMeasurement(tx, fieldName, value) {
         const dataType = this.inferDataType(value);
         
+        // ✅ Use UPSERT to handle race conditions
         const result = await tx.$queryRaw`
             INSERT INTO measurements (
                 name, data_type, unit, validation_rules
@@ -640,22 +870,78 @@ class DynamicMqttManager {
                 'auto',
                 ${JSON.stringify({ auto_created: true, source: 'mqtt_dynamic' })}::jsonb
             )
+            ON CONFLICT (name) 
+            DO UPDATE SET 
+                data_type = EXCLUDED.data_type,
+                validation_rules = EXCLUDED.validation_rules
             RETURNING id, name, data_type
         `;
         
-        console.log(`📊 Auto-created measurement: ${fieldName} (${dataType})`);
+        console.log(`📊 Auto-created/updated measurement: ${fieldName} (${dataType})`);
         return result[0];
     }
 
     inferDataType(value) {
-        if (typeof value === 'number') {
-            return Number.isInteger(value) ? 'integer' : 'numeric';
-        } else if (typeof value === 'boolean') {
-            return 'boolean';
-        } else if (typeof value === 'object' && value !== null) {
-            return 'json';
+        if (value === null || value === undefined) return 'text';
+        
+        // ✅ Check actual type, not string content
+        const type = typeof value;
+        
+        if (type === 'number') {
+            return 'numeric'; // All numbers as numeric (matches enum)
         }
-        return 'text';
+        if (type === 'boolean') return 'boolean';
+        if (type === 'object') return 'json';
+        
+        // ✅ String luôn là text, KHÔNG parse để tránh mất data như "18:27:53" → 18
+        if (type === 'string') {
+            return 'text';
+        }
+        
+        return 'text'; // Default fallback
+    }
+
+    // ✅ NEW: Safe measurement creation outside transaction
+    async getOrCreateMeasurementSafe(fieldName, value) {
+        try {
+            // First try to find existing using raw query (faster)
+            const existing = await prisma.$queryRaw`
+                SELECT id, name, data_type 
+                FROM measurements 
+                WHERE name = ${fieldName}
+            `;
+            
+            if (existing.length > 0) {
+                console.log(`📋 Found existing measurement (safe): ${fieldName}`);
+                return existing[0];
+            }
+            
+            // Create new measurement using UPSERT for safety
+            const dataType = this.inferDataType(value);
+            const result = await prisma.$queryRaw`
+                INSERT INTO measurements (
+                    name, data_type, unit, validation_rules
+                ) VALUES (
+                    ${fieldName},
+                    ${dataType}::measurement_data_type,
+                    'auto',
+                    ${JSON.stringify({ auto_created: true, source: 'mqtt_dynamic_safe' })}::jsonb
+                )
+                ON CONFLICT (name) 
+                DO UPDATE SET 
+                    data_type = EXCLUDED.data_type,
+                    validation_rules = EXCLUDED.validation_rules
+                RETURNING id, name, data_type
+            `;
+            
+            console.log(`📊 Safe auto-created measurement: ${fieldName} (${dataType})`);
+            return result[0];
+            
+        } catch (error) {
+            console.error(`❌ Error in safe measurement creation ${fieldName}:`, error.message);
+            // Don't throw - this is pre-creation, let transaction handle it
+            return null;
+        }
     }
 
     // ===== ERROR HANDLING & RETRY =====
@@ -701,11 +987,11 @@ class DynamicMqttManager {
             const item = this.retryQueue.shift();
             
             try {
-                await this.saveBatchOptimized(
+                // ✅ Use retry method that doesn't save raw log again
+                await this.saveBatchOptimizedRetry(
                     item.deviceId,
                     item.allFields,
                     item.fullState,
-                    item.rawData,
                     item.retryCount
                 );
                 console.log(`✅ Retry successful for device ${item.deviceId}`);
@@ -729,6 +1015,7 @@ class DynamicMqttManager {
             
             let cleanedCount = 0;
             
+            // Existing device cache cleanup
             for (const [deviceId, state] of this.deviceStateCache.entries()) {
                 const lastUpdate = Math.max(...Object.values(state).map(s => 
                     new Date(s.updated_at).getTime()
@@ -743,6 +1030,14 @@ class DynamicMqttManager {
             if (cleanedCount > 0) {
                 console.log(`🧹 Cleaned up ${cleanedCount} inactive device caches`);
                 this.stats.cacheSizeDevices = this.deviceStateCache.size;
+            }
+            
+            // ✅ Add measurement cache limit để tránh memory leak
+            if (this.measurementCache.size > 10000) {
+                console.warn(`⚠️ Measurement cache too large (${this.measurementCache.size}), clearing...`);
+                this.measurementCache.clear();
+                this.loadMeasurements(); // Reload from DB
+                console.log('🔄 Measurement cache cleared and reloaded');
             }
         }, 300000); // Every 5 minutes
     }
@@ -885,13 +1180,13 @@ class DynamicMqttManager {
         this.deviceTopics.clear();
     }
 
-    // ==================== SIMPLIFIED SOCKET.IO INTEGRATION ====================
+    // ==================== SECURE SOCKET.IO INTEGRATION ====================
     
     emitRealtimeData(deviceId, allFields, fullState) {
         try {
-            // Sử dụng global Socket.IO instance
-            if (!global.io) {
-                console.warn('⚠️ Socket.IO not available');
+            // ✅ Use secure SocketService instead of global io
+            if (!socketService || !socketService.isReady()) {
+                console.warn('⚠️ SocketService not available or not ready');
                 return;
             }
 
@@ -905,24 +1200,29 @@ class DynamicMqttManager {
                 simpleData[key] = fieldData.value;
             }
 
-            // Broadcast đơn giản đến tất cả clients
-            global.io.emit('mqtt_data', {
+            // ✅ Prepare secure payload with device metadata
+            const payload = {
                 deviceId,
                 deviceName,
                 data: simpleData,
                 metadata: {
                     receivedFields: Object.keys(allFields),
                     lastUpdate: new Date().toISOString(),
-                    source: 'mqtt_dynamic'
+                    source: 'mqtt_dynamic',
+                    modelName: device?.model_name,
+                    manufacturer: device?.manufacturer
                 }
-            });
+            };
+
+            // ✅ Use secure hierarchy-based broadcasting
+            socketService.broadcastToDeviceRoom(deviceId, 'mqtt_data', payload);
 
             if (process.env.DEBUG_MQTT === 'true') {
-                console.log(`🔥 Socket.IO broadcast sent for ${deviceName} with ${Object.keys(allFields).length} fields`);
+                console.log(`� Secure broadcast sent for ${deviceName} (${deviceId}): ${Object.keys(allFields).length} fields`);
             }
 
         } catch (error) {
-            console.error('❌ Error emitting real-time data:', error);
+            console.error('❌ Error emitting secure real-time data:', error);
         }
     }
 

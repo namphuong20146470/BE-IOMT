@@ -7,15 +7,42 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import iot from './routes/iotRoutes.js';
-import deviceRoutes from './routes/deviceRoutes.js'
-import userPermissionsRoutes from './routes/userPermissions.routes.js';
-import usersRoutes from './routes/users.routes.js';
+
+// Swagger UI imports
+import swaggerUI from 'swagger-ui-express';
+import YAML from 'yaml';
+import fs from 'fs';
+
+// Swagger Security Middleware
+import { swaggerSecurityMiddleware } from './middleware/swaggerSecurity.js';
+
+// ==========================================
+// 🏗️ FEATURE-BASED ARCHITECTURE ROUTES
+// ==========================================
+// Each feature is self-contained with its own:
+// - Controllers (business logic)
+// - Routes (API endpoints) 
+// - Services (data layer)
+// - Validation (input validation)
+// - README (documentation)
+
+// Feature imports
+import authRoutes from './features/auth/auth.routes.js';
+import usersRoutes from './features/users/users.routes.js';
+import userPermissionsRoutes from './features/users/userPermissions.routes.js';
+import deviceRoutes from './features/devices/device.routes.js';
+import deviceDataRoutes from './features/devices/deviceData.routes.js';
+import organizationsRoutes from './features/organizations/organizations.routes.js';
+import departmentsRoutes from './features/departments/departments.routes.js';
+import maintenanceRoutes from './features/maintenance/maintenance.routes.js';
+import alertsRoutes from './features/alerts/alerts.routes.js';
+
+// Legacy routes (to be migrated)
 import actLog from './routes/actLog.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
-import deviceDataRoutes from './routes/deviceDataRoutes.js';
-import authRoutes from './routes/auth.routes.js';
 import roleRoutes from './routes/roleRoutes.js';
-import specificationsRoutes from './routes/specificationsRoutes.js';
+// New user permissions routes
+import userPermissionsIndividualRoutes from './routes/userPermissions.routes.js';
 
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
@@ -30,8 +57,8 @@ const app = express();
 const prisma = new PrismaClient();
 
 // Port configuration  
-const port = process.env.PORT || 3005;
-const httpPort = process.env.HTTP_PORT || 3006;
+const port = process.env.PORT || 3030;
+const httpPort = process.env.HTTP_PORT || 3031;
 
 // ✅ Set NODE_ENV for development if not set
 if (!process.env.NODE_ENV) {
@@ -48,7 +75,10 @@ const allowedOrigins = [
 // Middleware
 app.use(express.json());
 app.use(cookieParser()); // 🍪 Enable cookie parsing for HttpOnly cookies
-
+// const io = new Server();
+// io.on('connection', (socket) => {
+//   console.log('New client connected:', socket.id);
+// });
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
@@ -92,19 +122,106 @@ app.use(cors(corsOptions));
 // Explicit preflight handling
 app.options('*', cors(corsOptions));
 
-// Routes
-app.use('/', deviceDataRoutes, masterDataRoutes)
-app.use('/auth', authRoutes, roleRoutes); // 🔐 JWT Authentication routes
-app.use('/iot', iot);
-app.use('/actlog', actLog);
-// Device management routes
-app.use('/devices', deviceRoutes);
-// User management routes
+// ==========================================
+// 📚 SWAGGER UI DOCUMENTATION - SECURED
+// ==========================================
+const file = fs.readFileSync('./swagger.yaml', 'utf8');
+const swaggerDocument = YAML.parse(file);
+
+// 🔐 Swagger UI với đầy đủ bảo mật 
+// Route: /secure-api-docs (thay vì /api-docs để tránh bị scan)
+app.use('/secure-api-docs', 
+    ...swaggerSecurityMiddleware,  // Áp dụng tất cả middleware bảo mật
+    swaggerUI.serve, 
+    swaggerUI.setup(swaggerDocument, {
+        customCss: `
+            .swagger-ui .topbar { display: none !important; }
+            .swagger-ui .info .title { color: #d32f2f !important; }
+            .swagger-ui .info .title:before { 
+                content: "🔒 RESTRICTED ACCESS - "; 
+                color: #d32f2f !important; 
+                font-weight: bold; 
+            }
+            .swagger-ui .info .description { 
+                border: 2px solid #d32f2f !important; 
+                padding: 15px !important; 
+                background-color: #ffebee !important; 
+                border-radius: 8px !important; 
+                margin: 10px 0 !important;
+            }
+        `,
+        customSiteTitle: '🔒 IoMT API Documentation - Restricted Access',
+        customfavIcon: '/favicon-secure.ico',
+        swaggerOptions: {
+            persistAuthorization: false, // Không lưu token trong localStorage
+            displayRequestDuration: true,
+            docExpansion: 'none', // Đóng tất cả sections mặc định
+            defaultModelsExpandDepth: 1,
+            defaultModelExpandDepth: 1,
+            showCommonExtensions: true,
+            showExtensions: true
+        }
+    })
+);
+
+// 🚫 Redirect old /api-docs để tránh confusion 
+app.get('/api-docs*', (req, res) => {
+    res.status(301).json({
+        success: false,
+        message: 'API Documentation has been moved for security reasons',
+        code: 'DOCS_MOVED',
+        hint: 'Contact administrator for new documentation URL'
+    });
+});
+// ==========================================
+// 🚀 FEATURE-BASED ROUTES
+// ==========================================
+
+// Authentication & Authorization
+app.use('/auth', authRoutes);
+
+// User Management  
 app.use('/users', usersRoutes);
-// User permissions management routes (sub-routes under /users)
-app.use('/users', userPermissionsRoutes);
-// Specifications routes
-app.use('/specifications', specificationsRoutes);
+app.use('/users', userPermissionsRoutes); // User permissions sub-routes
+
+// 🔑 Individual User Permissions Management (grant/revoke specific permissions)
+app.use('/user-permissions', userPermissionsIndividualRoutes);
+
+// Device Management
+app.use('/devices', deviceRoutes);
+
+// Dashboard Management
+import dashboardRoutes from './routes/dashboardRoutes.js';
+app.use('/dashboards', dashboardRoutes);
+
+// Organization Management
+app.use('/', organizationsRoutes);
+
+// Department Management  
+app.use('/', departmentsRoutes);
+
+// Maintenance Management
+app.use('/', maintenanceRoutes);
+
+// Alerts & Warnings (Formalized)
+app.use('/', alertsRoutes);
+
+// Master Data & Device Data (combined with legacy routes)
+app.use('/', deviceDataRoutes, masterDataRoutes);
+
+// ==========================================
+// 🔄 LEGACY ROUTES (To be migrated)
+// ==========================================
+
+// IoT & MQTT
+app.use('/iot', iot);
+
+// Activity Logs
+app.use('/actlog', actLog);
+
+// Role Management (will move to /permissions)
+app.use('/auth', roleRoutes);
+
 // SSL Configuration
 const { options, useHttps } = configureSSL();
 

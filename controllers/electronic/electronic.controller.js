@@ -7,7 +7,6 @@ const prisma = new PrismaClient();
 export const getAllElectronic = async (req, res) => {
     try {
         const electronicData = await prisma.$queryRaw`
-            SELECT 
                 id, 
                 voltage, 
                 current, 

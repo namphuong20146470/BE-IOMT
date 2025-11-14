@@ -27,13 +27,16 @@ model device_models {
   model_number    String?           @unique(map: "device_models_model_id_key") @db.VarChar(100)
   manufacturer_id String?           @db.Uuid
   supplier_id     String?           @db.Uuid
+  specifications  Json?             @default("{}") @db.JsonB
+  created_at      DateTime?         @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?         @default(now()) @updatedAt @db.Timestamptz(6)
   devices         device[]
   category        device_categories @relation(fields: [category_id], references: [id], onUpdate: NoAction)
   manufacturers   manufacturers?    @relation(fields: [manufacturer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   suppliers       suppliers?        @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  specifications  specifications[]
 
   @@index([category_id], map: "idx_device_models_category")
+  @@index([specifications], map: "idx_device_models_specifications", type: Gin)
 }
 
 model device {
@@ -917,46 +920,7 @@ model user_permission_cache {
   @@index([expires_at], map: "idx_user_permission_cache_expires")
 }
 
-model specification_fields {
-  field_name     String           @id @db.VarChar(100)
-  field_name_vi  String           @db.VarChar(100)
-  field_name_en  String?          @db.VarChar(100)
-  unit           String?          @db.VarChar(50)
-  category       String?          @db.VarChar(50)
-  data_type      String?          @default("text") @db.VarChar(20)
-  placeholder    String?          @db.VarChar(255)
-  help_text      String?
-  sort_order     Int?             @default(0)
-  is_active      Boolean?         @default(true)
-  created_at     DateTime?        @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime?        @default(now()) @db.Timestamptz(6)
-  specifications specifications[]
 
-  @@index([is_active], map: "idx_spec_fields_active")
-  @@index([category, sort_order], map: "idx_spec_fields_category")
-}
-
-model specifications {
-  id                   Int                  @id @default(autoincrement())
-  device_model_id      String               @db.Uuid
-  field_name           String               @db.VarChar(100)
-  field_name_vi        String               @db.VarChar(100)
-  value                String               @db.VarChar(255)
-  unit                 String?              @db.VarChar(50)
-  description          String?
-  display_order        Int?
-  created_at           DateTime?            @default(now()) @db.Timestamp(6)
-  updated_at           DateTime?            @default(now()) @db.Timestamp(6)
-  numeric_value        Decimal?             @db.Decimal(15, 4)
-  is_visible           Boolean?             @default(true)
-  specification_fields specification_fields @relation(fields: [field_name], references: [field_name], map: "fk_spec_field_name")
-  device_models        device_models        @relation(fields: [device_model_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([device_model_id, field_name])
-  @@index([device_model_id], map: "idx_specifications_device_model_id")
-  @@index([field_name], map: "idx_specifications_field_name")
-  @@index([device_model_id, is_visible, display_order], map: "idx_specifications_visible")
-}
 
 enum device_status {
   active

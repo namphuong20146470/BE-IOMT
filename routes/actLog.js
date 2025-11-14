@@ -1,6 +1,6 @@
 import express from 'express';
-import authMiddleware from '../middleware/authMiddleware.js';
-import { requirePermission } from '../middleware/rbacMiddleware.js';
+import { authMiddleware } from '../shared/middleware/authMiddleware.js';
+import { requirePermission } from '../shared/middleware/rbacMiddleware.js';
 import { createRole, getAllRoles, deleteRole, updateRole } from '../controllers/roles/roles.controller.js';
 
 // Import device routes
@@ -9,21 +9,29 @@ import deviceRoutes from './deviceRoutes.js';
 import deviceDataRoutes from './deviceDataRoutes.js';
 // Import MQTT device routes
 import mqttRoutes from './mqttRoutes.js';
-// Import các controller cần thiết
+// Import specifications routes
+// Import các controller cần thiết từ features
 import {
-    loginUser,
     getAllUsers,
     getUserById,
     createUser,
     updateUser,
     deleteUser,
     deleteAllUsersExceptAdmin,
-    refreshToken,
-    logoutAllSessions,
     getUserSessions,
     terminateSession,
     getSessionStatistics
-} from '../controllers/users/user.controller.js';
+} from '../features/users/controllers/index.js';
+
+// Import auth controllers
+import {
+    login as loginUser,
+    refreshToken,
+    logout as logoutAllSessions
+} from '../features/auth/auth.controller.js';
+
+// Import session management (if needed)
+// Note: terminateSession, getSessionStatistics may need to be implemented
 
 // Organizations controllers
 import {
@@ -68,18 +76,26 @@ import {
     createPermissionGroup
 } from '../controllers/permission/permission.controller.js';
 
-// Add this import at the top with the other imports
+// User Permission Management - Import from feature controllers
 import {
-    debugUserPermissions,
     assignPermissionToUser,
-    getUserPermissions,
+    getUserPermissions
+} from '../features/users/controllers/user-direct-permissions.controller.js';
+
+// Debug functions
+import {
+    debugUserPermissions
+} from '../features/users/controllers/user-debug.controller.js';
+
+// Role management functions
+import {
     assignRoleToUser,
     removeRoleFromUser,
     getUserRoles
-} from '../controllers/users/userPermission.controller.js';
+} from '../features/users/controllers/user-roles.controller.js';
 
-//Logout route
-import { logoutUser } from '../controllers/users/user.controller.js';
+// Auth related imports
+import { logout } from '../features/auth/auth.controller.js';
 
 // Import JWT for token testing
 import jwt from 'jsonwebtoken';
@@ -184,7 +200,7 @@ router.delete('/logs/all', authMiddleware, deleteAllLogs);          // Delete al
 // Đăng nhập
 router.post('/login', loginUser);
 // Đăng xuất
-router.post('/logout', authMiddleware, logoutUser);
+router.post('/logout', authMiddleware, logout);
 
 // Token test endpoints
 router.get('/auth/test', authMiddleware, (req, res) => {
@@ -293,5 +309,6 @@ router.use('/device-processor', deviceDataRoutes);
 
 // MQTT device management routes
 router.use('/mqtt', mqttRoutes);
+
 
 export default router;

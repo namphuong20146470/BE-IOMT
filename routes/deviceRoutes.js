@@ -1,6 +1,6 @@
 import express from 'express';
 import authMiddleware from '../middleware/authMiddleware.js';
-import { requirePermission, requireOrganization } from '../middleware/rbacMiddleware.js';
+import { requirePermission, requireOrganization } from '../shared/middleware/rbacMiddleware.js';
 
 // Device Category Controllers
 import {
@@ -21,8 +21,11 @@ import {
     updateDeviceModel,
     deleteDeviceModel,
     getModelsByCategory,
-    getManufacturers
-} from '../controllers/devices/deviceModel.controller.js';
+    getManufacturers,
+    getSuppliers,
+    createManufacturer,
+    createSupplier
+} from '../features/devices/deviceModel.controller.js';
 
 // Device Controllers
 import {
@@ -94,6 +97,9 @@ router.get('/device-models', authMiddleware, requirePermission('device.read'), g
 // GET /device-models/manufacturers - Get manufacturers list
 router.get('/device-models/manufacturers', authMiddleware, getManufacturers);
 
+// GET /device-models/suppliers - Get suppliers list
+router.get('/device-models/suppliers', authMiddleware, getSuppliers);
+
 // GET /device-models/:id - Get device model by ID
 router.get('/device-models/:id', authMiddleware, requirePermission('device.read'), getDeviceModelById);
 
@@ -112,6 +118,13 @@ router.delete('/device-models/:id', authMiddleware, requirePermission('device.ma
 // ====================================================================
 // DEVICES ROUTES
 // ====================================================================
+
+// ⭐ IMPORTANT: Specific routes MUST come before parameterized routes
+// POST /manufacturers - Create manufacturer
+router.post('/manufacturers', authMiddleware, requirePermission('device.manage'), createManufacturer);
+
+// POST /suppliers - Create supplier
+router.post('/suppliers', authMiddleware, requirePermission('device.manage'), createSupplier);
 
 // GET /devices - Get all devices with filtering and pagination
 router.get('/devices', authMiddleware, requirePermission('device.read'), getAllDevices);

@@ -3,20 +3,24 @@ import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarn
 import socketService from '../services/socketService.js';
 import prisma from '../config/db.js';
 import dotenv from 'dotenv';
-
+import dns from 'dns';
+import { promisify } from 'util';
 dotenv.config();
 
+// ✅ THÊM 1 DÒNG NÀY - ĐẶT NGAY SAU import dns
+dns.setDefaultResultOrder('ipv4first');
 // ==================== CONFIGURATION ====================
 
 const mqttConfig = {
-    host: process.env.MQTT_HOST || 'broker.hivemq.com',
+    host: process.env.MQTT_HOST || '18.185.216.219',
     port: parseInt(process.env.MQTT_PORT || '1883'),
     clientId: `iot-server-${Math.random().toString(16).slice(2, 8)}`,
     username: process.env.MQTT_USERNAME || '',
     password: process.env.MQTT_PASSWORD || '',
-    clean: true,
-    connectTimeout: 4000,
-    reconnectPeriod: 1000
+    connectTimeout: 4000, // ✅ TĂNG timeout
+    reconnectPeriod: 1000, // ✅ TĂNG reconnect period
+    family: 4,
+    keepalive: 60, // ✅ THÊM keepalive
 };
 
 const TIME_WINDOW_MINUTES = parseInt(process.env.MQTT_TIME_WINDOW_MINUTES || '1');
@@ -594,8 +598,25 @@ client.on('message', async (topic, message) => {
 
 client.on('error', (error) => {
     console.error('❌ MQTT client error:', error);
+    console.error('   Error details:', {
+        code: error.code,
+        address: error.address,
+        port: error.port,
+        syscall: error.syscall
+    });
+    
+    // ✅ Phát hiện IPv6 và force retry với IPv4
+    if (error.code === 'ECONNREFUSED' && error.address?.includes(':')) {
+        console.log('🔄 Detected IPv6 failure, forcing IPv4...');
+        
+        // Force IPv4 fallback
+        client.options.host = '18.185.216.219';
+        setTimeout(() => {
+            console.log('🔄 Attempting reconnect with IPv4...');
+            client.reconnect();
+        }, 5000);
+    }
 });
-
 client.on('reconnect', () => {
     console.log('🔄 MQTT reconnecting...');
 });

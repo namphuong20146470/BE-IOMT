@@ -1,5 +1,5 @@
-import roleService from '../../services/RoleService.js';
-import permissionService from '../../services/PermissionService.js';
+import roleService from '../../shared/services/RoleService.js';
+import permissionService from '../../shared/services/PermissionService.backup.js';
 import { 
     isSystemAdmin, 
     isOrganizationAdmin, 
@@ -39,9 +39,9 @@ export const getAllRoles = async (req, res) => {
         
         let organization_id;
         
-        // ✅ FIXED: Super Admin có thể query không cần organization_id
-        if (isSuperAdmin && !queryOrgId && !userOrgId) {
-            // Super Admin without organization - get all roles including system roles
+        // ✅ FIXED: Super Admin có thể query không cần organization_id  
+        if (isSuperAdmin && !queryOrgId) {
+            // Super Admin without organization filter - get all roles including system roles
             organization_id = null; // Signal to get all roles
         } else if (queryOrgId) {
             if (isSuperAdmin || queryOrgId === userOrgId) {
@@ -69,10 +69,10 @@ export const getAllRoles = async (req, res) => {
             search: search || null
         };
 
-        // ✅ FIXED: Xử lý cả 2 trường hợp
+        // ✅ FIXED: Xử lý với isSystemAdmin logic
         let roles;
-        if (organization_id === null && isSuperAdmin) {
-            // Get all roles (system + all organizations)
+        if (isSuperAdmin && !organization_id) {
+            // Super Admin without specific org filter → Get all roles (system + all organizations)
             roles = await roleService.getAllRoles(options);
         } else {
             roles = await roleService.getRolesByOrganization(organization_id, options);
