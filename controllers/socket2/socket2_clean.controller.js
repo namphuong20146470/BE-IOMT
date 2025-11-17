@@ -1,4 +1,5 @@
-// auoDisplayController.js
+// Socket 2 Controller (Tang 3 PKT - Socket 2)
+// Manages socket2_data table for electrical measurements
 import { PrismaClient } from '@prisma/client';
 import { checkDeviceWarnings } from '../deviceWarningLogs/deviceWarningLogs.controller.js';
 
@@ -43,7 +44,7 @@ function parseTimeRange(range) {
 
 // ==================== UNIFIED QUERY FUNCTION ====================
 
-export const getAuoDisplayData = async (req, res) => {
+export const getCameraControlData = async (req, res) => {
     try {
         const {
             range,           // '1h', '6h', '24h', '7d', '30d'
@@ -63,19 +64,17 @@ export const getAuoDisplayData = async (req, res) => {
                     id,
                     voltage,
                     current,
-                    power_operating,
+                    power,
                     frequency,
                     power_factor,
-                    CAST(operating_time AS TEXT) as operating_time,
-                    over_voltage_operating,
-                    over_current_operating,
-                    over_power_operating,
-                    status_operating,
-                    under_voltage_operating,
-                    power_socket_status,
+                    machine_state,
+                    socket_state,
+                    sensor_state,
+                    over_voltage,
+                    under_voltage,
                     timestamp,
                     to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-                FROM auo_display
+                FROM socket1_data
                 ORDER BY timestamp DESC
                 LIMIT 1
             `;
@@ -134,13 +133,18 @@ export const getAuoDisplayData = async (req, res) => {
                     AVG(current)::numeric(10,3) as avg_current,
                     MIN(current)::numeric(10,3) as min_current,
                     MAX(current)::numeric(10,3) as max_current,
-                    AVG(power_operating)::numeric(10,2) as avg_power_operating,
-                    MIN(power_operating)::numeric(10,2) as min_power_operating,
-                    MAX(power_operating)::numeric(10,2) as max_power_operating,
+                    AVG(power)::numeric(10,2) as avg_power,
+                    MIN(power)::numeric(10,2) as min_power,
+                    MAX(power)::numeric(10,2) as max_power,
                     AVG(frequency)::numeric(10,2) as avg_frequency,
                     AVG(power_factor)::numeric(10,2) as avg_power_factor,
+                    BOOL_OR(machine_state) as any_machine_active,
+                    BOOL_OR(socket_state) as any_socket_active,
+                    BOOL_OR(sensor_state) as any_sensor_active,
+                    BOOL_OR(over_voltage) as any_over_voltage,
+                    BOOL_OR(under_voltage) as any_under_voltage,
                     to_char(date_trunc('${interval}', timestamp), 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-                FROM auo_display 
+                FROM socket1_data 
                 ${timeFilter}
                 GROUP BY date_trunc('${interval}', timestamp)
                 ORDER BY date_trunc('${interval}', timestamp) DESC
@@ -169,7 +173,7 @@ export const getAuoDisplayData = async (req, res) => {
 
         const countQuery = `
             SELECT COUNT(*) as total
-            FROM auo_display 
+            FROM socket1_data 
             ${timeFilter}
         `;
 
@@ -181,19 +185,17 @@ export const getAuoDisplayData = async (req, res) => {
                 id,
                 voltage,
                 current,
-                power_operating,
+                power,
                 frequency,
                 power_factor,
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                machine_state,
+                socket_state,
+                sensor_state,
+                over_voltage,
+                under_voltage,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM auo_display
+            FROM socket1_data
             ${timeFilter}
             ORDER BY timestamp DESC
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -230,25 +232,23 @@ export const getAuoDisplayData = async (req, res) => {
 
 // ==================== ADD DATA (for MQTT) ====================
 
-export const addAuoDisplay = async (req, res) => {
+export const addCameraControl = async (req, res) => {
     try {
         const {
             voltage,
             current,
-            power_operating,
+            power,
             frequency,
             power_factor,
-            operating_time,
-            over_voltage_operating,
-            over_current_operating,
-            over_power_operating,
-            status_operating,
-            under_voltage_operating,
-            power_socket_status
+            machine_state,
+            socket_state,
+            sensor_state,
+            over_voltage,
+            under_voltage
         } = req.body;
 
         // Validate at least one field
-        if (!voltage && !current && !power_operating) {
+        if (!voltage && !current && !power) {
             return res.status(400).json({
                 success: false,
                 message: 'At least one field is required'
@@ -256,33 +256,29 @@ export const addAuoDisplay = async (req, res) => {
         }
 
         const result = await prisma.$queryRaw`
-            INSERT INTO auo_display (
+            INSERT INTO socket1_data (
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                machine_state,
+                socket_state,
+                sensor_state,
+                over_voltage,
+                under_voltage,
                 timestamp
             ) VALUES (
-                ${voltage || 0}::real, 
-                ${current || 0}::real, 
-                ${power_operating || 0}::real, 
-                ${frequency || 0}::real, 
-                ${power_factor || 0}::real, 
-                ${operating_time || '0 seconds'}::interval,
-                ${over_voltage_operating || false},
-                ${over_current_operating || false},
-                ${over_power_operating || false},
-                ${status_operating || false},
-                ${under_voltage_operating || false},
-                ${power_socket_status || false},
+                ${voltage || null}::real, 
+                ${current || null}::real, 
+                ${power || null}::real, 
+                ${frequency || null}::real, 
+                ${power_factor || null}::real, 
+                ${machine_state || false}::boolean,
+                ${socket_state || false}::boolean,
+                ${sensor_state || false}::boolean,
+                ${over_voltage || false}::boolean,
+                ${under_voltage || false}::boolean,
                 CURRENT_TIMESTAMP
             ) RETURNING id
         `;
@@ -291,12 +287,14 @@ export const addAuoDisplay = async (req, res) => {
         const warningData = {};
         if (voltage !== undefined) warningData.voltage = voltage;
         if (current !== undefined) warningData.current = current;
-        if (power_operating !== undefined) warningData.power_operating = power_operating;
+        if (power !== undefined) warningData.power = power;
         if (frequency !== undefined) warningData.frequency = frequency;
         if (power_factor !== undefined) warningData.power_factor = power_factor;
+        if (over_voltage !== undefined) warningData.over_voltage = over_voltage;
+        if (under_voltage !== undefined) warningData.under_voltage = under_voltage;
 
         if (Object.keys(warningData).length > 0) {
-            await checkDeviceWarnings('auo_display', warningData, result[0].id);
+            await checkDeviceWarnings('socket1_data', warningData, result[0].id);
         }
 
         return res.status(201).json({
@@ -316,39 +314,51 @@ export const addAuoDisplay = async (req, res) => {
 
 // ==================== LEGACY ENDPOINTS (backward compatibility) ====================
 
-export const getAllAuoDisplay = (req, res) => {
+export const getAllCameraControl = (req, res) => {
     req.query.limit = req.query.limit || 1000;
-    return getAuoDisplayData(req, res);
+    return getCameraControlData(req, res);
 };
 
-export const getLatestAuoDisplay = (req, res) => {
+export const getLatestCameraControl = (req, res) => {
     req.query.latest = 'true';
-    return getAuoDisplayData(req, res);
+    return getCameraControlData(req, res);
 };
 
-export const getAuoDisplay1Hour = (req, res) => {
+export const getCameraControl1Hour = (req, res) => {
     req.query.range = '1h';
-    return getAuoDisplayData(req, res);
+    return getCameraControlData(req, res);
 };
 
-export const getAuoDisplay6Hours = (req, res) => {
+export const getCameraControl6Hours = (req, res) => {
     req.query.range = '6h';
-    return getAuoDisplayData(req, res);
+    return getCameraControlData(req, res);
 };
 
-export const getAuoDisplay24Hours = (req, res) => {
+export const getCameraControl24Hours = (req, res) => {
     req.query.range = '24h';
-    return getAuoDisplayData(req, res);
+    return getCameraControlData(req, res);
 };
 
-export const getAuoDisplay7Days = (req, res) => {
+export const getCameraControl7Days = (req, res) => {
     req.query.range = '7d';
-    return getAuoDisplayData(req, res);
+    return getCameraControlData(req, res);
 };
 
-export const getAuoDisplay30Days = (req, res) => {
+export const getCameraControl30Days = (req, res) => {
     req.query.range = '30d';
-    return getAuoDisplayData(req, res);
+    return getCameraControlData(req, res);
 };
 
-export const getAuoDisplayByDateRange = getAuoDisplayData;
+export const getCameraControlByDateRange = getCameraControlData;
+
+// ==================== SOCKET 2 ALIASES ====================
+// Tang 3 PKT Socket 2 endpoints (socket2_data table)
+export const getAllSocket2 = getAllCameraControl;
+export const getLatestSocket2 = getLatestCameraControl;
+export const addSocket2 = addCameraControl;
+export const getSocket21Hour = getCameraControl1Hour;
+export const getSocket26Hours = getCameraControl6Hours;
+export const getSocket224Hours = getCameraControl24Hours;
+export const getSocket27Days = getCameraControl7Days;
+export const getSocket230Days = getCameraControl30Days;
+export const getSocket2ByDateRange = getCameraControlByDateRange;

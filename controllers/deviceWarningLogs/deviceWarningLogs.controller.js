@@ -6,28 +6,28 @@ const prisma = new PrismaClient();
 
 // Define warning thresholds for each device type
 const WARNING_THRESHOLDS = {
-    auo_display: {
+    socket1_data: {
         voltage_min: 200,
         voltage_max: 240,
         current_max: 0.63,
         power_max: 150,
         device_name: "Màn hình y tế AUO"
     },
-    camera_control_unit: {
+    socket2_data: {
         voltage_min: 200,
         voltage_max: 240,
         current_max: 0.41,
         power_max: 96,
         device_name: "Bộ xử lý hình ảnh"
     },
-    electronic_endoflator: {
+    socket4_data: {
         voltage_min: 200,
         voltage_max: 240,
         current_max: 1.05,
         power_max: 250,
         device_name: "Máy Bơm CO2"
     },
-    led_nova_100: {
+    socket3_data: {
         voltage_min: 200,
         voltage_max: 240,
         current_max: 1.9,

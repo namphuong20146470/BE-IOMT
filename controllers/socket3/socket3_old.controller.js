@@ -1,9 +1,11 @@
+﻿// Socket 3 Controller (Tang 3 PKT - Socket 3)
+// Manages socket3_data table for electrical measurements
 import { PrismaClient } from '@prisma/client';
 import { checkDeviceWarnings } from '../deviceWarningLogs/deviceWarningLogs.controller.js';
 
 const prisma = new PrismaClient();
 
-// Get all led_nova_100 records
+// Get all socket3_data records
 export const getAllLedNova = async (req, res) => {
     try {
         const ledNovaData = await prisma.$queryRaw`
@@ -11,19 +13,19 @@ export const getAllLedNova = async (req, res) => {
                 id, 
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM led_nova_100
+            FROM socket3_data
             ORDER BY id DESC
         `;
 
@@ -42,7 +44,7 @@ export const getAllLedNova = async (req, res) => {
     }
 };
 
-// Get the latest led_nova_100 record
+// Get the latest socket3_data record
 export const getLatestLedNova = async (req, res) => {
     try {
         const latestLedNova = await prisma.$queryRaw`
@@ -50,19 +52,19 @@ export const getLatestLedNova = async (req, res) => {
                 id, 
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM led_nova_100
+            FROM socket3_data
             ORDER BY id DESC
             LIMIT 1
         `;
@@ -95,56 +97,56 @@ export const addLedNova = async (req, res) => {
         const {
             voltage,
             current,
-            power_operating,
+            power,
             frequency,
             power_factor,
-            operating_time,
-            over_voltage_operating,
-            over_current_operating,
-            over_power_operating,
-            status_operating,
-            under_voltage_operating,
-            power_socket_status
+            
+            over_voltage,
+            ,
+            over_power,
+            machine_state,
+            under_voltage,
+            socket_state
         } = req.body;
 
         // Insert new record using queryRaw to get the returned ID
         const result = await prisma.$queryRaw`
-            INSERT INTO led_nova_100 (
+            INSERT INTO socket3_data (
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp
             ) VALUES (
                 ${voltage}::real, 
                 ${current}::real, 
-                ${power_operating}::real, 
+                ${power}::real, 
                 ${frequency}::real, 
                 ${power_factor}::real, 
                 ${operating_time || '0 seconds'}::interval,
-                ${over_voltage_operating || false},
-                ${over_current_operating || false},
-                ${over_power_operating || false},
-                ${status_operating || false},
-                ${under_voltage_operating || false},
-                ${power_socket_status || false},
+                ${over_voltage || false},
+                ${ || false},
+                ${over_power || false},
+                ${machine_state || false},
+                ${under_voltage || false},
+                ${socket_state || false},
                 CURRENT_TIMESTAMP
             ) RETURNING id
         `;
 
         // Check for warnings after inserting data
-        await checkDeviceWarnings('led_nova_100', {
+        await checkDeviceWarnings('socket3_data', {
             voltage,
             current,
-            power_operating,
+            power,
             frequency,
             power_factor
         }, result[0].id);
@@ -172,19 +174,19 @@ export const getLedNova1Hour = async (req, res) => {
                 id, 
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM led_nova_100
+            FROM socket3_data
             WHERE timestamp >= NOW() - INTERVAL '1 hour'
             ORDER BY timestamp DESC
         `;
@@ -213,19 +215,19 @@ export const getLedNova6Hours = async (req, res) => {
                 id, 
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM led_nova_100
+            FROM socket3_data
             WHERE timestamp >= NOW() - INTERVAL '6 hours'
             ORDER BY timestamp DESC
         `;
@@ -254,19 +256,19 @@ export const getLedNova24Hours = async (req, res) => {
                 id, 
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM led_nova_100
+            FROM socket3_data
             WHERE timestamp >= NOW() - INTERVAL '24 hours'
             ORDER BY timestamp DESC
         `;
@@ -295,19 +297,19 @@ export const getLedNova7Days = async (req, res) => {
                 id, 
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM led_nova_100
+            FROM socket3_data
             WHERE timestamp >= NOW() - INTERVAL '7 days'
             ORDER BY timestamp DESC
         `;
@@ -336,19 +338,19 @@ export const getLedNova30Days = async (req, res) => {
                 id, 
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM led_nova_100
+            FROM socket3_data
             WHERE timestamp >= NOW() - INTERVAL '30 days'
             ORDER BY timestamp DESC
         `;
@@ -386,19 +388,19 @@ export const getLedNovaByDateRange = async (req, res) => {
                 id, 
                 voltage, 
                 current, 
-                power_operating, 
+                power, 
                 frequency, 
                 power_factor, 
-                CAST(operating_time AS TEXT) as operating_time,
-                over_voltage_operating,
-                over_current_operating,
-                over_power_operating,
-                status_operating,
-                under_voltage_operating,
-                power_socket_status,
+                
+                over_voltage,
+                ,
+                over_power,
+                machine_state,
+                under_voltage,
+                socket_state,\n                sensor_state,
                 timestamp,
                 to_char(timestamp, 'YYYY-MM-DD HH24:MI:SS') as formatted_time
-            FROM led_nova_100
+            FROM socket3_data
             WHERE timestamp >= ${startDate}::timestamp 
             AND timestamp <= ${endDate}::timestamp
             ORDER BY timestamp DESC
@@ -419,3 +421,16 @@ export const getLedNovaByDateRange = async (req, res) => {
         });
     }
 };
+
+// ==================== SOCKET 3 ALIASES ====================
+// Tang 3 PKT Socket 3 endpoints (socket3_data table)
+export const getAllSocket3 = getAllLedNova;
+export const getLatestSocket3 = getLatestLedNova;
+export const addSocket3 = addLedNova;
+export const getSocket31Hour = getLedNova1Hour;
+export const getSocket36Hours = getLedNova6Hours;
+export const getSocket324Hours = getLedNova24Hours;
+export const getSocket37Days = getLedNova7Days;
+export const getSocket330Days = getLedNova30Days;
+export const getSocket3ByDateRange = getLedNovaByDateRange;
+
