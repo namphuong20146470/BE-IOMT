@@ -41,8 +41,6 @@ import alertsRoutes from './features/alerts/alerts.routes.js';
 import actLog from './routes/actLog.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
 import roleRoutes from './routes/roleRoutes.js';
-// New user permissions routes
-import userPermissionsIndividualRoutes from './routes/userPermissions.routes.js';
 
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
@@ -183,9 +181,6 @@ app.use('/auth', authRoutes);
 // User Management  
 app.use('/users', usersRoutes);
 app.use('/users', userPermissionsRoutes); // User permissions sub-routes
-
-// 🔑 Individual User Permissions Management (grant/revoke specific permissions)
-app.use('/user-permissions', userPermissionsIndividualRoutes);
 
 // Device Management
 app.use('/devices', deviceRoutes);

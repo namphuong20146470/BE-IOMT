@@ -349,10 +349,10 @@ function getSeverityConfig(warning_severity) {
  */
 function getDeviceLocation(deviceType, deviceName) {
     const locationMapping = {
-        'auo_display': 'Phòng khám A1-A5',
-        'camera_control_unit': 'Phòng nội soi',
-        'electronic_endoflator': 'Phòng phẫu thuật nội soi',
-        'led_nova_100': 'Phòng phẫu thuật nội soi',
+        'socket1_data': 'Phòng khám A1-A5',
+        'socket2_data': 'Phòng nội soi',
+        'socket4_data': 'Phòng phẫu thuật nội soi',
+        'socket3_data': 'Phòng phẫu thuật nội soi',
         'iot_environment_status': 'Khu vực giám sát môi trường'
     };
     
@@ -459,7 +459,7 @@ async function getResolvedByName(userId) {
  * 
  * const warningFromDB = {
  *   "id": 8220,
- *   "device_type": "camera_control_unit", 
+ *   "device_type": "socket2_data", 
  *   "device_name": "Module xử lý hình ảnh",
  *   "device_id": null,
  *   "warning_type": "power_warning",

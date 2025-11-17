@@ -27,7 +27,7 @@ export const getAllOrganizations = async (req, res) => {
 
         // Get organizations with user counts
         const [organizations, total] = await Promise.all([
-            prisma.organization.findMany({
+            prisma.organizations.findMany({
                 where,
                 skip,
                 take: parseInt(limit),
@@ -40,9 +40,9 @@ export const getAllOrganizations = async (req, res) => {
                         }
                     }
                 },
-                orderBy: { createdAt: 'desc' }
+                orderBy: { created_at: 'desc' }
             }),
-            prisma.organization.count({ where })
+            prisma.organizations.count({ where })
         ]);
 
         return res.status(200).json({
@@ -72,7 +72,7 @@ export const getOrganizationById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const organization = await prisma.organization.findUnique({
+        const organization = await prisma.organizations.findUnique({
             where: { id },
             include: {
                 departments: {
@@ -166,7 +166,7 @@ export const createOrganization = async (req, res) => {
         const { name, type, address, phone, email, description } = req.body;
 
         // Check if organization name already exists
-        const existingOrg = await prisma.organization.findFirst({
+        const existingOrg = await prisma.organizations.findFirst({
             where: { name }
         });
 
@@ -177,7 +177,7 @@ export const createOrganization = async (req, res) => {
             });
         }
 
-        const organization = await prisma.organization.create({
+        const organization = await prisma.organizations.create({
             data: {
                 name,
                 type,
@@ -212,7 +212,7 @@ export const updateOrganization = async (req, res) => {
         const { name, type, address, phone, email, description } = req.body;
 
         // Check if organization exists
-        const existingOrg = await prisma.organization.findUnique({
+        const existingOrg = await prisma.organizations.findUnique({
             where: { id }
         });
 
@@ -225,7 +225,7 @@ export const updateOrganization = async (req, res) => {
 
         // Check if new name conflicts with other organizations
         if (name && name !== existingOrg.name) {
-            const nameConflict = await prisma.organization.findFirst({
+            const nameConflict = await prisma.organizations.findFirst({
                 where: { 
                     name,
                     id: { not: id }
@@ -240,7 +240,7 @@ export const updateOrganization = async (req, res) => {
             }
         }
 
-        const updatedOrganization = await prisma.organization.update({
+        const updatedOrganization = await prisma.organizations.update({
             where: { id },
             data: {
                 ...(name && { name }),
@@ -275,7 +275,7 @@ export const deleteOrganization = async (req, res) => {
         const { id } = req.params;
 
         // Check if organization exists and has dependencies
-        const organization = await prisma.organization.findUnique({
+        const organization = await prisma.organizations.findUnique({
             where: { id },
             include: {
                 _count: {
@@ -305,7 +305,7 @@ export const deleteOrganization = async (req, res) => {
             });
         }
 
-        await prisma.organization.delete({
+        await prisma.organizations.delete({
             where: { id }
         });
 
@@ -331,7 +331,7 @@ export const getOrganizationStatistics = async (req, res) => {
         const { id } = req.params;
 
         // Check if organization exists
-        const organization = await prisma.organization.findUnique({
+        const organization = await prisma.organizations.findUnique({
             where: { id }
         });
 

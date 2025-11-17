@@ -23,10 +23,10 @@ const TIME_WINDOW_MINUTES = parseInt(process.env.MQTT_TIME_WINDOW_MINUTES || '1'
 
 // Whitelist allowed tables (SQL injection protection)
 const ALLOWED_TABLES = [
-    'auo_display',
-    'camera_control_unit', 
-    'electronic_endoflator',
-    'led_nova_100',
+    'socket1_data',
+    'socket2_data', 
+    'socket3_data',
+    'socket4_data',
     'iot_environment_status'
 ];
 
@@ -36,10 +36,10 @@ const url = `mqtt://${mqttConfig.host}:${mqttConfig.port}`;
 const client = mqtt.connect(url, mqttConfig);
 
 const topics = {
-    auoDisplay: 'iot/auo-display',
-    cameraControl: 'iot/camera-control',
-    electronic: 'iot/electronic',
-    ledNova: 'iot/led-nova',
+    socket1: 'hopt/tang3/pkt/socket1',
+    socket2: 'hopt/tang3/pkt/socket2',
+    socket3: 'hopt/tang3/pkt/socket3',
+    socket4: 'hopt/tang3/pkt/socket4',
     iotEnv: 'iot/environment'
 };
 
@@ -72,23 +72,21 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
                 LIMIT 1
             `;
         } else {
-            // ✅ TẤT CẢ device tables khác đều dùng schema này
-            // (auo_display, camera_control_unit, electronic_endoflator, led_nova_100)
+            // ✅ TẤT CẢ socket tables đều dùng schema mới
+            // (socket1_data, socket2_data, socket3_data, socket4_data)
             query = `
                 SELECT 
                     id,
                     voltage,
                     current,
-                    power_operating,
+                    power,
                     frequency,
                     power_factor,
-                    CAST(operating_time AS TEXT) as operating_time,
-                    over_voltage_operating,
-                    over_current_operating,
-                    over_power_operating,
-                    status_operating,
-                    under_voltage_operating,
-                    power_socket_status,
+                    machine_state,
+                    socket_state,
+                    sensor_state,
+                    over_voltage,
+                    under_voltage,
                     timestamp
                 FROM ${tableName} 
                 ORDER BY timestamp DESC  
@@ -214,10 +212,9 @@ async function createMinimalRecord(tableName, mqttData) {
 // ✅ NEW: Smart insert function that only inserts non-null fields
 async function insertDeviceRecord(tableName, data) {
     const deviceFields = [
-        'voltage', 'current', 'power_operating', 'frequency', 'power_factor', 
-        'operating_time', 'over_voltage_operating', 'over_current_operating',
-        'over_power_operating', 'status_operating', 'under_voltage_operating', 
-        'power_socket_status'
+        'voltage', 'current', 'power', 'frequency', 'power_factor',
+        'machine_state', 'socket_state', 'sensor_state',
+        'over_voltage', 'under_voltage'
     ];
     
     console.log(`📝 [${tableName}] insertDeviceRecord called`);
@@ -239,9 +236,11 @@ async function insertDeviceRecord(tableName, data) {
     const fieldNames = fieldsToInsert.join(', ');
     const placeholders = fieldsToInsert.map((_, index) => {
         const field = fieldsToInsert[index];
-        if (field === 'operating_time') return `$${index + 1}::interval`;
-        if (['voltage', 'current', 'power_operating', 'frequency', 'power_factor'].includes(field)) {
+        if (['voltage', 'current', 'power', 'frequency', 'power_factor'].includes(field)) {
             return `$${index + 1}::real`;
+        }
+        if (['machine_state', 'socket_state', 'sensor_state', 'over_voltage', 'under_voltage'].includes(field)) {
+            return `$${index + 1}::boolean`;
         }
         return `$${index + 1}`;
     }).join(', ');
@@ -332,20 +331,18 @@ async function createNewRecord(tableName, partialData) {
             shutdown_warning: partialData.shutdown_warning ?? null
         };
     } else {
-        // Device tables
+        // Socket tables - new schema
         return {
             voltage: partialData.voltage ?? null,
             current: partialData.current ?? null,
-            power_operating: partialData.power_operating ?? null,
+            power: partialData.power ?? null,
             frequency: partialData.frequency ?? null,
             power_factor: partialData.power_factor ?? null,
-            operating_time: partialData.operating_time ?? null,
-            over_voltage_operating: partialData.over_voltage_operating ?? null,
-            over_current_operating: partialData.over_current_operating ?? null,
-            over_power_operating: partialData.over_power_operating ?? null,
-            status_operating: partialData.status_operating ?? null,
-            under_voltage_operating: partialData.under_voltage_operating ?? null,
-            power_socket_status: partialData.power_socket_status ?? null
+            machine_state: partialData.machine_state ?? null,
+            socket_state: partialData.socket_state ?? null,
+            sensor_state: partialData.sensor_state ?? null,
+            over_voltage: partialData.over_voltage ?? null,
+            under_voltage: partialData.under_voltage ?? null
         };
     }
 }
@@ -388,7 +385,7 @@ async function processDeviceData(tableName, topicName, partialData) {
             !changedFields.includes(key) && completeData[key] !== null
         );
 
-        const warningFields = ['voltage', 'current', 'power_operating', 'frequency', 'power_factor'];
+        const warningFields = ['voltage', 'current', 'power', 'frequency', 'power_factor', 'over_voltage', 'under_voltage'];
         const warningData = {};
         
         changedFields.forEach(field => {
@@ -463,20 +460,20 @@ export {
 
 // ==================== TOPIC HANDLERS ====================
 
-async function processAuoDisplayData(data) {
-    await processDeviceData('auo_display', 'AUO Display', data);
+async function processSocket1Data(data) {
+    await processDeviceData('socket1_data', 'Socket 1 (Tang 3 PKT)', data); // auo_display -> socket1_data
 }
 
-async function processCameraControlData(data) {
-    await processDeviceData('camera_control_unit', 'Camera Control Unit', data);
+async function processSocket2Data(data) {
+    await processDeviceData('socket2_data', 'Socket 2 (Tang 3 PKT)', data); // camera_control_unit -> socket2_data
 }
 
-async function processElectronicData(data) {
-    await processDeviceData('electronic_endoflator', 'Electronic Endoflator', data);
+async function processSocket3Data(data) {
+    await processDeviceData('socket3_data', 'Socket 3 (Tang 3 PKT)', data); // led_nova_100 -> socket3_data
 }
 
-async function processLedNovaData(data) {
-    await processDeviceData('led_nova_100', 'LED Nova', data);
+async function processSocket4Data(data) {
+    await processDeviceData('socket4_data', 'Socket 4 (Tang 3 PKT)', data); // electronic_endoflator -> socket4_data
 }
 
 async function processIotEnvData(partialData) {
@@ -571,17 +568,17 @@ client.on('message', async (topic, message) => {
         const data = JSON.parse(message.toString());
 
         switch (topic) {
-            case topics.auoDisplay:
-                await processAuoDisplayData(data);
+            case topics.socket1:
+                await processSocket1Data(data);
                 break;
-            case topics.cameraControl:
-                await processCameraControlData(data);
+            case topics.socket2:
+                await processSocket2Data(data);
                 break;
-            case topics.electronic:
-                await processElectronicData(data);
+            case topics.socket3:
+                await processSocket3Data(data);
                 break;
-            case topics.ledNova:
-                await processLedNovaData(data);
+            case topics.socket4:
+                await processSocket4Data(data);
                 break;
             case topics.iotEnv:
                 await processIotEnvData(data);

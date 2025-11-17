@@ -236,7 +236,7 @@ export const getDeviceById = async (req, res) => {
                 d.purchase_date, d.installation_date, d.created_at, d.updated_at,
                 d.model_id, d.organization_id, d.department_id,
                 dm.name as model_name, m.name as manufacturer,
-                dc.name as category_name, dc.description as category_description,
+                dc.name as category_name,
                 o.name as organization_name,
                 dept.name as department_name,
                 -- Warranty info
@@ -763,6 +763,70 @@ export const getDeviceStatistics = async (req, res) => {
 };
 
 // Validate asset tag uniqueness
+// Validate serial number uniqueness
+export const validateSerialNumber = async (req, res) => {
+    try {
+        const { serial_number, device_id } = req.query;
+
+        if (!serial_number) {
+            return res.status(400).json({
+                success: false,
+                message: 'Serial number is required'
+            });
+        }
+
+        // Check if serial number exists (exclude current device if updating)
+        let duplicateSerial;
+        
+        if (device_id) {
+            // Validate device_id UUID format
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidRegex.test(device_id)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid device ID format'
+                });
+            }
+            duplicateSerial = await prisma.$queryRaw`
+                SELECT id, organization_id, asset_tag FROM device 
+                WHERE serial_number = ${serial_number}
+                AND id != ${device_id}::uuid
+            `;
+        } else {
+            duplicateSerial = await prisma.$queryRaw`
+                SELECT id, organization_id, asset_tag FROM device 
+                WHERE serial_number = ${serial_number}
+            `;
+        }
+        
+        const isAvailable = duplicateSerial.length === 0;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                serial_number,
+                is_available: isAvailable,
+                conflict: !isAvailable ? {
+                    device_id: duplicateSerial[0].id,
+                    organization_id: duplicateSerial[0].organization_id,
+                    asset_tag: duplicateSerial[0].asset_tag
+                } : null
+            },
+            message: isAvailable 
+                ? 'Serial number is available' 
+                : 'Serial number already exists'
+        });
+
+    } catch (error) {
+        console.error('Error validating serial number:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to validate serial number',
+            error: error.message
+        });
+    }
+};
+
 export const validateAssetTag = async (req, res) => {
     try {
         const { asset_tag, organization_id, device_id } = req.query;

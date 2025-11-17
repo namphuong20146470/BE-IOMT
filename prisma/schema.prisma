@@ -63,6 +63,7 @@ model device {
   device_data           device_data[]
   device_latest_data    device_latest_data[]
   maintenance_schedules maintenance_schedules[]
+  maintenance_history   maintenance_history[]
   warranty_info         warranty_info[]
 
   @@index([model_id], map: "idx_device_model")
@@ -133,6 +134,7 @@ model organizations {
   system_settings       system_settings[]
   user_roles            user_roles[]
   users                 users[]
+  maintenance_history   maintenance_history[]
 
   @@index([is_active], map: "idx_organizations_active")
   @@index([name], map: "idx_organizations_name")
@@ -151,60 +153,61 @@ model departments {
   devices         device[]
   user_roles      user_roles[]
   users           users[]
+  maintenance_history maintenance_history[]
 
   @@index([code], map: "idx_departments_code")
   @@index([organization_id], map: "idx_departments_organization")
 }
 
-model auo_display {
-  id                      Int                      @id @default(autoincrement())
-  voltage                 Float?                   @db.Real
-  current                 Float?                   @db.Real
-  power_operating         Float?                   @db.Real
-  frequency               Float?                   @db.Real
-  power_factor            Float?                   @db.Real
-  operating_time          Unsupported("interval")?
-  over_voltage_operating  Boolean?                 @default(false)
-  over_current_operating  Boolean?                 @default(false)
-  over_power_operating    Boolean?                 @default(false)
-  status_operating        Boolean?                 @default(false)
-  under_voltage_operating Boolean?                 @default(false)
-  power_socket_status     Boolean?                 @default(false)
-  timestamp               DateTime?                @default(now()) @db.Timestamp(6)
+model socket1_data {
+  id           Int       @id @default(autoincrement())
+  voltage      Float?    @db.Real
+  current      Float?    @db.Real
+  power        Float?    @db.Real
+  frequency    Float?    @db.Real
+  power_factor Float?    @db.Real
+  machine_state Boolean? @default(false)
+  socket_state Boolean?  @default(false)
+  sensor_state Boolean?  @default(false)
+  over_voltage Boolean?  @default(false)
+  under_voltage Boolean? @default(false)
+  timestamp    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@map("socket1_data")
 }
 
-model camera_control_unit {
-  id                      Int                      @id @default(autoincrement())
-  voltage                 Float?                   @db.Real
-  current                 Float?                   @db.Real
-  power_operating         Float?                   @db.Real
-  frequency               Float?                   @db.Real
-  power_factor            Float?                   @db.Real
-  operating_time          Unsupported("interval")?
-  over_voltage_operating  Boolean?                 @default(false)
-  over_current_operating  Boolean?                 @default(false)
-  over_power_operating    Boolean?                 @default(false)
-  status_operating        Boolean?                 @default(false)
-  under_voltage_operating Boolean?                 @default(false)
-  power_socket_status     Boolean?                 @default(false)
-  timestamp               DateTime?                @default(now()) @db.Timestamp(6)
+model socket2_data {
+  id           Int       @id @default(autoincrement())
+  voltage      Float?    @db.Real
+  current      Float?    @db.Real
+  power        Float?    @db.Real
+  frequency    Float?    @db.Real
+  power_factor Float?    @db.Real
+  machine_state Boolean? @default(false)
+  socket_state Boolean?  @default(false)
+  sensor_state Boolean?  @default(false)
+  over_voltage Boolean?  @default(false)
+  under_voltage Boolean? @default(false)
+  timestamp    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@map("socket2_data")
 }
 
-model electronic_endoflator {
-  id                      Int                      @id @default(autoincrement())
-  voltage                 Float?                   @db.Real
-  current                 Float?                   @db.Real
-  power_operating         Float?                   @db.Real
-  frequency               Float?                   @db.Real
-  power_factor            Float?                   @db.Real
-  operating_time          Unsupported("interval")?
-  over_voltage_operating  Boolean?                 @default(false)
-  over_current_operating  Boolean?                 @default(false)
-  over_power_operating    Boolean?                 @default(false)
-  status_operating        Boolean?                 @default(false)
-  under_voltage_operating Boolean?                 @default(false)
-  power_socket_status     Boolean?                 @default(false)
-  timestamp               DateTime?                @default(now()) @db.Timestamp(6)
+model socket4_data {
+  id           Int       @id @default(autoincrement())
+  voltage      Float?    @db.Real
+  current      Float?    @db.Real
+  power        Float?    @db.Real
+  frequency    Float?    @db.Real
+  power_factor Float?    @db.Real
+  machine_state Boolean? @default(false)
+  socket_state Boolean?  @default(false)
+  sensor_state Boolean?  @default(false)
+  over_voltage Boolean?  @default(false)
+  under_voltage Boolean? @default(false)
+  timestamp    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@map("socket4_data")
 }
 
 model iot_environment_status {
@@ -220,21 +223,21 @@ model iot_environment_status {
   timestamp        DateTime? @default(now()) @db.Timestamp(6)
 }
 
-model led_nova_100 {
-  id                      Int                      @id @default(autoincrement())
-  voltage                 Float?                   @db.Real
-  current                 Float?                   @db.Real
-  power_operating         Float?                   @db.Real
-  frequency               Float?                   @db.Real
-  power_factor            Float?                   @db.Real
-  operating_time          Unsupported("interval")?
-  over_voltage_operating  Boolean?                 @default(false)
-  over_current_operating  Boolean?                 @default(false)
-  over_power_operating    Boolean?                 @default(false)
-  status_operating        Boolean?                 @default(false)
-  under_voltage_operating Boolean?                 @default(false)
-  power_socket_status     Boolean?                 @default(false)
-  timestamp               DateTime?                @default(now()) @db.Timestamp(6)
+model socket3_data {
+  id           Int       @id @default(autoincrement())
+  voltage      Float?    @db.Real
+  current      Float?    @db.Real
+  power        Float?    @db.Real
+  frequency    Float?    @db.Real
+  power_factor Float?    @db.Real
+  machine_state Boolean? @default(false)
+  socket_state Boolean?  @default(false)
+  sensor_state Boolean?  @default(false)
+  over_voltage Boolean?  @default(false)
+  under_voltage Boolean? @default(false)
+  timestamp    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@map("socket3_data")
 }
 
 model device_warning_logs {
@@ -471,7 +474,9 @@ model maintenance_schedules {
   schedule_type maintenance_type
   due_date      DateTime         @db.Date
   status        schedule_status  @default(pending)
+  maintenance_history_id String? @db.Uuid
   device        device           @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  maintenance_history maintenance_history[]
 
   @@index([device_id], map: "idx_maintenance_schedules_device")
   @@index([due_date], map: "idx_maintenance_schedules_due_date")
@@ -574,6 +579,8 @@ model users {
   user_roles_assigned                                    user_roles[]           @relation("UserRoleAssignedBy")
   user_roles                                             user_roles[]
   user_sessions                                          user_sessions[]
+  maintenance_performed                                  maintenance_history[]  @relation("MaintenancePerformer")
+  maintenance_created                                    maintenance_history[]  @relation("MaintenanceCreator")
   departments                                            departments?           @relation(fields: [department_id], references: [id], onUpdate: NoAction, map: "users_v2_department_id_fkey")
   organizations                                          organizations?         @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "users_v2_organization_id_fkey")
 
@@ -920,6 +927,91 @@ model user_permission_cache {
   @@index([expires_at], map: "idx_user_permission_cache_expires")
 }
 
+model maintenance_history {
+  id                     String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id              String               @db.Uuid
+  schedule_id            String?              @db.Uuid
+  maintenance_type       maintenance_type
+  
+  // Thông tin bảo trì
+  title                  String               @db.VarChar(255)
+  description            String?
+  performed_date         DateTime             @db.Timestamptz(6)
+  duration_minutes       Int?
+  
+  // Người thực hiện
+  performed_by           String?              @db.Uuid
+  technician_name        String?              @db.VarChar(255)
+  department_id          String?              @db.Uuid
+  
+  // Chi phí
+  cost                   Decimal?             @db.Decimal(12,2)
+  currency               String?              @default("VND") @db.VarChar(3)
+  parts_replaced         Json?                @default("[]")
+  consumables_used       Json?                @default("[]")
+  
+  // Trạng thái
+  status                 maintenance_status   @default(completed)
+  severity               maintenance_severity @default(routine)
+  
+  // Kết quả
+  issues_found           String?
+  actions_taken          String?
+  recommendations        String?
+  
+  // Đánh giá
+  device_condition       device_condition?
+  performance_rating     Int?                 @db.SmallInt
+  
+  // Lịch tiếp theo
+  next_maintenance_date  DateTime?            @db.Date
+  next_maintenance_type  maintenance_type?
+  
+  // Files
+  attachments            Json?                @default("[]")
+  photos                 Json?                @default("[]")
+  
+  // Metadata
+  created_at             DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?            @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by             String?              @db.Uuid
+  organization_id        String               @db.Uuid
+  
+  // Relations
+  device                 device               @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  schedule               maintenance_schedules? @relation(fields: [schedule_id], references: [id])
+  performer              users?               @relation("MaintenancePerformer", fields: [performed_by], references: [id])
+  department             departments?         @relation(fields: [department_id], references: [id])
+  creator                users?               @relation("MaintenanceCreator", fields: [created_by], references: [id])
+  organization           organizations        @relation(fields: [organization_id], references: [id])
+  parts                  maintenance_parts[]
+  
+  @@index([device_id], map: "idx_maintenance_history_device")
+  @@index([performed_date(sort: Desc)], map: "idx_maintenance_history_date")
+  @@index([organization_id], map: "idx_maintenance_history_org")
+  @@index([maintenance_type], map: "idx_maintenance_history_type")
+  @@index([status], map: "idx_maintenance_history_status")
+  @@index([performed_by], map: "idx_maintenance_history_performer")
+  @@index([device_id, performed_date(sort: Desc)], map: "idx_maintenance_device_date")
+}
+
+model maintenance_parts {
+  id              String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  maintenance_id  String             @db.Uuid
+  part_name       String             @db.VarChar(255)
+  part_number     String?            @db.VarChar(100)
+  quantity        Int                @default(1)
+  unit_price      Decimal?           @db.Decimal(12,2)
+  total_cost      Decimal?           @db.Decimal(12,2)
+  supplier        String?            @db.VarChar(255)
+  warranty_months Int?
+  created_at      DateTime?          @default(now()) @db.Timestamptz(6)
+  
+  maintenance     maintenance_history @relation(fields: [maintenance_id], references: [id], onDelete: Cascade)
+  
+  @@index([maintenance_id], map: "idx_maintenance_parts_maintenance")
+}
+
 
 
 enum device_status {
@@ -1049,4 +1141,25 @@ enum org_status {
   ACTIVE
   INACTIVE
   PENDING
+}
+
+enum maintenance_status {
+  completed
+  failed
+  partial
+  cancelled
+}
+
+enum maintenance_severity {
+  routine
+  urgent
+  emergency
+}
+
+enum device_condition {
+  excellent
+  good
+  fair
+  poor
+  critical
 }

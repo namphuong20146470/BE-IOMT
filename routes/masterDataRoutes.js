@@ -6,8 +6,6 @@ import {
     getDepartments,
     getDeviceModels,
     getDeviceCategories,
-    getManufacturers,
-    getSuppliers,
     getMeasurements,
     createMeasurements,
     getUserProfile
@@ -33,12 +31,6 @@ router.get('/device-models', authMiddleware, getDeviceModels);
 
 // Device Categories (public within system)
 router.get('/device-categories', authMiddleware, getDeviceCategories);
-
-// Manufacturers (public within system)
-router.get('/manufacturers', authMiddleware, getManufacturers);
-
-// Suppliers (public within system)
-router.get('/suppliers', authMiddleware, getSuppliers);
 
 // Measurements
 router.get('/measurements', authMiddleware, getMeasurements);

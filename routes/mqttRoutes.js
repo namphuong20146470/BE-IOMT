@@ -16,7 +16,7 @@ import {
     publishToDevice
 } from '../controllers/devices/mqttDevice.controller.js';
 
-// Import device connectivity controllers (existing)
+// Import device connectivity controllers (from features)
 import {
     getDeviceConnectivity,
     getAllDeviceConnectivities,
@@ -25,7 +25,7 @@ import {
     updateLastConnected,
     deleteDeviceConnectivity,
     getConnectivityStatistics
-} from '../controllers/devices/deviceConnectivity.controller.js';
+} from '../features/devices/deviceConnectivity.controller.js';
 
 const router = express.Router();
 

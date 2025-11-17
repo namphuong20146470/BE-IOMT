@@ -11,7 +11,7 @@ import {
     updateDeviceCategory,
     deleteDeviceCategory,
     getCategoryWithStats
-} from '../../controllers/devices/deviceCategory.controller.js';
+} from './deviceCategory.controller.js';
 
 // Device Model Controllers  
 import {
@@ -21,8 +21,11 @@ import {
     updateDeviceModel,
     deleteDeviceModel,
     getModelsByCategory,
-    getManufacturers
-} from '../../controllers/devices/deviceModel.controller.js';
+    getManufacturers,
+    getSuppliers,
+    createManufacturer,
+    createSupplier
+} from './deviceModel.controller.js';
 
 // Device Controllers
 import {
@@ -32,8 +35,9 @@ import {
     updateDevice,
     deleteDevice,
     getDeviceStatistics,
-    validateAssetTag
-} from '../../controllers/devices/device.controller.js';
+    validateAssetTag,
+    validateSerialNumber
+} from './device.controller.js';
 
 // Device Connectivity Controllers
 import {
@@ -44,7 +48,7 @@ import {
     updateLastConnected,
     deleteDeviceConnectivity,
     getConnectivityStatistics
-} from '../../controllers/devices/deviceConnectivity.controller.js';
+} from './deviceConnectivity.controller.js';
 
 // Warranty Controllers
 import {
@@ -55,9 +59,9 @@ import {
     deleteWarranty,
     getWarrantyStatistics,
     getExpiringWarranties
-} from '../../controllers/devices/warranty.controller.js';
+} from './warranty.controller.js';
 
-// Device History Controllers
+// Device History Controllers (Legacy - only in controllers/)
 import {
     getDeviceHistory,
     getDeviceRealtimeData,
@@ -101,6 +105,15 @@ router.get('/device-models', authMiddleware, requirePermission('device.read'), g
 // GET /device-models/manufacturers - Get manufacturers list
 router.get('/device-models/manufacturers', authMiddleware, getManufacturers);
 
+// GET /device-models/suppliers - Get suppliers list
+router.get('/device-models/suppliers', authMiddleware, getSuppliers);
+
+// POST /manufacturers - Create manufacturer
+router.post('/manufacturers', authMiddleware, requirePermission('device.manage'), createManufacturer);
+
+// POST /suppliers - Create supplier
+router.post('/suppliers', authMiddleware, requirePermission('device.manage'), createSupplier);
+
 // GET /device-models/:id - Get device model by ID
 router.get('/device-models/:id', authMiddleware, requirePermission('device.read'), getDeviceModelById);
 
@@ -121,46 +134,49 @@ router.delete('/device-models/:id', authMiddleware, requirePermission('device.ma
 // ====================================================================
 
 // GET /devices - Get all devices with filtering and pagination
-router.get('/devices', authMiddleware, requirePermission('device.read'), getAllDevices);
+router.get('/', authMiddleware, requirePermission('device.read'), getAllDevices);
 
 // GET /devices/statistics - Get device statistics
-router.get('/devices/statistics', authMiddleware, requirePermission('device.read'), getDeviceStatistics);
+router.get('/statistics', authMiddleware, requirePermission('device.read'), getDeviceStatistics);
+
+// GET /devices/validate/serial - Validate serial number uniqueness
+router.get('/validate/serial', authMiddleware, requirePermission('device.read'), validateSerialNumber);
 
 // GET /devices/validate/asset-tag - Validate asset tag uniqueness
-router.get('/devices/validate/asset-tag', authMiddleware, requirePermission('device.read'), validateAssetTag);
+router.get('/validate/asset-tag', authMiddleware, requirePermission('device.read'), validateAssetTag);
 
 // GET /devices/:id - Get device by ID with full details
-router.get('/devices/:id', authMiddleware, requirePermission('device.read'), getDeviceById);
+router.get('/:id', authMiddleware, requirePermission('device.read'), getDeviceById);
 
 // POST /devices - Create device
-router.post('/devices', authMiddleware, requirePermission('device.create'), createDevice);
+router.post('/', authMiddleware, requirePermission('device.create'), createDevice);
 
 // PUT /devices/:id - Update device
-router.put('/devices/:id', authMiddleware, requirePermission('device.update'), updateDevice);
+router.put('/:id', authMiddleware, requirePermission('device.update'), updateDevice);
 
 // DELETE /devices/:id - Delete device
-router.delete('/devices/:id', authMiddleware, requirePermission('device.delete'), deleteDevice);
+router.delete('/:id', authMiddleware, requirePermission('device.delete'), deleteDevice);
 
 // ====================================================================
 // DEVICE DATA & HISTORY ROUTES
 // ====================================================================
 
 // GET /devices/:id/realtime - Get latest sensor data for device
-router.get('/devices/:id/realtime', 
+router.get('/:id/realtime', 
     authMiddleware, 
     requirePermission('device.read'), 
     getDeviceRealtimeData
 );
 
 // GET /devices/:id/history - Get sensor data history for device
-router.get('/devices/:id/history', 
+router.get('/:id/history', 
     authMiddleware, 
     requirePermission('device.read'), 
     getDeviceHistory
 );
 
 // GET /devices/:id/summary - Get data statistics summary for device
-router.get('/devices/:id/summary', 
+router.get('/:id/summary', 
     authMiddleware, 
     requirePermission('device.read'), 
     getDeviceDataSummary

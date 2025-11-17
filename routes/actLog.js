@@ -3,13 +3,9 @@ import { authMiddleware } from '../shared/middleware/authMiddleware.js';
 import { requirePermission } from '../shared/middleware/rbacMiddleware.js';
 import { createRole, getAllRoles, deleteRole, updateRole } from '../controllers/roles/roles.controller.js';
 
-// Import device routes
-import deviceRoutes from './deviceRoutes.js';
-// Import device data processor routes
-import deviceDataRoutes from './deviceDataRoutes.js';
 // Import MQTT device routes
 import mqttRoutes from './mqttRoutes.js';
-// Import specifications routes
+
 // Import các controller cần thiết từ features
 import {
     getAllUsers,
@@ -30,24 +26,21 @@ import {
     logout as logoutAllSessions
 } from '../features/auth/auth.controller.js';
 
-// Import session management (if needed)
-// Note: terminateSession, getSessionStatistics may need to be implemented
-
-// Organizations controllers
+// Organizations controllers (NEW: from features)
 import {
     createOrganization,
     getAllOrganizations,
     getOrganizationById,
     updateOrganization
-} from '../controllers/organizations/organizations.controller.js';
+} from '../features/organizations/organizations.controller.js';
 
-// Departments controllers
+// Departments controllers (NEW: from features)
 import {
     createDepartment,
     getDepartmentsByOrganization,
     getAllDepartments,
     updateDepartment
-} from '../controllers/departments/departments.controller.js';
+} from '../features/departments/departments.controller.js';
 
 // Import các controller cần thiết cho audit logs
 import { 
@@ -303,9 +296,6 @@ router.get('/auth/decode', (req, res) => {
 });
 
 
-
-// Device data processor routes (Dynamic MQTT system)
-router.use('/device-processor', deviceDataRoutes);
 
 // MQTT device management routes
 router.use('/mqtt', mqttRoutes);

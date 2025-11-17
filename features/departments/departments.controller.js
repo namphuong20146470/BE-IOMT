@@ -42,7 +42,7 @@ export const getAllDepartments = async (req, res) => {
 
         // Get departments with counts
         const [departments, total] = await Promise.all([
-            prisma.department.findMany({
+            prisma.departments.findMany({
                 where,
                 skip,
                 take: parseInt(limit),
@@ -59,7 +59,7 @@ export const getAllDepartments = async (req, res) => {
                 },
                 orderBy: { createdAt: 'desc' }
             }),
-            prisma.department.count({ where })
+            prisma.departments.count({ where })
         ]);
 
         return res.status(200).json({
@@ -89,7 +89,7 @@ export const getDepartmentById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const department = await prisma.department.findUnique({
+        const department = await prisma.departments.findUnique({
             where: { id },
             include: {
                 organization: {
@@ -180,7 +180,7 @@ export const getDepartmentsByOrganization = async (req, res) => {
         }
 
         const [departments, total] = await Promise.all([
-            prisma.department.findMany({
+            prisma.departments.findMany({
                 where,
                 skip,
                 take: parseInt(limit),
@@ -194,7 +194,7 @@ export const getDepartmentsByOrganization = async (req, res) => {
                 },
                 orderBy: { name: 'asc' }
             }),
-            prisma.department.count({ where })
+            prisma.departments.count({ where })
         ]);
 
         return res.status(200).json({
@@ -225,7 +225,7 @@ export const createDepartment = async (req, res) => {
         const { organization_id, name, code, description } = req.body;
 
         // Check if organization exists and user has access
-        const organization = await prisma.organization.findUnique({
+        const organization = await prisma.organizations.findUnique({
             where: { id: organization_id }
         });
 
@@ -246,7 +246,7 @@ export const createDepartment = async (req, res) => {
         }
 
         // Check if department code already exists within the organization
-        const existingDept = await prisma.department.findFirst({
+        const existingDept = await prisma.departments.findFirst({
             where: { 
                 code,
                 organizationId: organization_id
@@ -260,7 +260,7 @@ export const createDepartment = async (req, res) => {
             });
         }
 
-        const department = await prisma.department.create({
+        const department = await prisma.departments.create({
             data: {
                 organizationId: organization_id,
                 name,
@@ -298,7 +298,7 @@ export const updateDepartment = async (req, res) => {
         const { name, code, description } = req.body;
 
         // Check if department exists
-        const existingDept = await prisma.department.findUnique({
+        const existingDept = await prisma.departments.findUnique({
             where: { id },
             include: { organization: true }
         });
@@ -321,7 +321,7 @@ export const updateDepartment = async (req, res) => {
 
         // Check if new code conflicts with other departments in the same organization
         if (code && code !== existingDept.code) {
-            const codeConflict = await prisma.department.findFirst({
+            const codeConflict = await prisma.departments.findFirst({
                 where: { 
                     code,
                     organizationId: existingDept.organizationId,
@@ -337,7 +337,7 @@ export const updateDepartment = async (req, res) => {
             }
         }
 
-        const updatedDepartment = await prisma.department.update({
+        const updatedDepartment = await prisma.departments.update({
             where: { id },
             data: {
                 ...(name && { name }),
@@ -374,7 +374,7 @@ export const deleteDepartment = async (req, res) => {
         const { id } = req.params;
 
         // Check if department exists and has dependencies
-        const department = await prisma.department.findUnique({
+        const department = await prisma.departments.findUnique({
             where: { id },
             include: {
                 _count: {
@@ -412,7 +412,7 @@ export const deleteDepartment = async (req, res) => {
             });
         }
 
-        await prisma.department.delete({
+        await prisma.departments.delete({
             where: { id }
         });
 
@@ -438,7 +438,7 @@ export const getDepartmentStatistics = async (req, res) => {
         const { id } = req.params;
 
         // Check if department exists and user has access
-        const department = await prisma.department.findUnique({
+        const department = await prisma.departments.findUnique({
             where: { id }
         });
 
@@ -543,7 +543,7 @@ export const getOrganizationDepartmentStatistics = async (req, res) => {
         }
 
         // Get department statistics
-        const departments = await prisma.department.findMany({
+        const departments = await prisma.departments.findMany({
             where: { organizationId },
             include: {
                 _count: {

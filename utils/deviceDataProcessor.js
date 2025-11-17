@@ -9,10 +9,10 @@ const prisma = new PrismaClient();
 // ==================== CONFIGURATION ====================
 
 const DEVICE_TABLES = {
-    AUO_DISPLAY: 'auo_display',
-    CAMERA_CONTROL: 'camera_control_unit',
-    ELECTRONIC: 'electronic_endoflator',
-    LED_NOVA: 'led_nova_100'
+    AUO_DISPLAY: 'socket1_data',
+    CAMERA_CONTROL: 'socket2_data',
+    ELECTRONIC: 'socket4_data',
+    LED_NOVA: 'socket3_data'
 };
 
 const DEVICE_SCHEMAS = {

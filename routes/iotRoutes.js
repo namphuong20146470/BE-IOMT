@@ -2,53 +2,57 @@ import express from 'express';
 import { authMiddleware } from '../middleware/authMiddleware.js';
 import { requirePermission } from '../shared/middleware/rbacMiddleware.js';
 
+// Socket 1 Data (Tang 3 PKT - Socket 1)
 import {
-    getAllAuoDisplay,
-    getLatestAuoDisplay,
-    addAuoDisplay,
-    getAuoDisplay1Hour,
-    getAuoDisplay6Hours,
-    getAuoDisplay24Hours,
-    getAuoDisplay7Days,
-    getAuoDisplay30Days,
-    getAuoDisplayByDateRange
-} from '../controllers/auoDisplay/auoDisplay.controller.js';
+    getAllSocket1,
+    getLatestSocket1,
+    addSocket1,
+    getSocket11Hour,
+    getSocket16Hours,
+    getSocket124Hours,
+    getSocket17Days,
+    getSocket130Days,
+    getSocket1ByDateRange
+} from '../controllers/socket1/socket1.controller.js';
 
+// Socket 2 Data (Tang 3 PKT - Socket 2)
 import {
-    getAllCameraControl,
-    getLatestCameraControl,
-    addCameraControl,
-    getCameraControl7Days,
-    getCameraControl30Days,
-    getCameraControlByDateRange,
-    getCameraControl1Hour,
-    getCameraControl6Hours,
-    getCameraControl24Hours
-} from '../controllers/cameraControl/cameraControl.controller.js';
+    getAllSocket2,
+    getLatestSocket2,
+    addSocket2,
+    getSocket27Days,
+    getSocket230Days,
+    getSocket2ByDateRange,
+    getSocket21Hour,
+    getSocket26Hours,
+    getSocket224Hours
+} from '../controllers/socket2/socket2.controller.js';
 
+// Socket 3 Data (Tang 3 PKT - Socket 3)
 import {
-    getAllElectronic,
-    getLatestElectronic,
-    addElectronic,
-    getElectronic1Hour,
-    getElectronic6Hours,
-    getElectronic24Hours,
-    getElectronic7Days,
-    getElectronic30Days,
-    getElectronicByDateRange
-} from '../controllers/electronic/electronic.controller.js';
+    getAllSocket3,
+    getLatestSocket3,
+    addSocket3,
+    getSocket31Hour,
+    getSocket36Hours,
+    getSocket324Hours,
+    getSocket37Days,
+    getSocket330Days,
+    getSocket3ByDateRange
+} from '../controllers/socket3/socket3.controller.js';
 
+// Socket 4 Data (Tang 3 PKT - Socket 4)
 import {
-    getAllLedNova,
-    getLatestLedNova,
-    addLedNova,
-    getLedNova1Hour,
-    getLedNova6Hours,
-    getLedNova24Hours,
-    getLedNova7Days,
-    getLedNova30Days,
-    getLedNovaByDateRange
-} from '../controllers/ledNova/ledNova.controller.js';
+    getAllSocket4,
+    getLatestSocket4,
+    addSocket4,
+    getSocket41Hour,
+    getSocket46Hours,
+    getSocket424Hours,
+    getSocket47Days,
+    getSocket430Days,
+    getSocket4ByDateRange
+} from '../controllers/socket4/socket4.controller.js';
 
 import {
     getAllIotEnv,
@@ -82,49 +86,49 @@ import { updateWarningStatus } from '../controllers/deviceWarningLogs/deviceWarn
 
 const router = express.Router();
 
-// AUO Display routes
-router.get('/auo-display', getAllAuoDisplay);
-router.get('/auo-display/latest', getLatestAuoDisplay);
-router.get('/auo-display/1hour', getAuoDisplay1Hour);
-router.get('/auo-display/6hours', getAuoDisplay6Hours);
-router.get('/auo-display/24hours', getAuoDisplay24Hours);
-router.get('/auo-display/7days', getAuoDisplay7Days);
-router.get('/auo-display/30days', getAuoDisplay30Days);
-router.get('/auo-display/range', getAuoDisplayByDateRange);
-router.post('/auo-display', addAuoDisplay);
+// Socket 1 routes (Tang 3 PKT - Socket 1)
+router.get('/socket1', getAllSocket1);
+router.get('/socket1/latest', getLatestSocket1);
+router.get('/socket1/1hour', getSocket11Hour);
+router.get('/socket1/6hours', getSocket16Hours);
+router.get('/socket1/24hours', getSocket124Hours);
+router.get('/socket1/7days', getSocket17Days);
+router.get('/socket1/30days', getSocket130Days);
+router.get('/socket1/range', getSocket1ByDateRange);
+router.post('/socket1', addSocket1);
 
-// Camera Control Unit routes
-router.get('/camera-control', getAllCameraControl);
-router.get('/camera-control/latest', getLatestCameraControl);
-router.get('/camera-control/1hour', getCameraControl1Hour);
-router.get('/camera-control/6hours', getCameraControl6Hours);
-router.get('/camera-control/24hours', getCameraControl24Hours);
-router.get('/camera-control/7days', getCameraControl7Days);
-router.get('/camera-control/30days', getCameraControl30Days);
-router.get('/camera-control/range', getCameraControlByDateRange);
-router.post('/camera-control', addCameraControl);
+// Socket 2 routes (Tang 3 PKT - Socket 2)
+router.get('/socket2', getAllSocket2);
+router.get('/socket2/latest', getLatestSocket2);
+router.get('/socket2/1hour', getSocket21Hour);
+router.get('/socket2/6hours', getSocket26Hours);
+router.get('/socket2/24hours', getSocket224Hours);
+router.get('/socket2/7days', getSocket27Days);
+router.get('/socket2/30days', getSocket230Days);
+router.get('/socket2/range', getSocket2ByDateRange);
+router.post('/socket2', addSocket2);
 
-// Electronic Endoflator routes
-router.get('/electronic', getAllElectronic);
-router.get('/electronic/latest', getLatestElectronic);
-router.get('/electronic/1hour', getElectronic1Hour);
-router.get('/electronic/6hours', getElectronic6Hours);
-router.get('/electronic/24hours', getElectronic24Hours);
-router.get('/electronic/7days', getElectronic7Days);
-router.get('/electronic/30days', getElectronic30Days);
-router.get('/electronic/range', getElectronicByDateRange);
-router.post('/electronic', addElectronic);
+// Socket 4 routes (Tang 3 PKT - Socket 4)
+router.get('/socket4', getAllSocket4);
+router.get('/socket4/latest', getLatestSocket4);
+router.get('/socket4/1hour', getSocket41Hour);
+router.get('/socket4/6hours', getSocket46Hours);
+router.get('/socket4/24hours', getSocket424Hours);
+router.get('/socket4/7days', getSocket47Days);
+router.get('/socket4/30days', getSocket430Days);
+router.get('/socket4/range', getSocket4ByDateRange);
+router.post('/socket4', addSocket4);
 
-// LED Nova 100 routes
-router.get('/led-nova', getAllLedNova);
-router.get('/led-nova/latest', getLatestLedNova);
-router.get('/led-nova/1hour', getLedNova1Hour);
-router.get('/led-nova/6hours', getLedNova6Hours);
-router.get('/led-nova/24hours', getLedNova24Hours);
-router.get('/led-nova/7days', getLedNova7Days);
-router.get('/led-nova/30days', getLedNova30Days);
-router.get('/led-nova/range', getLedNovaByDateRange);
-router.post('/led-nova', addLedNova);
+// Socket 3 routes (Tang 3 PKT - Socket 3)
+router.get('/socket3', getAllSocket3);
+router.get('/socket3/latest', getLatestSocket3);
+router.get('/socket3/1hour', getSocket31Hour);
+router.get('/socket3/6hours', getSocket36Hours);
+router.get('/socket3/24hours', getSocket324Hours);
+router.get('/socket3/7days', getSocket37Days);
+router.get('/socket3/30days', getSocket330Days);
+router.get('/socket3/range', getSocket3ByDateRange);
+router.post('/socket3', addSocket3);
 
 // IoT Environment Status routes
 router.get('/iot-env', getAllIotEnv);
