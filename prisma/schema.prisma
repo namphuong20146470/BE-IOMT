@@ -47,6 +47,7 @@ model device {
   serial_number         String                  @unique(map: "idx_device_serial") @db.VarChar(255)
   asset_tag             String?                 @db.VarChar(100)
   status                device_status           @default(active)
+  visibility            device_visibility       @default(private)
   purchase_date         DateTime?               @db.Date
   installation_date     DateTime?               @db.Date
   created_at            DateTime?               @default(now()) @db.Timestamptz(6)
@@ -70,6 +71,8 @@ model device {
   @@index([organization_id], map: "idx_device_organization")
   @@index([department_id], map: "idx_device_department")
   @@index([status], map: "idx_device_status")
+  @@index([visibility], map: "idx_device_visibility")
+  @@index([organization_id, visibility], map: "idx_device_org_visibility")
 }
 
 model warranty_info {
@@ -1162,4 +1165,10 @@ enum device_condition {
   fair
   poor
   critical
+}
+
+enum device_visibility {
+  public       // Visible to entire organization
+  department   // Visible only to specific department (default)
+  private      // Visible only to creator/assigned users
 }

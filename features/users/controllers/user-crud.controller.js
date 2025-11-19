@@ -86,7 +86,7 @@ export const createUser = async (req, res) => {
         const userData = req.body;
         const createdBy = req.user.id;
 
-        const result = await userService.createUser(userData, createdBy);
+        const result = await userService.createUser(userData);
 
         if (!result.success) {
             return res.status(HTTP_STATUS.BAD_REQUEST).json({

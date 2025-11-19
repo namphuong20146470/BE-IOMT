@@ -41,6 +41,7 @@ import alertsRoutes from './features/alerts/alerts.routes.js';
 import actLog from './routes/actLog.js';
 import masterDataRoutes from './routes/masterDataRoutes.js';
 import roleRoutes from './routes/roleRoutes.js';
+import mqttRoutes from './routes/mqttRoutes.js';
 
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
@@ -53,6 +54,9 @@ dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
+
+// ✅ Trust proxy for correct IP detection
+app.set('trust proxy', true);
 
 // Port configuration  
 const port = process.env.PORT || 3030;
@@ -210,6 +214,9 @@ app.use('/', deviceDataRoutes, masterDataRoutes);
 
 // IoT & MQTT
 app.use('/iot', iot);
+
+// MQTT Device Management
+app.use('/mqtt', mqttRoutes);
 
 // Activity Logs
 app.use('/actlog', actLog);

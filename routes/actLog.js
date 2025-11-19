@@ -51,7 +51,10 @@ import {
     deleteBulkLogs,
     deleteAllLogs, 
     getLogStats,
-    exportLogs
+    exportLogs,
+    getLogTimeline,
+    detectAnomalies,
+    cleanupOldLogs
 } from '../controllers/auditLogs/auditLogs.controller.js';
 
 // Import permission controllers
@@ -176,15 +179,20 @@ router.get('/users/:userId/roles', authMiddleware, requirePermission('user.read'
 // AUDIT LOGS ROUTES
 // ====================================================================
 
+// Advanced Analytics (must come before basic routes to avoid conflicts)
+router.get('/logs/timeline', authMiddleware, requirePermission('audit.read'), getLogTimeline);        // Timeline analytics
+router.get('/logs/anomalies', authMiddleware, requirePermission('audit.read'), detectAnomalies);     // Anomaly detection
+router.post('/logs/cleanup', authMiddleware, requirePermission('audit.delete'), cleanupOldLogs);     // Cleanup old logs
+
 // Basic CRUD operations
-router.get('/logs', authMiddleware, getAllLogs);                    // Get all logs with filters and pagination
-router.get('/logs/stats', authMiddleware, getLogStats);             // Get audit log statistics
-router.get('/logs/export', authMiddleware, exportLogs);             // Export logs (CSV/JSON)
-router.get('/logs/:id', authMiddleware, getLogById);                // Get specific log by ID
-router.post('/logs', authMiddleware, createLog);                    // Create new audit log
-router.delete('/logs/:id', authMiddleware, deleteLog);              // Delete specific log
-router.delete('/logs/bulk', authMiddleware, deleteBulkLogs);        // Delete multiple logs
-router.delete('/logs/all', authMiddleware, deleteAllLogs);          // Delete all logs (super admin only)
+router.get('/logs', authMiddleware, requirePermission('audit.read'), getAllLogs);                    // Get all logs with filters and pagination
+router.get('/logs/stats', authMiddleware, requirePermission('audit.read'), getLogStats);             // Get audit log statistics
+router.get('/logs/export', authMiddleware, requirePermission('audit.export'), exportLogs);           // Export logs (CSV/JSON)
+router.get('/logs/:id', authMiddleware, requirePermission('audit.read'), getLogById);                // Get specific log by ID
+router.post('/logs', authMiddleware, requirePermission('audit.create'), createLog);                  // Create new audit log
+router.delete('/logs/:id', authMiddleware, requirePermission('audit.delete'), deleteLog);            // Delete specific log
+router.delete('/logs/bulk', authMiddleware, requirePermission('audit.delete'), deleteBulkLogs);      // Delete multiple logs
+router.delete('/logs/all', authMiddleware, requirePermission('audit.delete'), deleteAllLogs);        // Delete all logs (super admin only)
 
 // ====================================================================
 // AUTHENTICATION & TOKEN ROUTES

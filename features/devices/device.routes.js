@@ -36,7 +36,10 @@ import {
     deleteDevice,
     getDeviceStatistics,
     validateAssetTag,
-    validateSerialNumber
+    validateSerialNumber,
+    changeDeviceVisibility,
+    getDevicesByVisibility,
+    assignDeviceToDepartment
 } from './device.controller.js';
 
 // Device Connectivity Controllers
@@ -145,6 +148,9 @@ router.get('/validate/serial', authMiddleware, requirePermission('device.read'),
 // GET /devices/validate/asset-tag - Validate asset tag uniqueness
 router.get('/validate/asset-tag', authMiddleware, requirePermission('device.read'), validateAssetTag);
 
+// GET /devices/visibility/:visibility - Get devices by visibility (public/department/private/all)
+router.get('/visibility/:visibility', authMiddleware, requirePermission('device.read'), getDevicesByVisibility);
+
 // GET /devices/:id - Get device by ID with full details
 router.get('/:id', authMiddleware, requirePermission('device.read'), getDeviceById);
 
@@ -153,6 +159,12 @@ router.post('/', authMiddleware, requirePermission('device.create'), createDevic
 
 // PUT /devices/:id - Update device
 router.put('/:id', authMiddleware, requirePermission('device.update'), updateDevice);
+
+// PUT /devices/:id/visibility - Change device visibility
+router.put('/:id/visibility', authMiddleware, requirePermission('device.update'), changeDeviceVisibility);
+
+// PUT /devices/:id/department - Assign device to department
+router.put('/:id/department', authMiddleware, requirePermission('device.update'), assignDeviceToDepartment);
 
 // DELETE /devices/:id - Delete device
 router.delete('/:id', authMiddleware, requirePermission('device.delete'), deleteDevice);

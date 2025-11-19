@@ -100,7 +100,7 @@ SELECT COUNT(*) FROM maintenance_parts;
 
 ```javascript
 // 1. Create maintenance record
-POST /api/maintenance
+POST /maintenance
 {
   "device_id": "device-uuid",
   "maintenance_type": "preventive",

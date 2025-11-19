@@ -14,7 +14,7 @@ import {
     getMqttStatus,
     testPublishMessage,
     publishToDevice
-} from '../controllers/devices/mqttDevice.controller.js';
+} from '../features/devices/mqttDevice.controller.js';
 
 // Import device connectivity controllers (from features)
 import {
