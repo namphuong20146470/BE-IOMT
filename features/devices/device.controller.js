@@ -38,8 +38,11 @@ export const getAllDevices = async (req, res) => {
 
         // Check Super Admin (System Admin)
         const user = req.user;
-        const isSuperAdmin = user?.role === 'system.admin' || 
-        (!user?.organization_id && !user?.department_id);
+        const userPermissions = getUserPermissions(user);
+        const isSuperAdmin = (userPermissions.includes('system.admin') ||
+                            hasPermission(user, 'system.admin')) &&
+                           !user?.organization_id &&
+                           !user?.department_id;
 
         if (!isSuperAdmin) {
             // Normal user / org admin
@@ -159,39 +162,17 @@ export const getAllDevices = async (req, res) => {
         const devices = await prisma.$queryRawUnsafe(`
             SELECT 
                 d.id, d.serial_number, d.asset_tag, d.status, d.visibility,
-                d.purchase_date, d.installation_date, d.created_at, d.updated_at,
-                d.model_id, d.organization_id, d.department_id,
+                d.created_at, d.updated_at,
                 dm.name as model_name, m.name as manufacturer,
                 dc.name as category_name,
-                o.id as organization_id_ref, o.name as organization_name,
-                dept.id as department_id_ref, dept.name as department_name,
-                wi.warranty_end,
-                CASE 
-                    WHEN wi.warranty_end < CURRENT_DATE THEN 'expired'
-                    WHEN wi.warranty_end < CURRENT_DATE + INTERVAL '30 days' THEN 'expiring_soon'
-                    ELSE 'valid'
-                END as warranty_status,
-                conn.last_connected,
-                conn.is_active as connectivity_active,
-                CASE 
-                    WHEN conn.last_connected IS NULL THEN 'never_connected'
-                    WHEN conn.last_connected < NOW() - INTERVAL '1 hour' THEN 'offline'
-                    ELSE 'online'
-                END as connection_status,
-                CASE 
-                    WHEN d.visibility = 'public' THEN 'Organization-wide'
-                    WHEN d.visibility = 'department' AND d.department_id IS NOT NULL THEN dept.name || ' only'
-                    WHEN d.visibility = 'department' AND d.department_id IS NULL THEN 'Unassigned department'
-                    WHEN d.visibility = 'private' THEN 'Private access'
-                END as visibility_scope
+                o.name as organization_name,
+                dept.name as department_name
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.id
-            LEFT JOIN warranty_info wi ON d.id = wi.device_id
-            LEFT JOIN device_connectivity conn ON d.id = conn.device_id
             ${whereClause}
             ORDER BY d.created_at DESC
             LIMIT $${paramIndex} OFFSET $${paramIndex+1}
@@ -248,40 +229,80 @@ export const getDeviceById = async (req, res) => {
             });
         }
 
-        // **SECURITY: Filter by user's organization**
-        const userOrgId = req.user?.organization_id;
-        if (!userOrgId) {
+        // **SECURITY: Check user permissions**
+        const user = req.user;
+        const userOrgId = user?.organization_id;
+        const userPermissions = getUserPermissions(user);
+        const isSuperAdmin = (userPermissions.includes('system.admin') ||
+                            hasPermission(user, 'system.admin')) &&
+                           !user?.organization_id &&
+                           !user?.department_id;
+
+        if (!isSuperAdmin && !userOrgId) {
             return res.status(403).json({
                 success: false,
                 message: 'User organization not found'
             });
         }
 
-        const device = await prisma.$queryRaw`
-            SELECT 
-                d.id, d.serial_number, d.asset_tag, d.status,
-                d.purchase_date, d.installation_date, d.created_at, d.updated_at,
-                d.model_id, d.organization_id, d.department_id,
-                dm.name as model_name, m.name as manufacturer,
-                dc.name as category_name,
-                o.name as organization_name,
-                dept.name as department_name,
-                -- Warranty info
-                wi.warranty_start, wi.warranty_end, wi.provider as warranty_provider,
-                -- Connectivity info
-                conn.mqtt_user, conn.mqtt_topic, conn.broker_host, conn.broker_port,
-                conn.ssl_enabled, conn.heartbeat_interval, conn.last_connected, conn.is_active
-            FROM device d
-            LEFT JOIN device_models dm ON d.model_id = dm.id
-            LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
-            LEFT JOIN device_categories dc ON dm.category_id = dc.id
-            LEFT JOIN organizations o ON d.organization_id = o.id
-            LEFT JOIN departments dept ON d.department_id = dept.id
-            LEFT JOIN warranty_info wi ON d.id = wi.device_id
-            LEFT JOIN device_connectivity conn ON d.id = conn.device_id
-            WHERE d.id = ${id}::uuid 
-            AND d.organization_id = ${userOrgId}::uuid
-        `;
+        let device;
+        
+        if (isSuperAdmin) {
+            // Super admin can access any device
+            device = await prisma.$queryRaw`
+                SELECT 
+                    d.id, d.serial_number, d.asset_tag, d.status, d.visibility,
+                    d.purchase_date, d.installation_date, d.created_at, d.updated_at,
+                    d.model_id, d.organization_id, d.department_id,
+                    dm.name as model_name, m.name as manufacturer,
+                    dm.specifications as model_specifications,
+                    dc.name as category_name,
+                    o.name as organization_name,
+                    dept.name as department_name,
+                    -- Warranty info
+                    wi.warranty_start, wi.warranty_end, wi.provider as warranty_provider,
+                    -- Connectivity info
+                    conn.mqtt_user, conn.mqtt_topic, conn.broker_host, conn.broker_port,
+                    conn.ssl_enabled, conn.heartbeat_interval, conn.last_connected, conn.is_active
+                FROM device d
+                LEFT JOIN device_models dm ON d.model_id = dm.id
+                LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
+                LEFT JOIN device_categories dc ON dm.category_id = dc.id
+                LEFT JOIN organizations o ON d.organization_id = o.id
+                LEFT JOIN departments dept ON d.department_id = dept.id
+                LEFT JOIN warranty_info wi ON d.id = wi.device_id
+                LEFT JOIN device_connectivity conn ON d.id = conn.device_id
+                WHERE d.id = ${id}::uuid
+            `;
+        } else {
+            // Regular user - filter by organization
+            device = await prisma.$queryRaw`
+                SELECT 
+                    d.id, d.serial_number, d.asset_tag, d.status, d.visibility,
+                    d.purchase_date, d.installation_date, d.created_at, d.updated_at,
+                    d.model_id, d.organization_id, d.department_id,
+                    dm.name as model_name, m.name as manufacturer,
+                    dm.specifications as model_specifications,
+                    dc.name as category_name,
+                    o.name as organization_name,
+                    dept.name as department_name,
+                    -- Warranty info
+                    wi.warranty_start, wi.warranty_end, wi.provider as warranty_provider,
+                    -- Connectivity info
+                    conn.mqtt_user, conn.mqtt_topic, conn.broker_host, conn.broker_port,
+                    conn.ssl_enabled, conn.heartbeat_interval, conn.last_connected, conn.is_active
+                FROM device d
+                LEFT JOIN device_models dm ON d.model_id = dm.id
+                LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
+                LEFT JOIN device_categories dc ON dm.category_id = dc.id
+                LEFT JOIN organizations o ON d.organization_id = o.id
+                LEFT JOIN departments dept ON d.department_id = dept.id
+                LEFT JOIN warranty_info wi ON d.id = wi.device_id
+                LEFT JOIN device_connectivity conn ON d.id = conn.device_id
+                WHERE d.id = ${id}::uuid 
+                AND d.organization_id = ${userOrgId}::uuid
+            `;
+        }
 
         if (device.length === 0) {
             return res.status(404).json({
@@ -290,22 +311,48 @@ export const getDeviceById = async (req, res) => {
             });
         }
 
-        // **DEPARTMENT LEVEL CHECK**
-        const userDeptId = req.user?.department_id;
-        if (userDeptId && device[0].department_id && device[0].department_id !== userDeptId) {
-            // Check if user has permission to view other departments
-            const hasPermissionToViewAllDepts = hasPermission(req.user, 'view_all_departments');
-            if (!hasPermissionToViewAllDepts) {
+        const deviceData = device[0];
+
+        // **VISIBILITY & DEPARTMENT LEVEL CHECK** (consistent with getAllDevices)
+        if (!isSuperAdmin) {
+            const userDeptId = user?.department_id;
+            const canManageDevices = hasPermission(user, 'device.manage') ||
+                                   hasPermission(user, 'organization.admin') ||
+                                   hasPermission(user, 'department.manage');
+
+            // Check visibility access
+            if (deviceData.visibility === 'private') {
+                // Private devices only visible to superadmin
                 return res.status(403).json({
                     success: false,
-                    message: 'Access denied: Cannot access device from different department'
+                    message: 'Access denied: Private device not accessible'
                 });
+            } else if (deviceData.visibility === 'department') {
+                // Department devices need department match or special permissions
+                if (userDeptId && deviceData.department_id && deviceData.department_id !== userDeptId) {
+                    const hasPermissionToViewAllDepts = hasPermission(user, 'view_all_departments') || canManageDevices;
+                    if (!hasPermissionToViewAllDepts) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'Access denied: Cannot access device from different department'
+                        });
+                    }
+                } else if (!userDeptId && deviceData.department_id) {
+                    // User has no department but device is department-specific
+                    if (!canManageDevices) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'Access denied: Cannot access department-specific device'
+                        });
+                    }
+                }
             }
+            // Public devices are accessible to all organization members
         }
 
         res.status(200).json({
             success: true,
-            data: device[0],
+            data: deviceData,
             message: 'Device retrieved successfully'
         });
     } catch (error) {
@@ -345,11 +392,18 @@ export const createDevice = async (req, res) => {
         // ====================================================================
         // 2. USER ORGANIZATION & DEPARTMENT VALIDATION
         // ====================================================================
-        const userOrgId = req.user?.organization_id;
-        const userDeptId = req.user?.department_id;
-        const userPermissions = getUserPermissions(req.user);
+        const user = req.user;
+        const userOrgId = user?.organization_id;
+        const userDeptId = user?.department_id;
+        const userPermissions = getUserPermissions(user);
+   
+        // Check Super Admin (System Admin)
+        const isSuperAdmin = (userPermissions.includes('system.admin') ||
+                            hasPermission(user, 'system.admin')) &&
+                           !user?.organization_id &&
+                           !user?.department_id;
 
-        if (!userOrgId) {
+        if (!isSuperAdmin && !userOrgId) {
             return res.status(403).json({
                 success: false,
                 message: 'User organization not found'
@@ -359,20 +413,17 @@ export const createDevice = async (req, res) => {
         // ====================================================================
         // 3. ORGANIZATION VALIDATION BASED ON USER ROLE
         // ====================================================================
-        let finalOrganizationId = userOrgId; // Default to user's org
+        let finalOrganizationId;
 
-        // Check if user is trying to create in different organization
-        if (organization_id && organization_id !== userOrgId) {
-            // Only System Admin can create in different orgs
-            const isSystemAdmin = hasPermission(req.user, 'system.admin');
-
-            if (!isSystemAdmin) {
-                return res.status(403).json({
+        if (isSuperAdmin) {
+            // Super Admin: requires organization_id in request
+            if (!organization_id) {
+                return res.status(400).json({
                     success: false,
-                    message: 'Access denied: Only System Admin can create devices in different organization'
+                    message: 'Organization ID is required for system admin'
                 });
             }
-
+            
             // Validate target organization exists
             const orgExists = await prisma.$queryRaw`
                 SELECT id, name FROM organizations WHERE id = ${organization_id}::uuid AND is_active = true
@@ -383,8 +434,19 @@ export const createDevice = async (req, res) => {
                     message: 'Target organization not found or inactive'
                 });
             }
-
+            
             finalOrganizationId = organization_id;
+        } else {
+            // Regular user: use their organization
+            finalOrganizationId = userOrgId;
+            
+            // Check if user is trying to create in different organization
+            if (organization_id && organization_id !== userOrgId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: Cannot create devices in different organization'
+                });
+            }
         }
 
         // ====================================================================
@@ -407,12 +469,12 @@ export const createDevice = async (req, res) => {
                 });
             }
 
-            // Check if user can create in this department
-            if (userDeptId && department_id !== userDeptId) {
+            // Check if user can create in this department (skip for super admin)
+            if (!isSuperAdmin && userDeptId && department_id !== userDeptId) {
                 // User trying to create in different department
-                const canCreateCrossDept = hasPermission(req.user, 'device.create.all_departments') ||
-                                          hasPermission(req.user, 'department.manage') ||
-                                          hasPermission(req.user, 'organization.admin');
+                const canCreateCrossDept = hasPermission(user, 'device.create.all_departments') ||
+                                          hasPermission(user, 'department.manage') ||
+                                          hasPermission(user, 'organization.admin');
                 
                 if (!canCreateCrossDept) {
                     return res.status(403).json({
@@ -424,8 +486,10 @@ export const createDevice = async (req, res) => {
 
             finalDepartmentId = department_id;
         } else {
-            // No department specified - auto-assign user's department if exists
-            finalDepartmentId = userDeptId;
+            // No department specified - auto-assign user's department if exists (not for super admin)
+            if (!isSuperAdmin) {
+                finalDepartmentId = userDeptId;
+            }
         }
 
         // ====================================================================

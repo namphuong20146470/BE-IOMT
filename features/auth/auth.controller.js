@@ -168,10 +168,18 @@ export const login = async (req, res) => {
         }
 
         if (!isValidPassword) {
-            await auditService.logActivity(user.id, 'failed_login', 'auth', null, {
-                reason: 'Invalid password',
-                username,
-                ip: ipAddress
+            await AuditLogger.log({
+                req,
+                user_id: user.id,
+                organization_id: user.organization_id,
+                action: 'FAILED_LOGIN',
+                resource_type: 'auth',
+                success: false,
+                error_message: 'Invalid password',
+                new_values: {
+                    reason: 'Invalid password',
+                    username
+                }
             });
 
             return res.status(401).json({
