@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { isSystemAdmin } from '../../utils/permissionHelpers.js';
+import { isSystemAdmin } from '../../shared/utils/permissionHelpers.js';
 const prisma = new PrismaClient();
 
 // Get organizations accessible to user

@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import mailService from '../../services/mailService.js';
+import mailService from '../../shared/services/mailService.js';
 import { simpleEmailNotificationManager } from './simpleEmailNotificationManager.js';
 
 const prisma = new PrismaClient();

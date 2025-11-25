@@ -7,7 +7,7 @@ import {
     hasPermission,
     getEffectiveOrganizationId,
     validateOrganizationAccess 
-} from '../../utils/permissionHelpers.js';
+} from '../../shared/utils/permissionHelpers.js';
 
 // Services are already instantiated, no need to create new instances
 

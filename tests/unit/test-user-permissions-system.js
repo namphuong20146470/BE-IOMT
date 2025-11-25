@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import UserPermissionService from './services/UserPermissionService.js';
+import UserPermissionService from '../../features/users/services/UserPermissionService.js';
 
 const prisma = new PrismaClient();
 

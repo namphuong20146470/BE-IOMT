@@ -5,7 +5,7 @@ import {
     isOrganizationAdmin, 
     getEffectiveOrganizationId,
     validateOrganizationAccess 
-} from '../../utils/permissionHelpers.js';
+} from '../../shared/utils/permissionHelpers.js';
 
 function getVietnamDate() {
     const now = new Date();

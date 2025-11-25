@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import UserPermissionService from '../../services/UserPermissionService.js';
+import UserPermissionService from '../../features/users/services/UserPermissionService.js';
 // Note: AuditService import commented out for now - will implement later
 // import auditService from '../../shared/services/AuditService.js';
 

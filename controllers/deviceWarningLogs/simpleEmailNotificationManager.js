@@ -1,5 +1,5 @@
-import mailService from '../../services/mailService.js';
-import { formatWarningDataForEmail, formatWarningDataWithUserInfo } from '../../utils/emailFormatter.js';
+import mailService from '../../shared/services/mailService.js';
+import { formatWarningDataForEmail, formatWarningDataWithUserInfo } from '../../shared/utils/emailFormatter.js';
 
 /**
  * Simplified Email Notification Manager

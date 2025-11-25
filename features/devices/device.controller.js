@@ -19,6 +19,29 @@ function hasPermission(user, permission) {
     return permissions.includes(permission);
 }
 
+// ✅ Helper function to ensure consistency between visibility and department_id
+function validateVisibilityDepartmentConsistency(visibility, department_id) {
+    const result = {
+        visibility,
+        department_id,
+        warnings: []
+    };
+
+    // Business rules:
+    // 1. Private devices should not have department_id
+    if (visibility === 'private' && department_id) {
+        result.department_id = null;
+        result.warnings.push('Department assignment removed because device visibility is private');
+    }
+
+    // 2. Department visibility should ideally have a department_id (but not mandatory)
+    if (visibility === 'department' && !department_id) {
+        result.warnings.push('Device has department visibility but no department assignment');
+    }
+
+    return result;
+}
+
 export const getAllDevices = async (req, res) => {
     try {
         const { 
@@ -161,11 +184,13 @@ export const getAllDevices = async (req, res) => {
 
         const devices = await prisma.$queryRawUnsafe(`
             SELECT 
-                d.id, d.serial_number, d.asset_tag, d.status, d.visibility,
+                d.id, d.serial_number, d.asset_tag, d.status, d.visibility, d.location,
                 d.created_at, d.updated_at,
                 dm.name as model_name, m.name as manufacturer,
                 dc.name as category_name,
+                o.id as organization_id,
                 o.name as organization_name,
+                dept.id as department_id,
                 dept.name as department_name
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
@@ -1068,20 +1093,63 @@ export const changeDeviceVisibility = async (req, res) => {
             }
         }
 
-        // Update visibility
-        const updatedDevice = await prisma.$queryRaw`
-            UPDATE device 
-            SET 
-                visibility = ${visibility}::device_visibility,
-                updated_at = ${getVietnamDate()}::timestamptz
-            WHERE id = ${id}::uuid
-            RETURNING id, visibility, updated_at
-        `;
+        // Store old values for audit
+        const oldValues = {
+            visibility: currentDevice.visibility,
+            department_id: currentDevice.department_id
+        };
+
+        // Validate consistency between visibility and department
+        const consistencyCheck = validateVisibilityDepartmentConsistency(visibility, currentDevice.department_id);
+        
+        let updateFields = {
+            visibility: consistencyCheck.visibility,
+            updated_at: getVietnamDate()
+        };
+
+        // If department_id needs to be cleared due to consistency rules
+        if (consistencyCheck.department_id !== currentDevice.department_id) {
+            updateFields.department_id = consistencyCheck.department_id;
+        }
+
+        // Update visibility and potentially department_id
+        const updatedDevice = await prisma.$transaction(async (tx) => {
+            const updated = await tx.device.update({
+                where: { id },
+                data: updateFields,
+                select: {
+                    id: true,
+                    visibility: true,
+                    department_id: true,
+                    updated_at: true
+                }
+            });
+
+            return updated;
+        });
+
+        // Create audit log
+        await AuditLogger.logCRUD({
+            req,
+            action: 'update',
+            resource_type: 'device',
+            resource_id: id,
+            old_values: oldValues,
+            new_values: {
+                visibility: consistencyCheck.visibility,
+                department_id: consistencyCheck.department_id,
+                consistency_warnings: consistencyCheck.warnings.length > 0 ? consistencyCheck.warnings : undefined
+            },
+            success: true
+        });
 
         res.json({
             success: true,
-            data: updatedDevice[0],
-            message: 'Device visibility updated successfully'
+            data: updatedDevice,
+            warnings: consistencyCheck.warnings.length > 0 ? consistencyCheck.warnings : undefined,
+            message: consistencyCheck.warnings.length > 0 
+                ? `Device visibility updated with modifications: ${consistencyCheck.warnings.join('. ')}`
+                : 'Device visibility updated successfully'
         });
 
     } catch (error) {
@@ -1336,6 +1404,10 @@ export const assignDeviceToDepartment = async (req, res) => {
             // For now, let's make it department-only when assigned to specific department
             newVisibility = 'department';
         }
+
+        // Validate consistency between visibility and department assignment
+        const consistencyCheck = validateVisibilityDepartmentConsistency(newVisibility, department_id);
+        newVisibility = consistencyCheck.visibility;
 
         // Update device department using Prisma transaction
         const updatedDevice = await prisma.$transaction(async (tx) => {

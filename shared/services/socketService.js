@@ -1,6 +1,6 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import prisma from '../config/db.js'; // ✅ Static import
+import prisma from '../../config/db.js'; // Fix: correct path to config/db.js
 
 class SocketService {
     constructor() {
