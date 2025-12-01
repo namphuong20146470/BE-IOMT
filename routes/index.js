@@ -10,15 +10,18 @@ import deviceRoutes from '../features/devices/device.routes.js';
 import maintenanceRoutes from '../features/maintenance/maintenance.routes.js';
 import alertRoutes from '../features/alerts/alerts.routes.js';
 
+// IoT Routes (warnings, environment data)
+import iotRoutes from './iotRoutes.js';
+
 // PDU Management Routes - Now from features
 import pduRoutes from '../features/pdu/pdu.routes.js';
 import outletRoutes from '../features/outlets/outlet.routes.js';
 import deviceAssignmentRoutes from '../features/devices/device-assignment.routes.js';
 
-// Additional Feature Routes (TODO: Fix missing controllers)
-// import roleRoutes from '../features/roles/roles.routes.js';
-// import permissionRoutes from '../features/permissions/permissions.routes.js';
-// import auditLogRoutes from '../features/audit-logs/audit-logs.routes.js';
+// Additional Feature Routes
+import roleRoutes from '../features/roles/roles.routes.js';
+import permissionRoutes from '../features/permissions/routes.js';
+import auditLogRoutes from '../features/audit-logs/audit-logs.routes.js';
 // import sessionRoutes from '../features/sessions/sessions.routes.js';
 
 const router = Router();
@@ -39,16 +42,17 @@ router.use('/departments', departmentRoutes);
 router.use('/devices', deviceRoutes);
 router.use('/maintenance', maintenanceRoutes);
 router.use('/alerts', alertRoutes);
+router.use('/iot', iotRoutes);
 
 // PDU Management System Routes
 router.use('/pdus', pduRoutes);
 router.use('/outlets', outletRoutes);
 router.use('/device-assignment', deviceAssignmentRoutes);
 
-// Additional Feature Routes (TODO: Uncomment when controllers are fixed)
-// router.use('/roles', roleRoutes);
-// router.use('/permissions', permissionRoutes);
-// router.use('/audit-logs', auditLogRoutes);
+// Additional Feature Routes
+router.use('/roles', roleRoutes);
+router.use('/permissions', permissionRoutes);
+router.use('/logs', auditLogRoutes); // Alias for audit logs as 'logs'
 // router.use('/sessions', sessionRoutes);
 
 // Health check endpoint

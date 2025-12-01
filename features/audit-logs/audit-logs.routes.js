@@ -3,13 +3,11 @@ import express from 'express';
 import { authMiddleware } from '../../middleware/authMiddleware.js';
 import { requirePermission } from '../../middleware/rbacMiddleware.js';
 import {
-    getAllAuditLogs,
-    getAuditLogById,
-    getUserAuditLogs,
-    getResourceAuditLogs,
-    deleteAuditLog,
-    exportAuditLogs
-} from '../../controllers/auditLogs/auditLogsController.js';
+    getAllLogs,
+    getLogById,
+    deleteLog,
+    exportLogs              
+} from '../../controllers/auditLogs/auditLogs.controller.js';
 
 const router = express.Router();
 
@@ -91,7 +89,7 @@ router.use(authMiddleware);
  *       200:
  *         description: Audit logs retrieved successfully
  */
-router.get('/', requirePermission('audit.read'), getAllAuditLogs);
+router.get('/', requirePermission('audit.read'), getAllLogs);
 
 /**
  * @swagger
@@ -111,7 +109,7 @@ router.get('/', requirePermission('audit.read'), getAllAuditLogs);
  *       200:
  *         description: Audit log retrieved successfully
  */
-router.get('/:id', requirePermission('audit.read'), getAuditLogById);
+router.get('/:id', requirePermission('audit.read'), getLogById);
 
 /**
  * @swagger
@@ -131,7 +129,7 @@ router.get('/:id', requirePermission('audit.read'), getAuditLogById);
  *       200:
  *         description: Audit log deleted successfully
  */
-router.delete('/:id', requirePermission('audit.delete'), deleteAuditLog);
+router.delete('/:id', requirePermission('audit.delete'), deleteLog);
 
 /**
  * @swagger
@@ -161,7 +159,7 @@ router.delete('/:id', requirePermission('audit.delete'), deleteAuditLog);
  *       200:
  *         description: User audit logs retrieved successfully
  */
-router.get('/users/:userId', requirePermission('audit.read'), getUserAuditLogs);
+// router.get('/users/:userId', requirePermission('audit.read'), getLogsByUser);
 
 /**
  * @swagger
@@ -186,7 +184,7 @@ router.get('/users/:userId', requirePermission('audit.read'), getUserAuditLogs);
  *       200:
  *         description: Resource audit logs retrieved successfully
  */
-router.get('/resources/:resourceType/:resourceId', requirePermission('audit.read'), getResourceAuditLogs);
+// router.get('/resources/:resourceType/:resourceId', requirePermission('audit.read'), getLogsByResource);
 
 /**
  * @swagger
@@ -217,6 +215,6 @@ router.get('/resources/:resourceType/:resourceId', requirePermission('audit.read
  *       200:
  *         description: Audit logs exported successfully
  */
-router.get('/export', requirePermission('audit.export'), exportAuditLogs);
+router.get('/export', requirePermission('audit.export'), exportLogs);
 
 export default router;

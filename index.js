@@ -31,7 +31,6 @@ import deviceDataRoutes from './features/devices/deviceData.routes.js';
 
 // Legacy routes (to be migrated to features)
 import masterDataRoutes from './routes/masterDataRoutes.js';
-import roleRoutes from './routes/roleRoutes.js';
 import mqttRoutes from './routes/mqttRoutes.js';
 
 // Legacy MQTT system (keep existing)
@@ -192,9 +191,6 @@ app.use('/iot', iot);
 
 // MQTT Device Management
 app.use('/mqtt', mqttRoutes);
-
-// Role Management (legacy - moved to /api/v1/roles)
-app.use('/auth', roleRoutes);
 
 // SSL Configuration
 const { options, useHttps } = configureSSL();

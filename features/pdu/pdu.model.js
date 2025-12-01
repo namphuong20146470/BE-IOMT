@@ -47,17 +47,17 @@ export const PduUpdateSchema = z.object({
 });
 
 export const PduQuerySchema = z.object({
-    page: z.string().regex(/^\d+$/).transform(Number).refine(n => n > 0).default('1'),
-    limit: z.string().regex(/^\d+$/).transform(Number).refine(n => n > 0 && n <= 100).default('20'),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
     organization_id: z.string().uuid().optional(),
     department_id: z.string().uuid().optional(),
     type: z.enum(['cart', 'wall_mount', 'floor_stand', 'ceiling', 'rack', 'extension']).optional(),
-    is_active: z.string().transform(val => val === 'true').optional(),
+    is_active: z.coerce.boolean().optional(),
     location: z.string().optional(),
     search: z.string().min(1).optional(),
     sort_by: z.enum(['name', 'code', 'type', 'created_at', 'updated_at']).default('name'),
     sort_order: z.enum(['asc', 'desc']).default('asc'),
-    include_stats: z.string().transform(val => val === 'true').optional()
+    include_stats: z.coerce.boolean().optional()
 });
 
 export const PduStatsQuerySchema = z.object({
@@ -67,11 +67,28 @@ export const PduStatsQuerySchema = z.object({
     date_to: z.string().datetime().optional()
 });
 
+// Additional validation schemas
+export const PduIdSchema = z.string().uuid('Invalid PDU ID');
+
+export const PduDataQuerySchema = z.object({
+    timeframe: z.enum(['1h', '6h', '24h', '7d', '30d']).default('24h'),
+    metric: z.enum(['power', 'voltage', 'current', 'all']).default('all'),
+    outlet_id: z.string().uuid().optional(),
+    start_date: z.string().datetime().optional(),
+    end_date: z.string().datetime().optional()
+});
+
 export const PduModel = {
     create: PduCreateSchema,
     update: PduUpdateSchema,
     query: PduQuerySchema,
-    stats: PduStatsQuerySchema
+    stats: PduStatsQuerySchema,
+    
+    // Validation methods
+    validatePduId: (id) => PduIdSchema.parse(id),
+    validateCreatePDU: (data) => PduCreateSchema.parse(data),
+    validateUpdatePDU: (data) => PduUpdateSchema.parse(data),
+    validateDataQuery: (params) => PduDataQuerySchema.parse(params)
 };
 
 export default PduModel;

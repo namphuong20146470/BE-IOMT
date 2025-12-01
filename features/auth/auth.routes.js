@@ -2,6 +2,7 @@
 import express from 'express';
 import * as authController from './auth.controller.js';
 import { authMiddleware } from '../../shared/middleware/authMiddleware.js';
+import roleRoutes from '../roles/roles.routes.js';
 import { 
     validateLogin, 
     validateChangePassword, 
@@ -26,5 +27,9 @@ router.get('/permissions', authMiddleware, authController.getPermissions);  // â
 router.get('/verify', authMiddleware, authController.verifySession);
 router.post('/change-password', authMiddleware, validateChangePassword, authController.changePassword);
 router.patch('/profile', authMiddleware, validateUpdateProfile, authController.updateProfile);  // âœ… Update user profile
+
+// Role management alias for backward compatibility
+// Frontend expects /api/v1/auth/roles but actual endpoint is /api/v1/roles
+router.use('/roles', roleRoutes);
 
 export default router;

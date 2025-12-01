@@ -1,5 +1,8 @@
 // features/pdu/pdu.controller.js
+import { PrismaClient } from '@prisma/client';
 import pduService from './pdu.service.js';
+
+const prisma = new PrismaClient();
 
 /**
  * Get all PDUs with filtering and pagination
@@ -91,42 +94,25 @@ export const deletePDU = async (req, res) => {
  */
 export const getPDUStatistics = async (req, res) => {
     try {
-        const { id } = req.params;
         const { timeframe = '24h' } = req.query;
 
-        const pdu = await prisma.power_distribution_units.findUnique({
-            where: { id },
-            include: {
-                outlets: {
-                    include: {
-                        device: {
-                            select: {
-                                serial_number: true,
-                                model: { select: { name: true } }
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        // Get overall PDU system statistics
+        const [totalPDUs, activePDUs, pdusByType, totalOutlets, enabledOutlets, outletsByStatus] = await Promise.all([
+            prisma.power_distribution_units.count(),
+            prisma.power_distribution_units.count({ where: { is_active: true } }),
+            prisma.power_distribution_units.groupBy({
+                by: ['type'],
+                _count: true
+            }),
+            prisma.outlets.count(),
+            prisma.outlets.count({ where: { is_enabled: true } }),
+            prisma.outlets.groupBy({
+                by: ['status'],
+                _count: true
+            })
+        ]);
 
-        if (!pdu) {
-            return res.status(404).json({
-                success: false,
-                message: 'PDU not found'
-            });
-        }
-
-        // Check permissions
-        if (!req.user.permissions?.includes('system.admin') && 
-            req.user.organization_id !== pdu.organization_id) {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
-        }
-
-        // Calculate time range for data query
+        // Calculate time range for recent data
         const now = new Date();
         let startTime;
         switch (timeframe) {
@@ -137,51 +123,56 @@ export const getPDUStatistics = async (req, res) => {
             default: startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         }
 
-        // Get power consumption data
-        const powerData = await prisma.device_data.findMany({
+        // Get recent power consumption data across all PDUs
+        const recentData = await prisma.device_data.findMany({
             where: {
-                outlet_id: { in: pdu.outlets.map(o => o.id) },
-                timestamp: { gte: startTime },
-                measurements: {
-                    name: { in: ['power', 'voltage', 'current'] }
-                }
+                timestamp: { gte: startTime }
             },
             include: {
-                measurements: { select: { name: true, unit: true } },
-                outlet: { select: { outlet_number: true } }
+                device: {
+                    include: {
+                        outlet: {
+                            include: {
+                                pdu: { select: { id: true, name: true } }
+                            }
+                        }
+                    }
+                }
             },
-            orderBy: { timestamp: 'desc' }
+            orderBy: { timestamp: 'desc' },
+            take: 100
         });
 
-        // Calculate statistics
-        const stats = {
-            pdu_info: {
-                id: pdu.id,
-                name: pdu.name,
-                type: pdu.type,
-                location: pdu.location
+        // Calculate overall system statistics
+        const systemStats = {
+            pdu_summary: {
+                total_pdus: totalPDUs,
+                active_pdus: activePDUs,
+                inactive_pdus: totalPDUs - activePDUs,
+                pdu_types: pdusByType.map(group => ({
+                    type: group.type,
+                    count: group._count
+                }))
             },
             outlet_summary: {
-                total_outlets: pdu.total_outlets,
-                configured_outlets: pdu.outlets.length,
-                assigned_outlets: pdu.outlets.filter(o => o.device_id).length,
-                active_outlets: pdu.outlets.filter(o => o.status === 'active').length,
-                idle_outlets: pdu.outlets.filter(o => o.status === 'idle').length,
-                inactive_outlets: pdu.outlets.filter(o => o.status === 'inactive').length,
-                error_outlets: pdu.outlets.filter(o => o.status === 'error').length
+                total_outlets: totalOutlets,
+                enabled_outlets: enabledOutlets,
+                disabled_outlets: totalOutlets - enabledOutlets,
+                outlet_status_breakdown: outletsByStatus.map(group => ({
+                    status: group.status,
+                    count: group._count
+                }))
             },
-            power_summary: {
-                current_total_power: pdu.outlets.reduce((sum, o) => sum + (o.current_power || 0), 0),
-                max_power_capacity: pdu.max_power_watts,
-                power_utilization: pdu.max_power_watts > 0 ? 
-                    (pdu.outlets.reduce((sum, o) => sum + (o.current_power || 0), 0) / pdu.max_power_watts * 100).toFixed(1) : 0
-            },
-            recent_data: powerData.slice(0, 100) // Last 100 data points
+            recent_activity: {
+                timeframe,
+                data_points: recentData.length,
+                recent_measurements: recentData.slice(0, 20) // Last 20 measurements
+            }
         };
 
         return res.status(200).json({
             success: true,
-            data: stats
+            data: systemStats
         });
     } catch (error) {
         console.error('Error fetching PDU statistics:', error);

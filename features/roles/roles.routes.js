@@ -2,16 +2,7 @@
 import express from 'express';
 import { authMiddleware } from '../../middleware/authMiddleware.js';
 import { requirePermission } from '../../middleware/rbacMiddleware.js';
-import { 
-    createRole, 
-    getAllRoles, 
-    deleteRole, 
-    updateRole,
-    assignPermissionToRole,
-    removePermissionFromRole,
-    getRolePermissions,
-    updateRolePermissions
-} from '../../controllers/roles/roles.controller.js';
+import roleController from './role.controller.js';
 
 const router = express.Router();
 
@@ -53,7 +44,7 @@ router.use(authMiddleware);
  *       200:
  *         description: Roles retrieved successfully
  */
-router.get('/', requirePermission('role.read'), getAllRoles);
+router.get('/', requirePermission('role.read'), roleController.getAllRoles);
 
 /**
  * @swagger
@@ -73,7 +64,7 @@ router.get('/', requirePermission('role.read'), getAllRoles);
  *       201:
  *         description: Role created successfully
  */
-router.post('/', requirePermission('role.create'), createRole);
+router.post('/', requirePermission('role.create'), roleController.createRole);
 
 /**
  * @swagger
@@ -99,7 +90,7 @@ router.post('/', requirePermission('role.create'), createRole);
  *       200:
  *         description: Role updated successfully
  */
-router.put('/:id_role', requirePermission('role.update'), updateRole);
+router.put('/:id_role', requirePermission('role.update'), roleController.updateRole);
 
 /**
  * @swagger
@@ -119,7 +110,7 @@ router.put('/:id_role', requirePermission('role.update'), updateRole);
  *       200:
  *         description: Role deleted successfully
  */
-router.delete('/:id_role', requirePermission('role.delete'), deleteRole);
+router.delete('/:id_role', requirePermission('role.delete'), roleController.deleteRole);
 
 // Role-Permission Management
 /**
@@ -140,7 +131,7 @@ router.delete('/:id_role', requirePermission('role.delete'), deleteRole);
  *       200:
  *         description: Role permissions retrieved successfully
  */
-router.get('/:roleId/permissions', requirePermission('role.read'), getRolePermissions);
+router.get('/:roleId/permissions', requirePermission('role.read'), roleController.getRolePermissions);
 
 /**
  * @swagger
@@ -160,7 +151,7 @@ router.get('/:roleId/permissions', requirePermission('role.read'), getRolePermis
  *       200:
  *         description: Permission assigned successfully
  */
-router.post('/:roleId/permissions', requirePermission('role.update'), assignPermissionToRole);
+router.post('/:roleId/permissions', requirePermission('role.update'), roleController.assignPermissionToRole);
 
 /**
  * @swagger
@@ -180,7 +171,7 @@ router.post('/:roleId/permissions', requirePermission('role.update'), assignPerm
  *       200:
  *         description: Role permissions updated successfully
  */
-router.put('/:roleId/permissions', requirePermission('role.update'), updateRolePermissions);
+router.put('/:roleId/permissions', requirePermission('role.update'), roleController.updateRolePermissions);
 
 /**
  * @swagger
@@ -205,6 +196,6 @@ router.put('/:roleId/permissions', requirePermission('role.update'), updateRoleP
  *       200:
  *         description: Permission removed successfully
  */
-router.delete('/:roleId/permissions/:permissionId', requirePermission('role.update'), removePermissionFromRole);
+router.delete('/:roleId/permissions/:permissionId', requirePermission('role.update'), roleController.removePermissionFromRole);
 
 export default router;

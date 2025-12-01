@@ -127,6 +127,120 @@ class PduRepository {
             // Add actual statistics implementation here
         };
     }
+
+    /**
+     * Find PDUs accessible to the user with filtering and pagination
+     */
+    async findAccessiblePDUs(user, queryParams) {
+        const { page, limit, organization_id, department_id, type, is_active, location, search, sort_by, sort_order, include_stats } = queryParams;
+        
+        // Build where clause based on user permissions and filters
+        let whereClause = {};
+        
+        // Organization access control
+        if (user.permissions?.includes('system.admin')) {
+            // Admin can access all PDUs
+            if (organization_id) {
+                whereClause.organization_id = organization_id;
+            }
+        } else {
+            // Regular users can only access PDUs in their organization
+            whereClause.organization_id = user.organization_id;
+        }
+        
+        // Apply filters
+        if (department_id) whereClause.department_id = department_id;
+        if (type) whereClause.type = type;
+        if (is_active !== undefined) whereClause.is_active = is_active;
+        if (location) {
+            whereClause.location = { contains: location, mode: 'insensitive' };
+        }
+        if (search) {
+            whereClause.OR = [
+                { name: { contains: search, mode: 'insensitive' } },
+                { code: { contains: search, mode: 'insensitive' } },
+                { description: { contains: search, mode: 'insensitive' } }
+            ];
+        }
+        
+        // Calculate pagination
+        const skip = (page - 1) * limit;
+        
+        // Build include clause
+        const include = {
+            organization: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } }
+        };
+        
+        if (include_stats) {
+            include.outlets = {
+                select: {
+                    id: true,
+                    outlet_number: true,
+                    status: true,
+                    device_id: true
+                }
+            };
+        }
+        
+        // Execute queries
+        const [data, total] = await Promise.all([
+            prisma.power_distribution_units.findMany({
+                where: whereClause,
+                include,
+                skip,
+                take: limit,
+                orderBy: { [sort_by]: sort_order }
+            }),
+            prisma.power_distribution_units.count({ where: whereClause })
+        ]);
+        
+        return {
+            data,
+            pagination: {
+                page,
+                limit,
+                total,
+                pages: Math.ceil(total / limit)
+            },
+            filters: queryParams
+        };
+    }
+
+    /**
+     * Find PDU by ID with access control
+     */
+    async findByIdWithAccess(pduId, user, options = {}) {
+        const whereClause = { id: pduId };
+        
+        // Apply organization access control
+        if (!user.permissions?.includes('system.admin')) {
+            whereClause.organization_id = user.organization_id;
+        }
+        
+        const include = {
+            organization: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } },
+            outlets: {
+                select: {
+                    id: true,
+                    outlet_number: true,
+                    name: true,
+                    status: true,
+                    device_id: true,
+                    current_power: true,
+                    is_enabled: true
+                },
+                orderBy: { outlet_number: 'asc' }
+            },
+            ...options.include
+        };
+        
+        return prisma.power_distribution_units.findFirst({
+            where: whereClause,
+            include
+        });
+    }
 }
 
 export default new PduRepository();

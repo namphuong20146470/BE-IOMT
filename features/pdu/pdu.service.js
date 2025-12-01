@@ -10,7 +10,7 @@ class PduService {
     async getAllPDUs(queryParams, user) {
         try {
             // Validate and sanitize query parameters
-            const validatedQuery = pduModel.validateQueryParams(queryParams);
+            const validatedQuery = pduModel.query.parse(queryParams);
             
             // Check user permissions for organization/department access
             const accessiblePDUs = await pduRepository.findAccessiblePDUs(user, validatedQuery);
