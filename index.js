@@ -183,11 +183,8 @@ app.use('/api/v1', apiRoutes);
 app.use('/', deviceDataRoutes, masterDataRoutes);
 
 // ==========================================
-// 🔄 LEGACY ROUTES (To be migrated)
+// 🔄 LEGACY ROUTES (To be migrated)  
 // ==========================================
-
-// IoT & MQTT
-app.use('/iot', iot);
 
 // MQTT Device Management
 app.use('/mqtt', mqttRoutes);

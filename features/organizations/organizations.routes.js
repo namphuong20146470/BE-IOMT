@@ -11,51 +11,51 @@ const router = express.Router();
 // ORGANIZATIONS ROUTES
 // ====================================================================
 
-// GET /organizations - Get all organizations (admin/super-admin only)
-router.get('/organizations', 
+// GET / - Get all organizations (admin/super-admin only)
+router.get('/', 
     authMiddleware, 
     requirePermission('organization.read'), 
     organizationsController.getAllOrganizations
 );
 
-// GET /organizations/:id - Get organization by ID
-router.get('/organizations/:id', 
+// GET /:id - Get organization by ID
+router.get('/:id', 
     authMiddleware, 
     requirePermission('organization.read'), 
     organizationsController.getOrganizationById
 );
 
-// GET /organizations/me - Get current user's organization
-router.get('/organizations/me', 
+// GET /me - Get current user's organization
+router.get('/me', 
     authMiddleware, 
     organizationsController.getCurrentUserOrganization
 );
 
-// POST /organizations - Create new organization (super-admin only)
-router.post('/organizations', 
+// POST / - Create new organization (super-admin only)
+router.post('/', 
     authMiddleware, 
     requirePermission('organization.create'), 
     validateCreateOrganization,
     organizationsController.createOrganization
 );
 
-// PUT /organizations/:id - Update organization (admin only for own org)
-router.put('/organizations/:id', 
+// PUT /:id - Update organization (admin only for own org)
+router.put('/:id', 
     authMiddleware, 
     requirePermission('organization.update'), 
     validateUpdateOrganization,
     organizationsController.updateOrganization
 );
 
-// DELETE /organizations/:id - Delete organization (super-admin only)
-router.delete('/organizations/:id', 
+// DELETE /:id - Delete organization (super-admin only)
+router.delete('/:id', 
     authMiddleware, 
     requirePermission('organization.delete'), 
     organizationsController.deleteOrganization
 );
 
-// GET /organizations/:id/statistics - Get organization statistics
-router.get('/organizations/:id/statistics', 
+// GET /:id/statistics - Get organization statistics
+router.get('/:id/statistics', 
     authMiddleware, 
     requirePermission('organization.read'), 
     organizationsController.getOrganizationStatistics
