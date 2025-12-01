@@ -1091,3 +1091,172 @@ export const cleanupOldLogs = async (req, res) => {
         });
     }
 };
+
+/**
+ * GET /audit-logs/users/:userId - Lấy audit logs theo user ID
+ */
+export const getLogsByUser = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+
+        const pageSize = Math.min(parseInt(limit), 1000);
+        const currentPage = Math.max(parseInt(page), 1);
+        const offset = (currentPage - 1) * pageSize;
+
+        // Security: Organization-level filtering
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin' || 
+                           (!user?.organization_id && !user?.department_id);
+
+        let whereConditions = { user_id: userId };
+        
+        if (!isSuperAdmin && user?.organization_id) {
+            whereConditions.organization_id = user.organization_id;
+        }
+
+        const totalCount = await prisma.audit_logs.count({
+            where: whereConditions
+        });
+
+        const logs = await prisma.audit_logs.findMany({
+            where: whereConditions,
+            include: {
+                users: {
+                    select: {
+                        id: true,
+                        username: true,
+                        full_name: true,
+                        email: true
+                    }
+                },
+                organizations: {
+                    select: {
+                        id: true,
+                        name: true,
+                        type: true
+                    }
+                }
+            },
+            orderBy: {
+                created_at: 'desc'
+            },
+            skip: offset,
+            take: pageSize
+        });
+
+        const totalPages = Math.ceil(totalCount / pageSize);
+
+        res.status(200).json({
+            success: true,
+            message: 'User audit logs retrieved successfully',
+            data: {
+                logs,
+                pagination: {
+                    current_page: currentPage,
+                    total_pages: totalPages,
+                    total_count: totalCount,
+                    per_page: pageSize,
+                    has_next_page: currentPage < totalPages,
+                    has_prev_page: currentPage > 1
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting user audit logs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve user audit logs',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * GET /audit-logs/resources/:resourceType/:resourceId - Lấy audit logs theo resource
+ */
+export const getLogsByResource = async (req, res) => {
+    try {
+        const { resourceType, resourceId } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+
+        const pageSize = Math.min(parseInt(limit), 1000);
+        const currentPage = Math.max(parseInt(page), 1);
+        const offset = (currentPage - 1) * pageSize;
+
+        // Security: Organization-level filtering
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin' || 
+                           (!user?.organization_id && !user?.department_id);
+
+        let whereConditions = { 
+            resource_type: resourceType,
+            resource_id: resourceId 
+        };
+        
+        if (!isSuperAdmin && user?.organization_id) {
+            whereConditions.organization_id = user.organization_id;
+        }
+
+        const totalCount = await prisma.audit_logs.count({
+            where: whereConditions
+        });
+
+        const logs = await prisma.audit_logs.findMany({
+            where: whereConditions,
+            include: {
+                users: {
+                    select: {
+                        id: true,
+                        username: true,
+                        full_name: true,
+                        email: true
+                    }
+                },
+                organizations: {
+                    select: {
+                        id: true,
+                        name: true,
+                        type: true
+                    }
+                }
+            },
+            orderBy: {
+                created_at: 'desc'
+            },
+            skip: offset,
+            take: pageSize
+        });
+
+        const totalPages = Math.ceil(totalCount / pageSize);
+
+        res.status(200).json({
+            success: true,
+            message: 'Resource audit logs retrieved successfully',
+            data: {
+                logs,
+                pagination: {
+                    current_page: currentPage,
+                    total_pages: totalPages,
+                    total_count: totalCount,
+                    per_page: pageSize,
+                    has_next_page: currentPage < totalPages,
+                    has_prev_page: currentPage > 1
+                },
+                filter: {
+                    resource_type: resourceType,
+                    resource_id: resourceId
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting resource audit logs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve resource audit logs',
+            error: error.message
+        });
+    }
+};

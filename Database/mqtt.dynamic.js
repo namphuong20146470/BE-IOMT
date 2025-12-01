@@ -4,6 +4,7 @@ import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarn
 import socketService from '../shared/services/socketService.js';
 import prisma from '../config/db.js';
 import dotenv from 'dotenv';
+import dns from 'dns';
 
 dotenv.config();
 

@@ -8,18 +8,15 @@
     "dev": "cross-env NODE_ENV=development nodemon index.js",
     "start": "cross-env NODE_ENV=production node index.js",
     "seed": "node prisma/seed.js",
-    
     "setup": "node scripts/setup-simple.js",
     "setup:reset": "node scripts/reset-system.js && node scripts/setup-simple.js",
     "system:status": "node scripts/check-system-status.js",
     "system:health": "node scripts/check-system-status.js",
-    
     "db:migrate": "npx prisma migrate dev",
-    "db:generate": "npx prisma generate", 
+    "db:generate": "npx prisma generate",
     "db:studio": "npx prisma studio",
     "db:reset": "npx prisma migrate reset",
     "db:deploy": "npx prisma migrate deploy",
-    
     "test:unit": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/unit",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest tests/integration",
     "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
@@ -37,6 +34,7 @@
     "body-parser": "^1.20.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "dns": "^0.2.2",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^8.2.1",

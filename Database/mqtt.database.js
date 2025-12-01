@@ -3,20 +3,24 @@ import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarn
 import socketService from '../shared/services/socketService.js';
 import prisma from '../config/db.js';
 import dotenv from 'dotenv';
-
+import dns from 'dns';
+import { promisify } from 'util';
 dotenv.config();
 
+// ✅ THÊM 1 DÒNG NÀY - ĐẶT NGAY SAU import dns
+dns.setDefaultResultOrder('ipv4first');
 // ==================== CONFIGURATION ====================
 
 const mqttConfig = {
-    host: process.env.MQTT_HOST || 'broker.hivemq.com',
+    host: process.env.MQTT_HOST || '18.185.216.219',
     port: parseInt(process.env.MQTT_PORT || '1883'),
     clientId: `iot-server-${Math.random().toString(16).slice(2, 8)}`,
     username: process.env.MQTT_USERNAME || '',
     password: process.env.MQTT_PASSWORD || '',
-    clean: true,
-    connectTimeout: 4000,
-    reconnectPeriod: 1000
+    connectTimeout: 4000, // ✅ TĂNG timeout
+    reconnectPeriod: 1000, // ✅ TĂNG reconnect period
+    family: 4,
+    keepalive: 60, // ✅ THÊM keepalive
 };
 
 const TIME_WINDOW_MINUTES = parseInt(process.env.MQTT_TIME_WINDOW_MINUTES || '1');
@@ -111,14 +115,15 @@ async function getLatestRecord(tableName, timeWindowMinutes = TIME_WINDOW_MINUTE
         return null;
     }
 }
+
 // ==================== DUPLICATE + UPDATE STRATEGY ====================
 
 async function duplicateAndUpdateRecord(tableName, newData) {
     try {
-        // ✅ 1. Get COMPLETE latest record
+        // ✅ 1. Get COMPLETE latest record (no time window limit)
         const latestRecord = await getLatestRecord(tableName);
         
-        // ✅ 2. Enhanced logging
+        // ✅ 2. Enhanced logging to debug merge issues
         if (process.env.DEBUG_MQTT === 'true') {
             console.log(`🔍 [${tableName}] Latest record analysis:`);
             if (latestRecord) {
@@ -134,20 +139,36 @@ async function duplicateAndUpdateRecord(tableName, newData) {
             }
         }
         
-        // ✅ 3. If no record exists, create minimal record
+        // ✅ 3. If no record exists at all, create minimal record with only MQTT data
         if (!latestRecord) {
-            console.warn(`⚠️ Table ${tableName} is empty, creating minimal record with MQTT data only`);
-            return createMinimalRecord(tableName, newData);
+            console.warn(`⚠️ No latest record found for ${tableName}, trying to find ANY record...`);
+            
+            const anyRecord = await prisma.$queryRawUnsafe(`
+                SELECT * FROM ${tableName} 
+                WHERE id IS NOT NULL 
+                ORDER BY timestamp DESC 
+                LIMIT 1
+            `);
+            
+            if (anyRecord && anyRecord[0]) {
+                console.log(`✅ Found fallback record from ${anyRecord[0].timestamp}`);
+                return await mergeWithRecord(tableName, anyRecord[0], newData);
+            } else {
+                // ✅ IMPROVED: Only create fields that MQTT actually provides
+                console.warn(`⚠️ Table ${tableName} is completely empty, creating minimal record`);
+                return createMinimalRecord(tableName, newData);
+            }
         }
 
         // ✅ 4. Merge with found record
-        return mergeWithRecord(tableName, latestRecord, newData);
+        return await mergeWithRecord(tableName, latestRecord, newData);
         
     } catch (error) {
         console.error(`❌ Error in duplicate+update for ${tableName}:`, error);
         throw error;
     }
 }
+
 // ✅ NEW: Separate merge function with better null handling
 async function mergeWithRecord(tableName, sourceRecord, newData) {
     // ✅ 2. Log merge strategy
@@ -597,8 +618,25 @@ client.on('message', async (topic, message) => {
 
 client.on('error', (error) => {
     console.error('❌ MQTT client error:', error);
+    console.error('   Error details:', {
+        code: error.code,
+        address: error.address,
+        port: error.port,
+        syscall: error.syscall
+    });
+    
+    // ✅ Phát hiện IPv6 và force retry với IPv4
+    if (error.code === 'ECONNREFUSED' && error.address?.includes(':')) {
+        console.log('🔄 Detected IPv6 failure, forcing IPv4...');
+        
+        // Force IPv4 fallback
+        client.options.host = '18.185.216.219';
+        setTimeout(() => {
+            console.log('🔄 Attempting reconnect with IPv4...');
+            client.reconnect();
+        }, 5000);
+    }
 });
-
 client.on('reconnect', () => {
     console.log('🔄 MQTT reconnecting...');
 });

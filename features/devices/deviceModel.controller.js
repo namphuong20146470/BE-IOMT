@@ -702,6 +702,8 @@ export const getSuppliers = async (req, res) => {
             }
         });
 
+        console.log(`✅ [getSuppliers] Found ${suppliers.length} suppliers`);
+
         // Format response
         const formattedSuppliers = suppliers.map(item => ({
             id: item.id,
@@ -719,7 +721,8 @@ export const getSuppliers = async (req, res) => {
             message: 'Suppliers list retrieved successfully'
         });
     } catch (error) {
-        console.error('Error fetching suppliers:', error);
+        console.error('❌ [getSuppliers] Error:', error);
+        console.error('❌ [getSuppliers] Stack:', error.stack);
         res.status(500).json({
             success: false,
             message: 'Failed to fetch suppliers',
