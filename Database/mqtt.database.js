@@ -7,7 +7,7 @@ import dns from 'dns';
 import { promisify } from 'util';
 dotenv.config();
 
-// ✅ THÊM 1 DÒNG NÀY - ĐẶT NGAY SAU import dns
+// ✅ Ép về v4
 dns.setDefaultResultOrder('ipv4first');
 // ==================== CONFIGURATION ====================
 
@@ -18,7 +18,7 @@ const mqttConfig = {
     username: process.env.MQTT_USERNAME || '',
     password: process.env.MQTT_PASSWORD || '',
     connectTimeout: 4000, // ✅ TĂNG timeout
-    reconnectPeriod: 1000, // ✅ TĂNG reconnect period
+    reconnectPeriod: 1000, //  TĂNG reconnect period
     family: 4,
     keepalive: 60, // ✅ THÊM keepalive
 };
