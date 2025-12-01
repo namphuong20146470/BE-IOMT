@@ -57,19 +57,6 @@ export const getAllDeviceModels = async (req, res) => {
                     select: {
                         id: true
                     }
-                },
-                specifications: {
-                    include: {
-                        specification_fields: {
-                            select: {
-                                field_name: true,
-                                field_name_vi: true,
-                                field_name_en: true,
-                                unit: true,
-                                data_type: true
-                            }
-                        }
-                    }
                 }
             },
             orderBy: [
@@ -81,24 +68,16 @@ export const getAllDeviceModels = async (req, res) => {
         const formattedModels = models.map(model => ({
             id: model.id,
             name: model.name,
+            manufacturer_id: model.manufacturer_id,
             manufacturer: model.manufacturers?.name || null,
             manufacturer_country: model.manufacturers?.country || null,
+            supplier_id: model.supplier_id,
             supplier: model.suppliers?.name || null,
             model_number: model.model_number,
             category_id: model.category_id,
             category_name: model.category?.name,
-            category_description: model.category?.description,
             devices_count: model.devices.length,
-            specifications: model.specifications.map(spec => ({
-                id: spec.id,
-                field_name: spec.specification_fields?.field_name,
-                field_name_vi: spec.specification_fields?.field_name_vi,
-                field_name_en: spec.specification_fields?.field_name_en,
-                value: spec.value,
-                unit: spec.specification_fields?.unit,
-                data_type: spec.specification_fields?.data_type
-            })),
-            created_at: model.created_at,
+            specifications: model.specifications || {}, // JSON field
             created_at: model.created_at,
             updated_at: model.updated_at
         }));
@@ -667,13 +646,8 @@ export const getModelsByCategory = async (req, res) => {
 // Get manufacturers list
 export const getManufacturers = async (req, res) => {
     try {
-        // Get all manufacturers that have device models
+        // Get all manufacturers
         const manufacturers = await prisma.manufacturers.findMany({
-            where: {
-                device_models: {
-                    some: {} // Has at least one device model
-                }
-            },
             include: {
                 _count: {
                     select: {
@@ -714,15 +688,8 @@ export const getManufacturers = async (req, res) => {
 // Get suppliers list
 export const getSuppliers = async (req, res) => {
     try {
-        console.log('🔍 [getSuppliers] Request received');
-        
-        // Get all suppliers that have device models
+        // Get all suppliers
         const suppliers = await prisma.suppliers.findMany({
-            where: {
-                device_models: {
-                    some: {} // Has at least one device model
-                }
-            },
             include: {
                 _count: {
                     select: {

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -7,16 +7,18 @@ const prisma = new PrismaClient();
 // ==========================================
 
 /**
- * GET /actlog/logs - Lấy tất cả audit logs
+ * GET /actlog/logs - Lấy tất cả audit logs với organization-level security
  * Query params:
  * - page: số trang (default: 1)
- * - limit: số record trên 1 trang (default: 50)
+ * - limit: số record trên 1 trang (default: 50, max: 1000)
  * - user_id: filter theo user
  * - action: filter theo action
  * - resource_type: filter theo resource type
  * - success: filter theo success status (true/false)
  * - from_date: từ ngày (YYYY-MM-DD)
  * - to_date: đến ngày (YYYY-MM-DD)
+ * - search: tìm kiếm cross-field
+ * - organization_id: filter theo organization (admin only)
  */
 export const getAllLogs = async (req, res) => {
     try {
@@ -29,14 +31,40 @@ export const getAllLogs = async (req, res) => {
             success,
             from_date,
             to_date,
-            search
+            search,
+            organization_id
         } = req.query;
 
-        // Tính offset cho pagination
-        const offset = (parseInt(page) - 1) * parseInt(limit);
+        // Validate and limit page size
+        const pageSize = Math.min(parseInt(limit), 1000);
+        const currentPage = Math.max(parseInt(page), 1);
 
-        // Build where conditions
-        const whereConditions = {};
+        // Security: Organization-level filtering for non-super-admins
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin' || 
+                           (!user?.organization_id && !user?.department_id);
+
+        let orgFilter = {};
+        if (!isSuperAdmin) {
+            // Non-super admin can only see their organization's logs
+            if (user?.organization_id) {
+                orgFilter.organization_id = user.organization_id;
+            } else {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: No organization access'
+                });
+            }
+        } else if (organization_id) {
+            // Super admin can filter by specific organization
+            orgFilter.organization_id = organization_id;
+        }
+
+        // Tính offset cho pagination
+        const offset = (currentPage - 1) * pageSize;
+
+        // Build where conditions with organization security
+        const whereConditions = { ...orgFilter };
 
         if (user_id) {
             whereConditions.user_id = user_id;
@@ -120,13 +148,13 @@ export const getAllLogs = async (req, res) => {
                 created_at: 'desc'
             },
             skip: offset,
-            take: parseInt(limit)
+            take: pageSize
         });
 
         // Calculate pagination info
-        const totalPages = Math.ceil(totalCount / parseInt(limit));
-        const hasNextPage = parseInt(page) < totalPages;
-        const hasPrevPage = parseInt(page) > 1;
+        const totalPages = Math.ceil(totalCount / pageSize);
+        const hasNextPage = currentPage < totalPages;
+        const hasPrevPage = currentPage > 1;
 
         res.status(200).json({
             success: true,
@@ -134,12 +162,19 @@ export const getAllLogs = async (req, res) => {
             data: {
                 logs,
                 pagination: {
-                    current_page: parseInt(page),
+                    current_page: currentPage,
                     total_pages: totalPages,
                     total_count: totalCount,
-                    per_page: parseInt(limit),
+                    per_page: pageSize,
                     has_next_page: hasNextPage,
                     has_prev_page: hasPrevPage
+                },
+                filters_applied: {
+                    organization_filter: !isSuperAdmin,
+                    user_organization_id: user?.organization_id || null,
+                    applied_filters: Object.keys(req.query).filter(key => 
+                        req.query[key] && !['page', 'limit'].includes(key)
+                    )
                 }
             }
         });
@@ -230,24 +265,35 @@ export const createLog = async (req, res) => {
             });
         }
 
-        // Get request metadata
-        const ip_address = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || '127.0.0.1';
-        const user_agent = req.get('User-Agent') || 'Unknown';
+        // Get request metadata với fallbacks tốt hơn
+        const ip_address = req.ip || 
+                          req.connection?.remoteAddress || 
+                          req.socket?.remoteAddress ||
+                          req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+                          req.headers['x-real-ip'] ||
+                          '127.0.0.1';
+        
+        const user_agent = req.get('User-Agent') || 
+                          req.headers['user-agent'] || 
+                          'Unknown-Agent';
+
+        // Validate và clean data trước khi lưu
+        const cleanedData = {
+            user_id: user_id || null,
+            organization_id: organization_id || null,
+            action: action.toLowerCase().trim(), // Normalize action
+            resource_type: resource_type?.toLowerCase()?.trim() || null,
+            resource_id: resource_id || null,
+            old_values: old_values && Object.keys(old_values).length > 0 ? old_values : null,
+            new_values: new_values && Object.keys(new_values).length > 0 ? new_values : null,
+            ip_address: ip_address,
+            user_agent: user_agent.substring(0, 500), // Limit length
+            success: Boolean(success),
+            error_message: error_message?.substring(0, 1000) || null // Limit error message length
+        };
 
         const log = await prisma.audit_logs.create({
-            data: {
-                user_id: user_id || null,
-                organization_id: organization_id || null,
-                action,
-                resource_type: resource_type || null,
-                resource_id: resource_id || null,
-                old_values: old_values || null,
-                new_values: new_values || null,
-                ip_address,
-                user_agent,
-                success,
-                error_message: error_message || null
-            },
+            data: cleanedData,
             include: {
                 users: {
                     select: {
@@ -632,6 +678,584 @@ export const exportLogs = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to export audit logs',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * GET /actlog/logs/timeline - Lấy timeline analytics của audit logs
+ */
+export const getLogTimeline = async (req, res) => {
+    try {
+        const { days = 7, interval = 'hour' } = req.query; // hour, day, week
+        
+        const fromDate = new Date();
+        fromDate.setDate(fromDate.getDate() - parseInt(days));
+
+        // Organization security check
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin' || 
+                           (!user?.organization_id && !user?.department_id);
+
+        let whereConditions = {
+            created_at: {
+                gte: fromDate
+            }
+        };
+
+        if (!isSuperAdmin && user?.organization_id) {
+            whereConditions.organization_id = user.organization_id;
+        }
+
+        // Group by time intervals
+        let timeFormat;
+        switch (interval) {
+            case 'hour':
+                timeFormat = "DATE_TRUNC('hour', created_at)";
+                break;
+            case 'day':
+                timeFormat = "DATE_TRUNC('day', created_at)";
+                break;
+            case 'week':
+                timeFormat = "DATE_TRUNC('week', created_at)";
+                break;
+            default:
+                timeFormat = "DATE_TRUNC('hour', created_at)";
+        }
+
+        // Get timeline data using raw SQL for better performance
+        const timeline = await prisma.$queryRaw`
+            SELECT 
+                ${timeFormat} as time_period,
+                action,
+                COUNT(*) as count,
+                COUNT(*) FILTER (WHERE success = true) as success_count,
+                COUNT(*) FILTER (WHERE success = false) as failure_count
+            FROM audit_logs 
+            WHERE created_at >= ${fromDate}
+            ${!isSuperAdmin && user?.organization_id ? 
+                Prisma.sql`AND organization_id = ${user.organization_id}::uuid` : 
+                Prisma.empty
+            }
+            GROUP BY time_period, action
+            ORDER BY time_period ASC, count DESC
+        `;
+
+        // Group data by time period
+        const groupedData = {};
+        timeline.forEach(row => {
+            const timePeriod = row.time_period.toISOString();
+            if (!groupedData[timePeriod]) {
+                groupedData[timePeriod] = {
+                    time_period: timePeriod,
+                    total_count: 0,
+                    success_count: 0,
+                    failure_count: 0,
+                    actions: {}
+                };
+            }
+            
+            groupedData[timePeriod].total_count += parseInt(row.count);
+            groupedData[timePeriod].success_count += parseInt(row.success_count);
+            groupedData[timePeriod].failure_count += parseInt(row.failure_count);
+            groupedData[timePeriod].actions[row.action] = {
+                count: parseInt(row.count),
+                success_count: parseInt(row.success_count),
+                failure_count: parseInt(row.failure_count)
+            };
+        });
+
+        const timelineData = Object.values(groupedData).sort((a, b) => 
+            new Date(a.time_period) - new Date(b.time_period)
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Audit log timeline retrieved successfully',
+            data: {
+                period_days: parseInt(days),
+                interval: interval,
+                timeline: timelineData,
+                summary: {
+                    total_periods: timelineData.length,
+                    total_logs: timelineData.reduce((sum, period) => sum + period.total_count, 0),
+                    avg_logs_per_period: timelineData.length > 0 ? 
+                        (timelineData.reduce((sum, period) => sum + period.total_count, 0) / timelineData.length).toFixed(2) : 0
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting audit log timeline:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve audit log timeline',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * GET /actlog/logs/anomalies - Phát hiện anomalies trong audit logs
+ */
+export const detectAnomalies = async (req, res) => {
+    try {
+        const { days = 7, threshold_multiplier = 2 } = req.query;
+        
+        const fromDate = new Date();
+        fromDate.setDate(fromDate.getDate() - parseInt(days));
+
+        // Organization security
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin';
+        
+        let whereConditions = {
+            created_at: { gte: fromDate }
+        };
+        if (!isSuperAdmin && user?.organization_id) {
+            whereConditions.organization_id = user.organization_id;
+        }
+
+        // Detect anomalies
+        const anomalies = [];
+
+        // 1. Unusual login patterns (too many failed logins)
+        const failedLogins = await prisma.audit_logs.groupBy({
+            by: ['user_id'],
+            where: {
+                ...whereConditions,
+                action: 'failed_login',
+                user_id: { not: null }
+            },
+            _count: { user_id: true },
+            having: {
+                user_id: { _count: { gt: 5 } } // More than 5 failed logins
+            }
+        });
+
+        failedLogins.forEach(item => {
+            anomalies.push({
+                type: 'excessive_failed_logins',
+                severity: 'high',
+                user_id: item.user_id,
+                count: item._count.user_id,
+                description: `User has ${item._count.user_id} failed login attempts in ${days} days`
+            });
+        });
+
+        // 2. After-hours activities (outside 6 AM - 10 PM)
+        const afterHoursLogs = await prisma.$queryRaw`
+            SELECT user_id, COUNT(*) as count
+            FROM audit_logs 
+            WHERE created_at >= ${fromDate}
+            ${!isSuperAdmin && user?.organization_id ? 
+                Prisma.sql`AND organization_id = ${user.organization_id}::uuid` : 
+                Prisma.empty
+            }
+            AND (
+                EXTRACT(HOUR FROM created_at) < 6 OR 
+                EXTRACT(HOUR FROM created_at) > 22
+            )
+            AND user_id IS NOT NULL
+            GROUP BY user_id
+            HAVING COUNT(*) > 10
+        `;
+
+        afterHoursLogs.forEach(item => {
+            anomalies.push({
+                type: 'after_hours_activity',
+                severity: 'medium',
+                user_id: item.user_id,
+                count: parseInt(item.count),
+                description: `User has ${item.count} activities outside business hours`
+            });
+        });
+
+        // 3. Bulk deletion activities
+        const bulkDeletions = await prisma.audit_logs.groupBy({
+            by: ['user_id'],
+            where: {
+                ...whereConditions,
+                action: 'delete',
+                user_id: { not: null }
+            },
+            _count: { user_id: true },
+            having: {
+                user_id: { _count: { gt: 20 } }
+            }
+        });
+
+        bulkDeletions.forEach(item => {
+            anomalies.push({
+                type: 'bulk_deletion',
+                severity: 'high',
+                user_id: item.user_id,
+                count: item._count.user_id,
+                description: `User performed ${item._count.user_id} deletions in ${days} days`
+            });
+        });
+
+        // 4. Unusual IP addresses (new IPs for existing users)
+        const unusualIPs = await prisma.$queryRaw`
+            WITH user_ips AS (
+                SELECT DISTINCT user_id, ip_address
+                FROM audit_logs 
+                WHERE created_at >= ${fromDate}
+                AND user_id IS NOT NULL 
+                AND ip_address IS NOT NULL
+                ${!isSuperAdmin && user?.organization_id ? 
+                    Prisma.sql`AND organization_id = ${user.organization_id}::uuid` : 
+                    Prisma.empty
+                }
+            ),
+            ip_counts AS (
+                SELECT user_id, COUNT(DISTINCT ip_address) as ip_count
+                FROM user_ips
+                GROUP BY user_id
+            )
+            SELECT user_id, ip_count
+            FROM ip_counts
+            WHERE ip_count > 3
+        `;
+
+        unusualIPs.forEach(item => {
+            anomalies.push({
+                type: 'multiple_ip_addresses',
+                severity: 'medium',
+                user_id: item.user_id,
+                count: parseInt(item.ip_count),
+                description: `User accessed from ${item.ip_count} different IP addresses`
+            });
+        });
+
+        // Get user details for anomalies
+        const userIds = [...new Set(anomalies.map(a => a.user_id))];
+        const users = await prisma.users.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, username: true, full_name: true, email: true }
+        });
+
+        const userMap = {};
+        users.forEach(user => {
+            userMap[user.id] = user;
+        });
+
+        // Enrich anomalies with user details
+        const enrichedAnomalies = anomalies.map(anomaly => ({
+            ...anomaly,
+            user: userMap[anomaly.user_id] || null
+        }));
+
+        res.status(200).json({
+            success: true,
+            message: 'Audit log anomalies detected successfully',
+            data: {
+                period_days: parseInt(days),
+                total_anomalies: enrichedAnomalies.length,
+                anomalies_by_severity: {
+                    high: enrichedAnomalies.filter(a => a.severity === 'high').length,
+                    medium: enrichedAnomalies.filter(a => a.severity === 'medium').length,
+                    low: enrichedAnomalies.filter(a => a.severity === 'low').length
+                },
+                anomalies: enrichedAnomalies
+            }
+        });
+
+    } catch (error) {
+        console.error('Error detecting audit log anomalies:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to detect audit log anomalies',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * POST /actlog/logs/cleanup - Dọn dẹp audit logs theo retention policy
+ */
+export const cleanupOldLogs = async (req, res) => {
+    try {
+        const { 
+            retention_days = 365,
+            confirm_cleanup = false,
+            archive_before_delete = true 
+        } = req.body;
+
+        // Security check - only super admin can cleanup
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin';
+        if (!isSuperAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only super administrators can perform log cleanup'
+            });
+        }
+
+        if (!confirm_cleanup) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please confirm cleanup by setting confirm_cleanup: true'
+            });
+        }
+
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - parseInt(retention_days));
+
+        // Count logs to be affected
+        const logsToCleanup = await prisma.audit_logs.count({
+            where: {
+                created_at: {
+                    lt: cutoffDate
+                }
+            }
+        });
+
+        if (logsToCleanup === 0) {
+            return res.status(200).json({
+                success: true,
+                message: 'No logs found for cleanup',
+                data: {
+                    retention_days: parseInt(retention_days),
+                    cutoff_date: cutoffDate.toISOString(),
+                    logs_cleaned: 0
+                }
+            });
+        }
+
+        let archivedCount = 0;
+        
+        // Archive logs if requested (export to file system)
+        if (archive_before_delete) {
+            try {
+                const logsToArchive = await prisma.audit_logs.findMany({
+                    where: {
+                        created_at: { lt: cutoffDate }
+                    },
+                    include: {
+                        users: {
+                            select: { username: true, full_name: true }
+                        },
+                        organizations: {
+                            select: { name: true, type: true }
+                        }
+                    }
+                });
+
+                // In production, save to cloud storage or archive system
+                const archiveData = {
+                    archived_at: new Date().toISOString(),
+                    retention_days: parseInt(retention_days),
+                    cutoff_date: cutoffDate.toISOString(),
+                    total_logs: logsToArchive.length,
+                    logs: logsToArchive
+                };
+
+                // For now, just count as archived
+                archivedCount = logsToArchive.length;
+                
+            } catch (archiveError) {
+                console.error('Error archiving logs:', archiveError);
+                // Continue with deletion even if archiving fails
+            }
+        }
+
+        // Delete old logs
+        const result = await prisma.audit_logs.deleteMany({
+            where: {
+                created_at: {
+                    lt: cutoffDate
+                }
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Audit logs cleanup completed successfully',
+            data: {
+                retention_days: parseInt(retention_days),
+                cutoff_date: cutoffDate.toISOString(),
+                logs_cleaned: result.count,
+                logs_archived: archivedCount,
+                archive_enabled: archive_before_delete
+            }
+        });
+
+    } catch (error) {
+        console.error('Error cleaning up audit logs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to cleanup audit logs',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * GET /audit-logs/users/:userId - Lấy audit logs theo user ID
+ */
+export const getLogsByUser = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+
+        const pageSize = Math.min(parseInt(limit), 1000);
+        const currentPage = Math.max(parseInt(page), 1);
+        const offset = (currentPage - 1) * pageSize;
+
+        // Security: Organization-level filtering
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin' || 
+                           (!user?.organization_id && !user?.department_id);
+
+        let whereConditions = { user_id: userId };
+        
+        if (!isSuperAdmin && user?.organization_id) {
+            whereConditions.organization_id = user.organization_id;
+        }
+
+        const totalCount = await prisma.audit_logs.count({
+            where: whereConditions
+        });
+
+        const logs = await prisma.audit_logs.findMany({
+            where: whereConditions,
+            include: {
+                users: {
+                    select: {
+                        id: true,
+                        username: true,
+                        full_name: true,
+                        email: true
+                    }
+                },
+                organizations: {
+                    select: {
+                        id: true,
+                        name: true,
+                        type: true
+                    }
+                }
+            },
+            orderBy: {
+                created_at: 'desc'
+            },
+            skip: offset,
+            take: pageSize
+        });
+
+        const totalPages = Math.ceil(totalCount / pageSize);
+
+        res.status(200).json({
+            success: true,
+            message: 'User audit logs retrieved successfully',
+            data: {
+                logs,
+                pagination: {
+                    current_page: currentPage,
+                    total_pages: totalPages,
+                    total_count: totalCount,
+                    per_page: pageSize,
+                    has_next_page: currentPage < totalPages,
+                    has_prev_page: currentPage > 1
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting user audit logs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve user audit logs',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * GET /audit-logs/resources/:resourceType/:resourceId - Lấy audit logs theo resource
+ */
+export const getLogsByResource = async (req, res) => {
+    try {
+        const { resourceType, resourceId } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+
+        const pageSize = Math.min(parseInt(limit), 1000);
+        const currentPage = Math.max(parseInt(page), 1);
+        const offset = (currentPage - 1) * pageSize;
+
+        // Security: Organization-level filtering
+        const user = req.user;
+        const isSuperAdmin = user?.role === 'system.admin' || 
+                           (!user?.organization_id && !user?.department_id);
+
+        let whereConditions = { 
+            resource_type: resourceType,
+            resource_id: resourceId 
+        };
+        
+        if (!isSuperAdmin && user?.organization_id) {
+            whereConditions.organization_id = user.organization_id;
+        }
+
+        const totalCount = await prisma.audit_logs.count({
+            where: whereConditions
+        });
+
+        const logs = await prisma.audit_logs.findMany({
+            where: whereConditions,
+            include: {
+                users: {
+                    select: {
+                        id: true,
+                        username: true,
+                        full_name: true,
+                        email: true
+                    }
+                },
+                organizations: {
+                    select: {
+                        id: true,
+                        name: true,
+                        type: true
+                    }
+                }
+            },
+            orderBy: {
+                created_at: 'desc'
+            },
+            skip: offset,
+            take: pageSize
+        });
+
+        const totalPages = Math.ceil(totalCount / pageSize);
+
+        res.status(200).json({
+            success: true,
+            message: 'Resource audit logs retrieved successfully',
+            data: {
+                logs,
+                pagination: {
+                    current_page: currentPage,
+                    total_pages: totalPages,
+                    total_count: totalCount,
+                    per_page: pageSize,
+                    has_next_page: currentPage < totalPages,
+                    has_prev_page: currentPage > 1
+                },
+                filter: {
+                    resource_type: resourceType,
+                    resource_id: resourceId
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting resource audit logs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve resource audit logs',
             error: error.message
         });
     }

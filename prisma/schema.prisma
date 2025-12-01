@@ -27,8 +27,8 @@ model device_models {
   model_number    String?           @unique(map: "device_models_model_id_key") @db.VarChar(100)
   manufacturer_id String?           @db.Uuid
   supplier_id     String?           @db.Uuid
-  specifications  Json?             @default("{}") @db.JsonB
   created_at      DateTime?         @default(now()) @db.Timestamptz(6)
+  specifications  Json?             @default("{}")
   updated_at      DateTime?         @default(now()) @updatedAt @db.Timestamptz(6)
   devices         device[]
   category        device_categories @relation(fields: [category_id], references: [id], onUpdate: NoAction)
@@ -53,6 +53,7 @@ model device {
   updated_at            DateTime?               @default(now()) @updatedAt @db.Timestamptz(6)
   location              String?                 @db.VarChar(255)
   notes                 String?
+  visibility            device_visibility       @default(private)
   alert_rules           alert_rules[]
   alert_suppressions    alert_suppressions[]
   alerts                alerts[]
@@ -62,13 +63,17 @@ model device {
   device_connectivity   device_connectivity[]
   device_data           device_data[]
   device_latest_data    device_latest_data[]
+  maintenance_history   maintenance_history[]
   maintenance_schedules maintenance_schedules[]
   warranty_info         warranty_info[]
+  outlet                outlets?
 
   @@index([model_id], map: "idx_device_model")
   @@index([organization_id], map: "idx_device_organization")
   @@index([department_id], map: "idx_device_department")
   @@index([status], map: "idx_device_status")
+  @@index([visibility], map: "idx_device_visibility")
+  @@index([organization_id, visibility], map: "idx_device_org_visibility")
 }
 
 model warranty_info {
@@ -127,7 +132,9 @@ model organizations {
   dashboards            dashboards[]
   departments           departments[]
   devices               device[]
+  maintenance_history   maintenance_history[]
   organization_settings organization_settings?
+  power_distribution_units power_distribution_units[]
   reports               reports[]
   roles                 roles[]
   system_settings       system_settings[]
@@ -140,71 +147,22 @@ model organizations {
 }
 
 model departments {
-  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id String        @db.Uuid
-  name            String        @db.VarChar(255)
-  description     String?
-  code            String?       @db.VarChar(20)
-  created_at      DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime?     @default(now()) @updatedAt @db.Timestamptz(6)
-  organization    organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  devices         device[]
-  user_roles      user_roles[]
-  users           users[]
+  id                  String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id     String                @db.Uuid
+  name                String                @db.VarChar(255)
+  description         String?
+  code                String?               @db.VarChar(20)
+  created_at          DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?             @default(now()) @updatedAt @db.Timestamptz(6)
+  organization        organizations         @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  devices             device[]
+  maintenance_history maintenance_history[]
+  power_distribution_units power_distribution_units[]
+  user_roles          user_roles[]
+  users               users[]
 
   @@index([code], map: "idx_departments_code")
   @@index([organization_id], map: "idx_departments_organization")
-}
-
-model auo_display {
-  id                      Int                      @id @default(autoincrement())
-  voltage                 Float?                   @db.Real
-  current                 Float?                   @db.Real
-  power_operating         Float?                   @db.Real
-  frequency               Float?                   @db.Real
-  power_factor            Float?                   @db.Real
-  operating_time          Unsupported("interval")?
-  over_voltage_operating  Boolean?                 @default(false)
-  over_current_operating  Boolean?                 @default(false)
-  over_power_operating    Boolean?                 @default(false)
-  status_operating        Boolean?                 @default(false)
-  under_voltage_operating Boolean?                 @default(false)
-  power_socket_status     Boolean?                 @default(false)
-  timestamp               DateTime?                @default(now()) @db.Timestamp(6)
-}
-
-model camera_control_unit {
-  id                      Int                      @id @default(autoincrement())
-  voltage                 Float?                   @db.Real
-  current                 Float?                   @db.Real
-  power_operating         Float?                   @db.Real
-  frequency               Float?                   @db.Real
-  power_factor            Float?                   @db.Real
-  operating_time          Unsupported("interval")?
-  over_voltage_operating  Boolean?                 @default(false)
-  over_current_operating  Boolean?                 @default(false)
-  over_power_operating    Boolean?                 @default(false)
-  status_operating        Boolean?                 @default(false)
-  under_voltage_operating Boolean?                 @default(false)
-  power_socket_status     Boolean?                 @default(false)
-  timestamp               DateTime?                @default(now()) @db.Timestamp(6)
-}
-
-model electronic_endoflator {
-  id                      Int                      @id @default(autoincrement())
-  voltage                 Float?                   @db.Real
-  current                 Float?                   @db.Real
-  power_operating         Float?                   @db.Real
-  frequency               Float?                   @db.Real
-  power_factor            Float?                   @db.Real
-  operating_time          Unsupported("interval")?
-  over_voltage_operating  Boolean?                 @default(false)
-  over_current_operating  Boolean?                 @default(false)
-  over_power_operating    Boolean?                 @default(false)
-  status_operating        Boolean?                 @default(false)
-  under_voltage_operating Boolean?                 @default(false)
-  power_socket_status     Boolean?                 @default(false)
-  timestamp               DateTime?                @default(now()) @db.Timestamp(6)
 }
 
 model iot_environment_status {
@@ -218,23 +176,6 @@ model iot_environment_status {
   strong_warning   Boolean?  @default(false)
   shutdown_warning Boolean?  @default(false)
   timestamp        DateTime? @default(now()) @db.Timestamp(6)
-}
-
-model led_nova_100 {
-  id                      Int                      @id @default(autoincrement())
-  voltage                 Float?                   @db.Real
-  current                 Float?                   @db.Real
-  power_operating         Float?                   @db.Real
-  frequency               Float?                   @db.Real
-  power_factor            Float?                   @db.Real
-  operating_time          Unsupported("interval")?
-  over_voltage_operating  Boolean?                 @default(false)
-  over_current_operating  Boolean?                 @default(false)
-  over_power_operating    Boolean?                 @default(false)
-  status_operating        Boolean?                 @default(false)
-  under_voltage_operating Boolean?                 @default(false)
-  power_socket_status     Boolean?                 @default(false)
-  timestamp               DateTime?                @default(now()) @db.Timestamp(6)
 }
 
 model device_warning_logs {
@@ -439,15 +380,18 @@ model device_data {
   id             String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   device_id      String        @db.Uuid
   measurement_id String        @db.Uuid
+  outlet_id      String?       @db.Uuid
   data_payload   Json
   timestamp      DateTime      @default(now()) @db.Timestamptz(6)
   alerts         alerts[]
   data_values    data_values[]
   device         device        @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   measurements   measurements  @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  outlet         outlets?      @relation(fields: [outlet_id], references: [id])
 
   @@index([device_id, timestamp(sort: Desc)], map: "idx_device_data_device_time")
   @@index([measurement_id, timestamp(sort: Desc)], map: "idx_device_data_measurement_time")
+  @@index([outlet_id, timestamp(sort: Desc)], map: "idx_device_data_outlet_time")
   @@index([data_payload], map: "idx_device_data_payload_gin", type: Gin)
   @@index([timestamp(sort: Desc)], map: "idx_device_data_timestamp")
 }
@@ -466,12 +410,14 @@ model device_latest_data {
 }
 
 model maintenance_schedules {
-  id            String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  device_id     String           @db.Uuid
-  schedule_type maintenance_type
-  due_date      DateTime         @db.Date
-  status        schedule_status  @default(pending)
-  device        device           @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id              String                @db.Uuid
+  schedule_type          maintenance_type
+  due_date               DateTime              @db.Date
+  status                 schedule_status       @default(pending)
+  maintenance_history_id String?               @db.Uuid
+  maintenance_history    maintenance_history[]
+  device                 device                @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([device_id], map: "idx_maintenance_schedules_device")
   @@index([due_date], map: "idx_maintenance_schedules_due_date")
@@ -564,6 +510,8 @@ model users {
   alerts_alerts_acknowledged_byTousers                   alerts[]               @relation("alerts_acknowledged_byTousers")
   alerts_alerts_resolved_byTousers                       alerts[]               @relation("alerts_resolved_byTousers")
   audit_logs                                             audit_logs[]
+  maintenance_created                                    maintenance_history[]  @relation("MaintenanceCreator")
+  maintenance_performed                                  maintenance_history[]  @relation("MaintenancePerformer")
   notification_logs                                      notification_logs[]
   resource_access                                        resource_access[]
   role_templates                                         role_templates[]
@@ -574,6 +522,8 @@ model users {
   user_roles_assigned                                    user_roles[]           @relation("UserRoleAssignedBy")
   user_roles                                             user_roles[]
   user_sessions                                          user_sessions[]
+  pdu_created                                            power_distribution_units[] @relation("PDUCreator")
+  outlet_assignments                                     outlets[]              @relation("OutletAssignedBy")
   departments                                            departments?           @relation(fields: [department_id], references: [id], onUpdate: NoAction, map: "users_v2_department_id_fkey")
   organizations                                          organizations?         @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "users_v2_organization_id_fkey")
 
@@ -900,10 +850,13 @@ model users_backup {
 model device_data_logs {
   id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   device_id String    @db.Uuid
+  outlet_id String?   @db.Uuid
   data_json Json
   timestamp DateTime? @default(now()) @db.Timestamptz(6)
+  outlet    outlets?  @relation(fields: [outlet_id], references: [id])
 
   @@index([device_id], map: "idx_device_data_logs_device")
+  @@index([outlet_id], map: "idx_device_data_logs_outlet_time")
   @@index([timestamp], map: "idx_device_data_logs_timestamp")
 }
 
@@ -920,6 +873,70 @@ model user_permission_cache {
   @@index([expires_at], map: "idx_user_permission_cache_expires")
 }
 
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model maintenance_history {
+  id                    String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id             String                 @db.Uuid
+  schedule_id           String?                @db.Uuid
+  maintenance_type      maintenance_type
+  title                 String                 @db.VarChar(255)
+  description           String?
+  performed_date        DateTime               @db.Timestamptz(6)
+  duration_minutes      Int?
+  performed_by          String?                @db.Uuid
+  technician_name       String?                @db.VarChar(255)
+  department_id         String?                @db.Uuid
+  cost                  Decimal?               @db.Decimal(12, 2)
+  currency              String?                @default("VND") @db.VarChar(3)
+  parts_replaced        Json?                  @default("[]")
+  consumables_used      Json?                  @default("[]")
+  status                maintenance_status     @default(completed)
+  severity              maintenance_severity   @default(routine)
+  issues_found          String?
+  actions_taken         String?
+  recommendations       String?
+  device_condition      device_condition?
+  performance_rating    Int?                   @db.SmallInt
+  next_maintenance_date DateTime?              @db.Date
+  next_maintenance_type maintenance_type?
+  attachments           Json?                  @default("[]")
+  photos                Json?                  @default("[]")
+  created_at            DateTime?              @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by            String?                @db.Uuid
+  organization_id       String                 @db.Uuid
+  creator               users?                 @relation("MaintenanceCreator", fields: [created_by], references: [id])
+  department            departments?           @relation(fields: [department_id], references: [id])
+  device                device                 @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  organization          organizations          @relation(fields: [organization_id], references: [id])
+  performer             users?                 @relation("MaintenancePerformer", fields: [performed_by], references: [id])
+  schedule              maintenance_schedules? @relation(fields: [schedule_id], references: [id])
+  parts                 maintenance_parts[]
+
+  @@index([device_id], map: "idx_maintenance_history_device")
+  @@index([performed_date(sort: Desc)], map: "idx_maintenance_history_date")
+  @@index([organization_id], map: "idx_maintenance_history_org")
+  @@index([maintenance_type], map: "idx_maintenance_history_type")
+  @@index([status], map: "idx_maintenance_history_status")
+  @@index([performed_by], map: "idx_maintenance_history_performer")
+  @@index([device_id, performed_date(sort: Desc)], map: "idx_maintenance_device_date")
+}
+
+model maintenance_parts {
+  id              String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  maintenance_id  String              @db.Uuid
+  part_name       String              @db.VarChar(255)
+  part_number     String?             @db.VarChar(100)
+  quantity        Int                 @default(1)
+  unit_price      Decimal?            @db.Decimal(12, 2)
+  total_cost      Decimal?            @db.Decimal(12, 2)
+  supplier        String?             @db.VarChar(255)
+  warranty_months Int?
+  created_at      DateTime?           @default(now()) @db.Timestamptz(6)
+  maintenance     maintenance_history @relation(fields: [maintenance_id], references: [id], onDelete: Cascade)
+
+  @@index([maintenance_id], map: "idx_maintenance_parts_maintenance")
+}
 
 
 enum device_status {
@@ -1049,4 +1066,124 @@ enum org_status {
   ACTIVE
   INACTIVE
   PENDING
+}
+
+enum maintenance_status {
+  completed
+  failed
+  partial
+  cancelled
+}
+
+enum maintenance_severity {
+  routine
+  urgent
+  emergency
+}
+
+enum device_condition {
+  excellent
+  good
+  fair
+  poor
+  critical
+}
+
+enum device_visibility {
+  public
+  department
+  private
+}
+
+enum pdu_type {
+  cart
+  wall_mount
+  floor_stand
+  ceiling
+  rack
+  extension
+}
+
+enum outlet_status {
+  active
+  idle
+  inactive
+  error
+  maintenance
+}
+
+/// PDU & Outlet System Models
+model power_distribution_units {
+  id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String    @db.Uuid
+  department_id   String?   @db.Uuid
+  name            String    @db.VarChar(100)
+  code            String?   @db.VarChar(50)
+  type            pdu_type  @default(cart)
+  description     String?   @db.VarChar(255)
+  location        String?   @db.VarChar(255)
+  floor           String?   @db.VarChar(50)
+  building        String?   @db.VarChar(100)
+  total_outlets   Int       @default(4)
+  max_power_watts Float?    @default(10000) @db.Real
+  voltage_rating  Float?    @default(220) @db.Real
+  mqtt_base_topic String?   @db.VarChar(255)
+  manufacturer    String?   @db.VarChar(100)
+  model_number    String?   @db.VarChar(100)
+  serial_number   String?   @db.VarChar(100)
+  is_mobile       Boolean?  @default(true)
+  is_active       Boolean?  @default(true)
+  specifications  Json?     @default("{}")
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by      String?   @db.Uuid
+  
+  organization organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  department   departments?  @relation(fields: [department_id], references: [id], onDelete: Cascade)
+  creator      users?        @relation("PDUCreator", fields: [created_by], references: [id])
+  outlets      outlets[]
+  
+  @@unique([organization_id, code], map: "unique_org_pdu_code")
+  @@index([organization_id], map: "idx_pdu_org")
+  @@index([department_id], map: "idx_pdu_dept")
+  @@index([type], map: "idx_pdu_type")
+  @@index([is_active], map: "idx_pdu_active")
+  @@index([location], map: "idx_pdu_location")
+}
+
+model outlets {
+  id                String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  pdu_id            String        @db.Uuid
+  outlet_number     Int
+  name              String?       @db.VarChar(100)
+  description       String?       @db.VarChar(255)
+  mqtt_topic_suffix String        @db.VarChar(100)
+  max_power_watts   Float?        @default(3000) @db.Real
+  outlet_type       String?       @db.VarChar(50)
+  device_id         String?       @unique @db.Uuid
+  assigned_at       DateTime?     @db.Timestamptz(6)
+  assigned_by       String?       @db.Uuid
+  status            outlet_status @default(inactive)
+  last_data_at      DateTime?     @db.Timestamptz(6)
+  current_power     Float?        @db.Real
+  current_voltage   Float?        @db.Real
+  current_current   Float?        @db.Real
+  is_enabled        Boolean?      @default(true)
+  display_order     Int?          @default(1)
+  notes             String?       @db.VarChar(500)
+  created_at        DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?     @default(now()) @updatedAt @db.Timestamptz(6)
+  
+  pdu                     power_distribution_units @relation(fields: [pdu_id], references: [id], onDelete: Cascade)
+  device                  device?                   @relation(fields: [device_id], references: [id], onDelete: SetNull)
+  assigned_by_user        users?                    @relation("OutletAssignedBy", fields: [assigned_by], references: [id])
+  device_data             device_data[]
+  device_data_logs        device_data_logs[]
+  
+  @@unique([pdu_id, outlet_number], map: "unique_pdu_outlet")
+  @@index([pdu_id], map: "idx_outlets_pdu")
+  @@index([device_id], map: "idx_outlets_device")
+  @@index([status], map: "idx_outlets_status")
+  @@index([is_enabled], map: "idx_outlets_enabled")
+  @@index([outlet_number], map: "idx_outlets_number")
 }

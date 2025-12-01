@@ -212,7 +212,7 @@ class UserService {
     /**
      * Create new user
      */
-    async createUser(userData, createdBy) {
+    async createUser(userData) {
         try {
             const {
                 username,
@@ -222,8 +222,12 @@ class UserService {
                 phone,
                 organization_id,
                 department_id,
-                role_ids = []
+                role_id
             } = userData;
+
+            // Convert empty strings to null for UUID fields
+            const finalOrganizationId = organization_id === "" ? null : organization_id;
+            const finalDepartmentId = department_id === "" ? null : department_id;
 
             // Check if username or email already exists
             const existingUser = await prisma.users.findFirst({
@@ -253,26 +257,26 @@ class UserService {
                 const user = await tx.users.create({
                     data: {
                         username,
-                        password: hashedPassword,
+                        password_hash: hashedPassword,
                         full_name,
                         email,
                         phone,
-                        organization_id,
-                        department_id,
-                        created_by: createdBy,
+                        organization_id: finalOrganizationId,
+                        department_id: finalDepartmentId,
                         is_active: true
                     }
                 });
 
-                // Assign roles if provided
-                if (role_ids.length > 0) {
-                    await tx.user_roles.createMany({
-                        data: role_ids.map(role_id => ({
+                // Assign role if provided
+                if (role_id) {
+                    await tx.user_roles.create({
+                        data: {
                             user_id: user.id,
                             role_id,
-                            assigned_by: createdBy,
+                            organization_id: finalOrganizationId,
+                            department_id: finalDepartmentId,
                             assigned_at: new Date()
-                        }))
+                        }
                     });
                 }
 

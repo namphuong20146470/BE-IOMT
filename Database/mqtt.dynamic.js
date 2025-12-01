@@ -1,7 +1,7 @@
 import mqtt from 'mqtt';
 import crypto from 'crypto';
 import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
-import socketService from '../services/socketService.js';
+import socketService from '../shared/services/socketService.js';
 import prisma from '../config/db.js';
 import dotenv from 'dotenv';
 import dns from 'dns';

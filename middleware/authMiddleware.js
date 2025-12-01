@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
-import { getUserAllPermissions } from '../utils/permissionHelpers.js';
+import { getUserAllPermissions } from '../shared/utils/permissionHelpers.js';
 
 const prisma = new PrismaClient();
 

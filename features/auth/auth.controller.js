@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import sessionService from '../../shared/services/SessionService.js';
 import auditService from '../../shared/services/AuditService.js';
+import AuditLogger from '../../shared/services/AuditLogger.js';
 
 const prisma = new PrismaClient();
 
@@ -62,9 +63,16 @@ export const login = async (req, res) => {
     try {
         // Validate input
         if (!username || !password) {
-            await auditService.logActivity(null, 'failed_login', 'auth', null, {
-                reason: 'Missing credentials',
-                ip: ipAddress
+            await AuditLogger.log({
+                req,
+                action: 'FAILED_LOGIN',
+                resource_type: 'auth',
+                success: false,
+                error_message: 'Missing credentials',
+                new_values: {
+                    reason: 'Missing credentials',
+                    username: username || 'not_provided'
+                }
             });
 
             return res.status(400).json({
@@ -115,10 +123,16 @@ export const login = async (req, res) => {
         `;
 
         if (users.length === 0) {
-            await auditService.logActivity(null, 'failed_login', 'auth', null, {
-                reason: 'User not found',
-                username,
-                ip: ipAddress
+            await AuditLogger.log({
+                req,
+                action: 'FAILED_LOGIN',
+                resource_type: 'auth',
+                success: false,
+                error_message: 'User not found',
+                new_values: {
+                    reason: 'User not found',
+                    username
+                }
             });
 
             return res.status(401).json({
@@ -154,10 +168,18 @@ export const login = async (req, res) => {
         }
 
         if (!isValidPassword) {
-            await auditService.logActivity(user.id, 'failed_login', 'auth', null, {
-                reason: 'Invalid password',
-                username,
-                ip: ipAddress
+            await AuditLogger.log({
+                req,
+                user_id: user.id,
+                organization_id: user.organization_id,
+                action: 'FAILED_LOGIN',
+                resource_type: 'auth',
+                success: false,
+                error_message: 'Invalid password',
+                new_values: {
+                    reason: 'Invalid password',
+                    username
+                }
             });
 
             return res.status(401).json({

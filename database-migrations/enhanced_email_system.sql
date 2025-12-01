@@ -1,4 +1,4 @@
--- Enhanced Email Notification System Tables
+P-- Enhanced Email Notification System Tables
 -- Run these queries to create the necessary tables
 
 -- ====================================================================

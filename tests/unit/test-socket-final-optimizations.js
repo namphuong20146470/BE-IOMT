@@ -1,4 +1,4 @@
-import socketService from './services/socketService.js';
+import socketService from '../../shared/services/socketService.js';
 import prisma from './config/db.js';
 
 async function testSocketServiceFinalOptimizations() {

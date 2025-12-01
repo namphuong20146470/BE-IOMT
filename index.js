@@ -26,23 +26,12 @@ import { swaggerSecurityMiddleware } from './middleware/swaggerSecurity.js';
 // - Validation (input validation)
 // - README (documentation)
 
-// Feature imports
-import authRoutes from './features/auth/auth.routes.js';
-import usersRoutes from './features/users/users.routes.js';
-import userPermissionsRoutes from './features/users/userPermissions.routes.js';
-import deviceRoutes from './features/devices/device.routes.js';
+// Keep only routes not yet migrated to features
 import deviceDataRoutes from './features/devices/deviceData.routes.js';
-import organizationsRoutes from './features/organizations/organizations.routes.js';
-import departmentsRoutes from './features/departments/departments.routes.js';
-import maintenanceRoutes from './features/maintenance/maintenance.routes.js';
-import alertsRoutes from './features/alerts/alerts.routes.js';
 
-// Legacy routes (to be migrated)
-import actLog from './routes/actLog.js';
+// Legacy routes (to be migrated to features)
 import masterDataRoutes from './routes/masterDataRoutes.js';
-import roleRoutes from './routes/roleRoutes.js';
-// New user permissions routes
-import userPermissionsIndividualRoutes from './routes/userPermissions.routes.js';
+import mqttRoutes from './routes/mqttRoutes.js';
 
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
@@ -55,6 +44,9 @@ dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
+
+// ✅ Trust proxy for correct IP detection
+app.set('trust proxy', true);
 
 // Port configuration  
 const port = process.env.PORT || 3030;
@@ -177,36 +169,17 @@ app.get('/api-docs*', (req, res) => {
 // 🚀 FEATURE-BASED ROUTES
 // ==========================================
 
-// Authentication & Authorization
-app.use('/auth', authRoutes);
-
-// User Management  
-app.use('/users', usersRoutes);
-app.use('/users', userPermissionsRoutes); // User permissions sub-routes
-
-// 🔑 Individual User Permissions Management (grant/revoke specific permissions)
-app.use('/user-permissions', userPermissionsIndividualRoutes);
-
-// Device Management
-app.use('/devices', deviceRoutes);
+// Individual routes are now handled by /api router
 
 // Dashboard Management
 import dashboardRoutes from './routes/dashboardRoutes.js';
 app.use('/dashboards', dashboardRoutes);
 
-// Organization Management
-app.use('/', organizationsRoutes);
+// Main API Routes (from features) - Version 1  
+import apiRoutes from './routes/index.js';
+app.use('/api/v1', apiRoutes);
 
-// Department Management  
-app.use('/', departmentsRoutes);
-
-// Maintenance Management
-app.use('/', maintenanceRoutes);
-
-// Alerts & Warnings (Formalized)
-app.use('/', alertsRoutes);
-
-// Master Data & Device Data (combined with legacy routes)
+// Master Data & Device Data (legacy)
 app.use('/', deviceDataRoutes, masterDataRoutes);
 
 // ==========================================
@@ -216,11 +189,8 @@ app.use('/', deviceDataRoutes, masterDataRoutes);
 // IoT & MQTT
 app.use('/iot', iot);
 
-// Activity Logs
-app.use('/actlog', actLog);
-
-// Role Management (will move to /permissions)
-app.use('/auth', roleRoutes);
+// MQTT Device Management
+app.use('/mqtt', mqttRoutes);
 
 // SSL Configuration
 const { options, useHttps } = configureSSL();

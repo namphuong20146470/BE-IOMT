@@ -16,16 +16,16 @@ export const getAllDepartments = async (req, res) => {
         // Get user's organization if not specified and user doesn't have system-wide permissions
         let orgFilter = {};
         if (organization_id) {
-            orgFilter.organizationId = organization_id;
+            orgFilter.organization_id = organization_id;
         } else {
             // If user is not super admin, filter by their organization
             if (!req.user.permissions?.includes('system.admin')) {
-                const user = await prisma.user.findUnique({
+                const user = await prisma.users.findUnique({
                     where: { id: userId },
-                    select: { organizationId: true }
+                    select: { organization_id: true }
                 });
-                if (user?.organizationId) {
-                    orgFilter.organizationId = user.organizationId;
+                if (user?.organization_id) {
+                    orgFilter.organization_id = user.organization_id;
                 }
             }
         }
@@ -42,7 +42,7 @@ export const getAllDepartments = async (req, res) => {
 
         // Get departments with counts
         const [departments, total] = await Promise.all([
-            prisma.department.findMany({
+            prisma.departments.findMany({
                 where,
                 skip,
                 take: parseInt(limit),
@@ -57,9 +57,9 @@ export const getAllDepartments = async (req, res) => {
                         }
                     }
                 },
-                orderBy: { createdAt: 'desc' }
+                orderBy: { created_at: 'desc' }
             }),
-            prisma.department.count({ where })
+            prisma.departments.count({ where })
         ]);
 
         return res.status(200).json({
@@ -89,7 +89,7 @@ export const getDepartmentById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const department = await prisma.department.findUnique({
+        const department = await prisma.departments.findUnique({
             where: { id },
             include: {
                 organization: {
@@ -99,16 +99,15 @@ export const getDepartmentById = async (req, res) => {
                     select: {
                         id: true,
                         username: true,
-                        fullName: true,
-                        email: true,
-                        roleId: true
+                        full_name: true,
+                        email: true
                     }
                 },
                 devices: {
                     select: {
                         id: true,
-                        deviceCode: true,
-                        serialNumber: true,
+                        asset_tag: true,
+                        serial_number: true,
                         status: true,
                         location: true
                     }
@@ -131,7 +130,7 @@ export const getDepartmentById = async (req, res) => {
 
         // Check if user has access to this department's organization
         if (!req.user.permissions?.includes('system.admin') && 
-            req.user.organizationId !== department.organizationId) {
+            req.user.organization_id !== department.organization_id) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied: Department belongs to different organization'
@@ -157,21 +156,22 @@ export const getDepartmentById = async (req, res) => {
  */
 export const getDepartmentsByOrganization = async (req, res) => {
     try {
-        const { organizationId } = req.params;
+        const { organizationId, organization_id } = req.params;
+        const orgId = organizationId || organization_id; // Support both param names
         const { page = 1, limit = 50, search } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         // Check if user has access to this organization
         if (!req.user.permissions?.includes('system.admin') && 
-            req.user.organizationId !== organizationId) {
+            req.user.organization_id !== orgId) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied: Cannot access departments from different organization'
             });
         }
 
-        // Build where clause
-        const where = { organizationId };
+        // Build where clause - use correct field name from schema
+        const where = { organization_id: orgId };
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
@@ -180,7 +180,7 @@ export const getDepartmentsByOrganization = async (req, res) => {
         }
 
         const [departments, total] = await Promise.all([
-            prisma.department.findMany({
+            prisma.departments.findMany({
                 where,
                 skip,
                 take: parseInt(limit),
@@ -194,7 +194,7 @@ export const getDepartmentsByOrganization = async (req, res) => {
                 },
                 orderBy: { name: 'asc' }
             }),
-            prisma.department.count({ where })
+            prisma.departments.count({ where })
         ]);
 
         return res.status(200).json({
@@ -225,7 +225,7 @@ export const createDepartment = async (req, res) => {
         const { organization_id, name, code, description } = req.body;
 
         // Check if organization exists and user has access
-        const organization = await prisma.organization.findUnique({
+        const organization = await prisma.organizations.findUnique({
             where: { id: organization_id }
         });
 
@@ -238,7 +238,7 @@ export const createDepartment = async (req, res) => {
 
         // Check permissions for organization
         if (!req.user.permissions?.includes('system.admin') && 
-            req.user.organizationId !== organization_id) {
+            req.user.organization_id !== organization_id) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied: Cannot create departments in different organization'
@@ -246,10 +246,10 @@ export const createDepartment = async (req, res) => {
         }
 
         // Check if department code already exists within the organization
-        const existingDept = await prisma.department.findFirst({
+        const existingDept = await prisma.departments.findFirst({
             where: { 
                 code,
-                organizationId: organization_id
+                organization_id: organization_id
             }
         });
 
@@ -260,9 +260,9 @@ export const createDepartment = async (req, res) => {
             });
         }
 
-        const department = await prisma.department.create({
+        const department = await prisma.departments.create({
             data: {
-                organizationId: organization_id,
+                organization_id: organization_id,
                 name,
                 code,
                 description
@@ -298,7 +298,7 @@ export const updateDepartment = async (req, res) => {
         const { name, code, description } = req.body;
 
         // Check if department exists
-        const existingDept = await prisma.department.findUnique({
+        const existingDept = await prisma.departments.findUnique({
             where: { id },
             include: { organization: true }
         });
@@ -312,7 +312,7 @@ export const updateDepartment = async (req, res) => {
 
         // Check permissions
         if (!req.user.permissions?.includes('system.admin') && 
-            req.user.organizationId !== existingDept.organizationId) {
+            req.user.organization_id !== existingDept.organization_id) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied: Department belongs to different organization'
@@ -321,10 +321,10 @@ export const updateDepartment = async (req, res) => {
 
         // Check if new code conflicts with other departments in the same organization
         if (code && code !== existingDept.code) {
-            const codeConflict = await prisma.department.findFirst({
+            const codeConflict = await prisma.departments.findFirst({
                 where: { 
                     code,
-                    organizationId: existingDept.organizationId,
+                    organization_id: existingDept.organization_id,
                     id: { not: id }
                 }
             });
@@ -337,7 +337,7 @@ export const updateDepartment = async (req, res) => {
             }
         }
 
-        const updatedDepartment = await prisma.department.update({
+        const updatedDepartment = await prisma.departments.update({
             where: { id },
             data: {
                 ...(name && { name }),
@@ -374,7 +374,7 @@ export const deleteDepartment = async (req, res) => {
         const { id } = req.params;
 
         // Check if department exists and has dependencies
-        const department = await prisma.department.findUnique({
+        const department = await prisma.departments.findUnique({
             where: { id },
             include: {
                 _count: {
@@ -395,7 +395,7 @@ export const deleteDepartment = async (req, res) => {
 
         // Check permissions
         if (!req.user.permissions?.includes('system.admin') && 
-            req.user.organizationId !== department.organizationId) {
+            req.user.organization_id !== department.organization_id) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied: Department belongs to different organization'
@@ -412,7 +412,7 @@ export const deleteDepartment = async (req, res) => {
             });
         }
 
-        await prisma.department.delete({
+        await prisma.departments.delete({
             where: { id }
         });
 
@@ -438,7 +438,7 @@ export const getDepartmentStatistics = async (req, res) => {
         const { id } = req.params;
 
         // Check if department exists and user has access
-        const department = await prisma.department.findUnique({
+        const department = await prisma.departments.findUnique({
             where: { id }
         });
 
@@ -450,7 +450,7 @@ export const getDepartmentStatistics = async (req, res) => {
         }
 
         if (!req.user.permissions?.includes('system.admin') && 
-            req.user.organizationId !== department.organizationId) {
+            req.user.organization_id !== department.organization_id) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied: Department belongs to different organization'
@@ -459,25 +459,23 @@ export const getDepartmentStatistics = async (req, res) => {
 
         // Get comprehensive statistics
         const [userStats, deviceStats, recentUsers, recentDevices] = await Promise.all([
-            // User statistics by role
-            prisma.user.groupBy({
-                by: ['roleId'],
-                where: { departmentId: id },
-                _count: { id: true }
+            // User count - get total users in department
+            prisma.users.count({
+                where: { department_id: id }
             }),
             
             // Device statistics by status
             prisma.device.groupBy({
                 by: ['status'],
-                where: { departmentId: id },
+                where: { department_id: id },
                 _count: { id: true }
             }),
             
             // Users added in last 30 days
-            prisma.user.count({
+            prisma.users.count({
                 where: {
-                    departmentId: id,
-                    createdAt: {
+                    department_id: id,
+                    created_at: {
                         gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
                     }
                 }
@@ -486,8 +484,8 @@ export const getDepartmentStatistics = async (req, res) => {
             // Devices added in last 30 days
             prisma.device.count({
                 where: {
-                    departmentId: id,
-                    createdAt: {
+                    department_id: id,
+                    created_at: {
                         gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
                     }
                 }
@@ -501,8 +499,7 @@ export const getDepartmentStatistics = async (req, res) => {
                 code: department.code
             },
             users: {
-                total: userStats.reduce((sum, stat) => sum + stat._count.id, 0),
-                by_role: userStats,
+                total: userStats,
                 added_last_30_days: recentUsers
             },
             devices: {
@@ -535,7 +532,7 @@ export const getOrganizationDepartmentStatistics = async (req, res) => {
 
         // Check permissions
         if (!req.user.permissions?.includes('system.admin') && 
-            req.user.organizationId !== organizationId) {
+            req.user.organization_id !== organizationId) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied: Cannot access statistics from different organization'
@@ -543,8 +540,8 @@ export const getOrganizationDepartmentStatistics = async (req, res) => {
         }
 
         // Get department statistics
-        const departments = await prisma.department.findMany({
-            where: { organizationId },
+        const departments = await prisma.departments.findMany({
+            where: { organization_id: organizationId },
             include: {
                 _count: {
                     select: {

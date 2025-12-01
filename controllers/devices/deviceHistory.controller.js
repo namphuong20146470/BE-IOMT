@@ -77,13 +77,13 @@ export const getDeviceHistory = async (req, res) => {
             const auoData = await prisma.$queryRaw`
                 SELECT 
                     id,
-                    'auo_display' as device_type,
+                    'socket1_data' as device_type,
                     voltage,
                     current,
                     power,
                     timestamp as data_timestamp,
                     created_at
-                FROM auo_display_data 
+                FROM socket1_data_data 
                 WHERE device_id = ${id}
                     AND timestamp >= ${startDate}
                     AND timestamp <= ${endDate}
@@ -107,7 +107,7 @@ export const getDeviceHistory = async (req, res) => {
 
                 const countResult = await prisma.$queryRaw`
                     SELECT COUNT(*) as total
-                    FROM auo_display_data 
+                    FROM socket1_data_data 
                     WHERE device_id = ${id}
                         AND timestamp >= ${startDate}
                         AND timestamp <= ${endDate}
@@ -307,13 +307,13 @@ export const getDeviceRealtimeData = async (req, res) => {
             const auoLatest = await prisma.$queryRaw`
                 SELECT 
                     id,
-                    'auo_display' as device_type,
+                    'socket1_data' as device_type,
                     voltage,
                     current,
                     power,
                     timestamp,
                     created_at
-                FROM auo_display_data 
+                FROM socket1_data_data 
                 WHERE device_id = ${id}
                 ORDER BY timestamp DESC
                 LIMIT 1
@@ -503,7 +503,7 @@ export const getDeviceDataSummary = async (req, res) => {
                     MAX(power) as max_power,
                     MIN(timestamp) as earliest_reading,
                     MAX(timestamp) as latest_reading
-                FROM auo_display_data 
+                FROM socket1_data_data 
                 WHERE device_id = ${id}
                     AND timestamp >= ${startDate}
                     AND timestamp <= ${endDate}
@@ -512,7 +512,7 @@ export const getDeviceDataSummary = async (req, res) => {
             if (auoSummary.length > 0 && parseInt(auoSummary[0].total_readings) > 0) {
                 const stats = auoSummary[0];
                 summary = {
-                    device_type: 'auo_display',
+                    device_type: 'socket1_data',
                     total_readings: parseInt(stats.total_readings),
                     date_range: {
                         start: startDate,
