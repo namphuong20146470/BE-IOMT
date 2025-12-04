@@ -1,44 +1,44 @@
-// features/outlets/outlet.controller.js
-import outletService from './outlet.service.js';
+// features/sockets/socket.controller.js
+import socketService from './socket.service.js';
 
 /**
- * Get all outlets with filtering and pagination
+ * Get all sockets with filtering and pagination
  */
-export const getAllOutlets = async (req, res) => {
+export const getAllSockets = async (req, res) => {
     try {
-        const result = await outletService.getAllOutlets(req.query, req.user);
+        const result = await socketService.getAllSockets(req.query, req.user);
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching outlets:', error);
+        console.error('Error fetching sockets:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            message: error.message || 'Failed to fetch outlets',
+            message: error.message || 'Failed to fetch sockets',
             error: error.message
         });
     }
 };
 
 /**
- * Get available outlets for device assignment
+ * Get available sockets for device assignment
  */
-export const getAvailableOutlets = async (req, res) => {
+export const getAvailableSockets = async (req, res) => {
     try {
-        const result = await outletService.getAvailableOutlets(req.query, req.user);
+        const result = await socketService.getAvailableSockets(req.query, req.user);
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching available outlets:', error);
+        console.error('Error fetching available sockets:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            message: error.message || 'Failed to fetch available outlets',
+            message: error.message || 'Failed to fetch available sockets',
             error: error.message
         });
     }
 };
 
 /**
- * Get outlet by ID
+ * Get socket by ID
  */
-export const getOutletById = async (req, res) => {
+export const getSocketById = async (req, res) => {
     try {
         const options = {
             include_device: req.query.include_device === 'true',
@@ -46,59 +46,59 @@ export const getOutletById = async (req, res) => {
             include_history: req.query.include_history === 'true'
         };
         
-        const result = await outletService.getOutletById(req.params.id, req.user, options);
+        const result = await socketService.getSocketById(req.params.id, req.user, options);
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching outlet:', error);
+        console.error('Error fetching socket:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            message: error.message || 'Failed to fetch outlet',
+            message: error.message || 'Failed to fetch socket',
             error: error.message
         });
     }
 };
 
 /**
- * Get outlet data and metrics
+ * Get socket data and metrics
  */
-export const getOutletData = async (req, res) => {
+export const getSocketData = async (req, res) => {
     try {
-        const result = await outletService.getOutletData(req.params.id, req.query, req.user);
+        const result = await socketService.getSocketData(req.params.id, req.query, req.user);
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching outlet data:', error);
+        console.error('Error fetching socket data:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            message: error.message || 'Failed to fetch outlet data',
+            message: error.message || 'Failed to fetch socket data',
             error: error.message
         });
     }
 };
 
 /**
- * Update outlet configuration
+ * Update socket configuration
  */
-export const updateOutlet = async (req, res) => {
+export const updateSocket = async (req, res) => {
     try {
-        const result = await outletService.updateOutlet(req.params.id, req.body, req.user);
+        const result = await socketService.updateSocket(req.params.id, req.body, req.user);
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error updating outlet:', error);
+        console.error('Error updating socket:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            message: error.message || 'Failed to update outlet',
+            message: error.message || 'Failed to update socket',
             error: error.message
         });
     }
 };
 
 /**
- * Assign device to outlet
+ * Assign device to socket
  */
 export const assignDevice = async (req, res) => {
     try {
         const { device_id, notes } = req.body;
-        const result = await outletService.assignDevice(req.params.id, device_id, req.user, notes);
+        const result = await socketService.assignDevice(req.params.id, device_id, req.user, notes);
         res.status(200).json(result);
     } catch (error) {
         console.error('Error assigning device:', error);
@@ -111,12 +111,12 @@ export const assignDevice = async (req, res) => {
 };
 
 /**
- * Unassign device from outlet
+ * Unassign device from socket
  */
 export const unassignDevice = async (req, res) => {
     try {
         const { notes } = req.body;
-        const result = await outletService.unassignDevice(req.params.id, req.user, notes);
+        const result = await socketService.unassignDevice(req.params.id, req.user, notes);
         res.status(200).json(result);
     } catch (error) {
         console.error('Error unassigning device:', error);
@@ -129,11 +129,11 @@ export const unassignDevice = async (req, res) => {
 };
 
 /**
- * Transfer device between outlets
+ * Transfer device between sockets
  */
 export const transferDevice = async (req, res) => {
     try {
-        const result = await outletService.transferDevice(req.body, req.user);
+        const result = await socketService.transferDevice(req.body, req.user);
         res.status(200).json(result);
     } catch (error) {
         console.error('Error transferring device:', error);
@@ -146,11 +146,11 @@ export const transferDevice = async (req, res) => {
 };
 
 /**
- * Bulk assign devices to outlets
+ * Bulk assign devices to sockets
  */
 export const bulkAssignDevices = async (req, res) => {
     try {
-        const result = await outletService.bulkAssignDevices(req.body, req.user);
+        const result = await socketService.bulkAssignDevices(req.body, req.user);
         res.status(200).json(result);
     } catch (error) {
         console.error('Error bulk assigning devices:', error);
@@ -163,49 +163,49 @@ export const bulkAssignDevices = async (req, res) => {
 };
 
 /**
- * Get outlet assignment history
+ * Get socket assignment history
  */
-export const getOutletHistory = async (req, res) => {
+export const getSocketHistory = async (req, res) => {
     try {
-        const result = await outletService.getOutletHistory(req.params.id, req.user);
+        const result = await socketService.getSocketHistory(req.params.id, req.user);
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error fetching outlet history:', error);
+        console.error('Error fetching socket history:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            message: error.message || 'Failed to fetch outlet history',
+            message: error.message || 'Failed to fetch socket history',
             error: error.message
         });
     }
 };
 
 /**
- * Control outlet (turn on/off/reset)
+ * Control socket (turn on/off/reset)
  */
-export const controlOutlet = async (req, res) => {
+export const controlSocket = async (req, res) => {
     try {
-        const result = await outletService.controlOutlet(req.params.id, req.body, req.user);
+        const result = await socketService.controlSocket(req.params.id, req.body, req.user);
         res.status(200).json(result);
     } catch (error) {
-        console.error('Error controlling outlet:', error);
+        console.error('Error controlling socket:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            message: error.message || 'Failed to control outlet',
+            message: error.message || 'Failed to control socket',
             error: error.message
         });
     }
 };
 
 export default {
-    getAllOutlets,
-    getAvailableOutlets,
-    getOutletById,
-    getOutletData,
-    updateOutlet,
+    getAllSockets,
+    getAvailableSockets,
+    getSocketById,
+    getSocketData,
+    updateSocket,
     assignDevice,
     unassignDevice,
     transferDevice,
     bulkAssignDevices,
-    getOutletHistory,
-    controlOutlet
+    getSocketHistory,
+    controlSocket
 };

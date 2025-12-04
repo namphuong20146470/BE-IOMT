@@ -60,13 +60,14 @@ model device {
   department            departments?            @relation(fields: [department_id], references: [id], onUpdate: NoAction)
   model                 device_models           @relation(fields: [model_id], references: [id], onUpdate: NoAction)
   organization          organizations           @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  device_connectivity   device_connectivity[]
+  device_current_state  device_current_state?
   device_data           device_data[]
   device_latest_data    device_latest_data[]
+
   maintenance_history   maintenance_history[]
   maintenance_schedules maintenance_schedules[]
+  socket                sockets?
   warranty_info         warranty_info[]
-  outlet                outlets?
 
   @@index([model_id], map: "idx_device_model")
   @@index([organization_id], map: "idx_device_organization")
@@ -88,58 +89,37 @@ model warranty_info {
   @@index([warranty_end], map: "idx_warranty_info_end_date")
 }
 
-model device_connectivity {
-  id                 String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  device_id          String    @db.Uuid
-  mqtt_user          String?   @db.VarChar(100)
-  mqtt_pass          String?   @db.VarChar(255)
-  mqtt_topic         String?   @db.VarChar(255)
-  broker_host        String?   @db.VarChar(255)
-  broker_port        Int?      @default(1883)
-  ssl_enabled        Boolean?  @default(false)
-  heartbeat_interval Int?      @default(300)
-  last_connected     DateTime? @db.Timestamptz(6)
-  is_active          Boolean   @default(true)
-  created_at         DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
-  device             device    @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([device_id], map: "idx_device_connectivity_device")
-  @@index([is_active], map: "idx_device_connectivity_active")
-  @@index([last_connected], map: "idx_device_connectivity_last_connected")
-}
-
 model organizations {
-  id                    String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name                  String                 @db.VarChar(255)
-  type                  organization_type
-  address               String?
-  phone                 String?                @db.VarChar(20)
-  email                 String?                @db.VarChar(255)
-  license_number        String?                @db.VarChar(100)
-  created_at            DateTime?              @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
-  is_active             Boolean                @default(true)
-  code                  String?                @db.VarChar(50)
-  website               String?                @db.VarChar(255)
-  description           String?
-  status                org_status?            @default(ACTIVE)
-  access_policies       access_policies[]
-  alert_metrics         alert_metrics[]
-  alert_rules           alert_rules[]
-  alert_suppressions    alert_suppressions[]
-  audit_logs            audit_logs[]
-  dashboards            dashboards[]
-  departments           departments[]
-  devices               device[]
-  maintenance_history   maintenance_history[]
-  organization_settings organization_settings?
+  id                       String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                     String                     @db.VarChar(255)
+  type                     organization_type
+  address                  String?
+  phone                    String?                    @db.VarChar(20)
+  email                    String?                    @db.VarChar(255)
+  license_number           String?                    @db.VarChar(100)
+  created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
+  is_active                Boolean                    @default(true)
+  code                     String?                    @db.VarChar(50)
+  website                  String?                    @db.VarChar(255)
+  description              String?
+  status                   org_status?                @default(ACTIVE)
+  access_policies          access_policies[]
+  alert_metrics            alert_metrics[]
+  alert_rules              alert_rules[]
+  alert_suppressions       alert_suppressions[]
+  audit_logs               audit_logs[]
+  dashboards               dashboards[]
+  departments              departments[]
+  devices                  device[]
+  maintenance_history      maintenance_history[]
+  organization_settings    organization_settings?
   power_distribution_units power_distribution_units[]
-  reports               reports[]
-  roles                 roles[]
-  system_settings       system_settings[]
-  user_roles            user_roles[]
-  users                 users[]
+  reports                  reports[]
+  roles                    roles[]
+  system_settings          system_settings[]
+  user_roles               user_roles[]
+  users                    users[]
 
   @@index([is_active], map: "idx_organizations_active")
   @@index([name], map: "idx_organizations_name")
@@ -147,19 +127,19 @@ model organizations {
 }
 
 model departments {
-  id                  String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id     String                @db.Uuid
-  name                String                @db.VarChar(255)
-  description         String?
-  code                String?               @db.VarChar(20)
-  created_at          DateTime?             @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime?             @default(now()) @updatedAt @db.Timestamptz(6)
-  organization        organizations         @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  devices             device[]
-  maintenance_history maintenance_history[]
+  id                       String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id          String                     @db.Uuid
+  name                     String                     @db.VarChar(255)
+  description              String?
+  code                     String?                    @db.VarChar(20)
+  created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
+  organization             organizations              @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  devices                  device[]
+  maintenance_history      maintenance_history[]
   power_distribution_units power_distribution_units[]
-  user_roles          user_roles[]
-  users               users[]
+  user_roles               user_roles[]
+  users                    users[]
 
   @@index([code], map: "idx_departments_code")
   @@index([organization_id], map: "idx_departments_organization")
@@ -379,21 +359,38 @@ model data_values {
 model device_data {
   id             String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   device_id      String        @db.Uuid
-  measurement_id String        @db.Uuid
-  outlet_id      String?       @db.Uuid
-  data_payload   Json
+  socket_id      String?       @db.Uuid
+  
+  // Measurement values (mirrored from device_current_state)
+  voltage        Float?        @db.Real
+  current        Float?        @db.Real
+  power          Float?        @db.Real
+  frequency      Float?        @db.Real
+  power_factor   Float?        @db.Real
+  
+  // State indicators  
+  machine_state  Boolean?      @default(false)
+  socket_state   Boolean?      @default(false)
+  sensor_state   Boolean?      @default(false)
+  
+  // Alert indicators
+  over_voltage   Boolean?      @default(false)
+  under_voltage  Boolean?      @default(false)
+  
+  // Timestamps
   timestamp      DateTime      @default(now()) @db.Timestamptz(6)
+  created_at     DateTime      @default(now()) @db.Timestamptz(6)
+  
+  // Relations
+  device         device        @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  socket         sockets?      @relation(fields: [socket_id], references: [id], map: "device_data_socket_id_fkey")
   alerts         alerts[]
   data_values    data_values[]
-  device         device        @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  measurements   measurements  @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  outlet         outlets?      @relation(fields: [outlet_id], references: [id])
 
   @@index([device_id, timestamp(sort: Desc)], map: "idx_device_data_device_time")
-  @@index([measurement_id, timestamp(sort: Desc)], map: "idx_device_data_measurement_time")
-  @@index([outlet_id, timestamp(sort: Desc)], map: "idx_device_data_outlet_time")
-  @@index([data_payload], map: "idx_device_data_payload_gin", type: Gin)
+  @@index([socket_id, timestamp(sort: Desc)], map: "idx_device_data_socket_time") 
   @@index([timestamp(sort: Desc)], map: "idx_device_data_timestamp")
+  @@index([device_id, created_at(sort: Desc)], map: "idx_device_data_device_created")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -433,7 +430,6 @@ model measurements {
   alert_rules        alert_rules[]
   alert_suppressions alert_suppressions[]
   alerts             alerts[]
-  device_data        device_data[]
   device_latest_data device_latest_data[]
 
   @@index([data_type], map: "idx_measurements_data_type")
@@ -491,41 +487,41 @@ model system_settings {
 }
 
 model users {
-  id                                                     String                 @id(map: "users_v2_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id                                        String?                @db.Uuid
-  department_id                                          String?                @db.Uuid
-  username                                               String                 @unique(map: "users_v2_username_key") @db.VarChar(50)
-  password_hash                                          String                 @db.VarChar(255)
-  full_name                                              String                 @db.VarChar(255)
-  email                                                  String?                @unique(map: "idx_users_v2_email") @db.VarChar(255)
-  phone                                                  String?                @db.VarChar(20)
-  is_active                                              Boolean                @default(true)
-  created_at                                             DateTime?              @default(now()) @db.Timestamptz(6)
-  updated_at                                             DateTime?              @default(now()) @db.Timestamptz(6)
+  id                                                     String                     @id(map: "users_v2_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id                                        String?                    @db.Uuid
+  department_id                                          String?                    @db.Uuid
+  username                                               String                     @unique(map: "users_v2_username_key") @db.VarChar(50)
+  password_hash                                          String                     @db.VarChar(255)
+  full_name                                              String                     @db.VarChar(255)
+  email                                                  String?                    @unique(map: "idx_users_v2_email") @db.VarChar(255)
+  phone                                                  String?                    @db.VarChar(20)
+  is_active                                              Boolean                    @default(true)
+  created_at                                             DateTime?                  @default(now()) @db.Timestamptz(6)
+  updated_at                                             DateTime?                  @default(now()) @db.Timestamptz(6)
   access_policies                                        access_policies[]
-  alert_assignments_alert_assignments_assigned_byTousers alert_assignments[]    @relation("alert_assignments_assigned_byTousers")
-  alert_assignments_alert_assignments_user_idTousers     alert_assignments[]    @relation("alert_assignments_user_idTousers")
+  alert_assignments_alert_assignments_assigned_byTousers alert_assignments[]        @relation("alert_assignments_assigned_byTousers")
+  alert_assignments_alert_assignments_user_idTousers     alert_assignments[]        @relation("alert_assignments_user_idTousers")
   alert_rules                                            alert_rules[]
   alert_suppressions                                     alert_suppressions[]
-  alerts_alerts_acknowledged_byTousers                   alerts[]               @relation("alerts_acknowledged_byTousers")
-  alerts_alerts_resolved_byTousers                       alerts[]               @relation("alerts_resolved_byTousers")
+  alerts_alerts_acknowledged_byTousers                   alerts[]                   @relation("alerts_acknowledged_byTousers")
+  alerts_alerts_resolved_byTousers                       alerts[]                   @relation("alerts_resolved_byTousers")
   audit_logs                                             audit_logs[]
-  maintenance_created                                    maintenance_history[]  @relation("MaintenanceCreator")
-  maintenance_performed                                  maintenance_history[]  @relation("MaintenancePerformer")
+  maintenance_created                                    maintenance_history[]      @relation("MaintenanceCreator")
+  maintenance_performed                                  maintenance_history[]      @relation("MaintenancePerformer")
   notification_logs                                      notification_logs[]
+  pdu_created                                            power_distribution_units[] @relation("PDUCreator")
   resource_access                                        resource_access[]
   role_templates                                         role_templates[]
   roles_created                                          roles[]
+  socket_assignments                                     sockets[]                  @relation("SocketAssignedBy")
   user_permission_cache                                  user_permission_cache?
-  user_permissions_granted                               user_permissions[]     @relation("UserPermissionGrantedBy")
+  user_permissions_granted                               user_permissions[]         @relation("UserPermissionGrantedBy")
   user_permissions                                       user_permissions[]
-  user_roles_assigned                                    user_roles[]           @relation("UserRoleAssignedBy")
+  user_roles_assigned                                    user_roles[]               @relation("UserRoleAssignedBy")
   user_roles                                             user_roles[]
   user_sessions                                          user_sessions[]
-  pdu_created                                            power_distribution_units[] @relation("PDUCreator")
-  outlet_assignments                                     outlets[]              @relation("OutletAssignedBy")
-  departments                                            departments?           @relation(fields: [department_id], references: [id], onUpdate: NoAction, map: "users_v2_department_id_fkey")
-  organizations                                          organizations?         @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "users_v2_organization_id_fkey")
+  departments                                            departments?               @relation(fields: [department_id], references: [id], onUpdate: NoAction, map: "users_v2_department_id_fkey")
+  organizations                                          organizations?             @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "users_v2_organization_id_fkey")
 
   @@index([is_active], map: "idx_users_v2_active")
   @@index([department_id], map: "idx_users_v2_department")
@@ -850,13 +846,13 @@ model users_backup {
 model device_data_logs {
   id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   device_id String    @db.Uuid
-  outlet_id String?   @db.Uuid
   data_json Json
   timestamp DateTime? @default(now()) @db.Timestamptz(6)
-  outlet    outlets?  @relation(fields: [outlet_id], references: [id])
+  socket_id String?   @db.Uuid
+  socket    sockets?  @relation(fields: [socket_id], references: [id], map: "device_data_logs_outlet_id_fkey")
 
   @@index([device_id], map: "idx_device_data_logs_device")
-  @@index([outlet_id], map: "idx_device_data_logs_outlet_time")
+  @@index([socket_id, timestamp(sort: Desc)], map: "idx_device_data_logs_socket_time")
   @@index([timestamp], map: "idx_device_data_logs_timestamp")
 }
 
@@ -938,6 +934,183 @@ model maintenance_parts {
   @@index([maintenance_id], map: "idx_maintenance_parts_maintenance")
 }
 
+/// PDU & Socket System Models
+model power_distribution_units {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String        @db.Uuid
+  department_id   String?       @db.Uuid
+  name            String        @db.VarChar(100)
+  code            String?       @db.VarChar(50)
+  type            pdu_type      @default(cart)
+  description     String?       @db.VarChar(255)
+  location        String?       @db.VarChar(255)
+  floor           String?       @db.VarChar(50)
+  building        String?       @db.VarChar(100)
+  total_sockets   Int           @default(4)
+  max_power_watts Float?        @default(10000) @db.Real
+  voltage_rating  Float?        @default(220) @db.Real
+  mqtt_base_topic String?       @db.VarChar(255)
+  manufacturer    String?       @db.VarChar(100)
+  model_number    String?       @db.VarChar(100)
+  serial_number   String?       @db.VarChar(100)
+  is_mobile       Boolean       @default(true)
+  is_active       Boolean       @default(true)
+  specifications  Json?         @default("{}")
+  created_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?     @default(now()) @updatedAt @db.Timestamptz(6)
+  created_by      String?       @db.Uuid
+  creator         users?        @relation("PDUCreator", fields: [created_by], references: [id])
+  department      departments?  @relation(fields: [department_id], references: [id], onDelete: Cascade)
+  organization    organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  sockets         sockets[]
+
+  @@unique([organization_id, code], map: "unique_org_pdu_code")
+  @@index([organization_id], map: "idx_pdu_org")
+  @@index([department_id], map: "idx_pdu_dept")
+  @@index([type], map: "idx_pdu_type")
+  @@index([is_active], map: "idx_pdu_active")
+  @@index([location], map: "idx_pdu_location")
+}
+
+model sockets {
+  id                   String                   @id(map: "outlets_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  pdu_id               String                   @db.Uuid
+  socket_number        Int
+  name                 String?                  @db.VarChar(100)
+  description          String?                  @db.VarChar(255)
+  mqtt_topic_suffix    String                   @db.VarChar(100)
+  max_power_watts      Float?                   @default(3000) @db.Real
+  socket_type          String?                  @db.VarChar(50)
+  device_id            String?                  @unique(map: "outlets_device_id_key") @db.Uuid
+  assigned_at          DateTime?                @db.Timestamptz(6)
+  assigned_by          String?                  @db.Uuid
+  status               socket_status            @default(inactive)
+  is_enabled           Boolean                  @default(true)
+  display_order        Int?                     @default(1)
+  notes                String?                  @db.VarChar(500)
+  created_at           DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?                @default(now()) @updatedAt @db.Timestamptz(6)
+  mqtt_broker_host     String?                  @db.VarChar(255)
+  mqtt_broker_port     Int?                     @default(1883)
+  mqtt_credentials     Json?                    @default("{}")
+  mqtt_config          Json?                    @default("{}")
+  device_current_state device_current_state[]
+  device_data          device_data[]
+  device_data_logs     device_data_logs[]
+
+  assigned_by_user     users?                   @relation("SocketAssignedBy", fields: [assigned_by], references: [id], map: "outlets_assigned_by_fkey")
+  device               device?                  @relation(fields: [device_id], references: [id], map: "outlets_device_id_fkey")
+  pdu                  power_distribution_units @relation(fields: [pdu_id], references: [id], onDelete: Cascade, map: "outlets_pdu_id_fkey")
+
+  @@unique([pdu_id, socket_number], map: "unique_pdu_socket")
+  @@index([pdu_id], map: "idx_sockets_pdu")
+  @@index([device_id], map: "idx_sockets_device")
+  @@index([status], map: "idx_sockets_status")
+  @@index([is_enabled], map: "idx_sockets_enabled")
+  @@index([socket_number], map: "idx_sockets_number")
+  @@index([mqtt_broker_host], map: "idx_sockets_mqtt_broker")
+}
+
+
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// Real-time device state with full MQTT payload fields
+/// socket_id is kept for performance optimization in IoMT monitoring scenarios
+model device_current_state {
+  device_id           String    @id @db.Uuid
+  socket_id           String?   @db.Uuid
+  
+  // Measurement values from MQTT payload
+  voltage             Float?    @db.Real
+  current             Float?    @db.Real
+  power               Float?    @db.Real
+  frequency           Float?    @db.Real
+  power_factor        Float?    @db.Real
+  
+  // State indicators from MQTT payload
+  machine_state       Boolean?  @default(false)
+  socket_state        Boolean?  @default(false)
+  sensor_state        Boolean?  @default(false)
+  
+  // Alert indicators from MQTT payload
+  over_voltage        Boolean?  @default(false)
+  under_voltage       Boolean?  @default(false)
+  
+  // Timestamp from MQTT payload
+  timestamp           DateTime? @db.Timestamptz(6)
+  
+  // System tracking fields
+  is_connected        Boolean?  @default(false)
+  last_seen_at        DateTime? @db.Timestamptz(6)
+  updated_at          DateTime  @default(now()) @db.Timestamptz(6)
+  
+  device              device    @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  socket              sockets?  @relation(fields: [socket_id], references: [id], onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+
+
+model socket1_data {
+  id            Int       @id @default(autoincrement())
+  voltage       Float?    @db.Real
+  current       Float?    @db.Real
+  frequency     Float?    @db.Real
+  power_factor  Float?    @db.Real
+  timestamp     DateTime? @default(now()) @db.Timestamp(6)
+  power         Float?    @db.Real
+  machine_state Boolean?  @default(false)
+  socket_state  Boolean?  @default(false)
+  sensor_state  Boolean?  @default(false)
+  over_voltage  Boolean?  @default(false)
+  under_voltage Boolean?  @default(false)
+}
+
+model socket2_data {
+  id            Int       @id @default(autoincrement())
+  voltage       Float?    @db.Real
+  current       Float?    @db.Real
+  frequency     Float?    @db.Real
+  power_factor  Float?    @db.Real
+  timestamp     DateTime? @default(now()) @db.Timestamp(6)
+  power         Float?    @db.Real
+  machine_state Boolean?  @default(false)
+  socket_state  Boolean?  @default(false)
+  sensor_state  Boolean?  @default(false)
+  over_voltage  Boolean?  @default(false)
+  under_voltage Boolean?  @default(false)
+}
+
+model socket3_data {
+  id            Int       @id @default(autoincrement())
+  voltage       Float?    @db.Real
+  current       Float?    @db.Real
+  frequency     Float?    @db.Real
+  power_factor  Float?    @db.Real
+  timestamp     DateTime? @default(now()) @db.Timestamp(6)
+  power         Float?    @db.Real
+  machine_state Boolean?  @default(false)
+  socket_state  Boolean?  @default(false)
+  sensor_state  Boolean?  @default(false)
+  over_voltage  Boolean?  @default(false)
+  under_voltage Boolean?  @default(false)
+}
+
+model socket4_data {
+  id            Int       @id @default(autoincrement())
+  voltage       Float?    @db.Real
+  current       Float?    @db.Real
+  frequency     Float?    @db.Real
+  power_factor  Float?    @db.Real
+  timestamp     DateTime? @default(now()) @db.Timestamp(6)
+  power         Float?    @db.Real
+  machine_state Boolean?  @default(false)
+  socket_state  Boolean?  @default(false)
+  sensor_state  Boolean?  @default(false)
+  over_voltage  Boolean?  @default(false)
+  under_voltage Boolean?  @default(false)
+}
 
 enum device_status {
   active
@@ -1104,86 +1277,10 @@ enum pdu_type {
   extension
 }
 
-enum outlet_status {
+enum socket_status {
   active
   idle
   inactive
   error
   maintenance
-}
-
-/// PDU & Outlet System Models
-model power_distribution_units {
-  id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id String    @db.Uuid
-  department_id   String?   @db.Uuid
-  name            String    @db.VarChar(100)
-  code            String?   @db.VarChar(50)
-  type            pdu_type  @default(cart)
-  description     String?   @db.VarChar(255)
-  location        String?   @db.VarChar(255)
-  floor           String?   @db.VarChar(50)
-  building        String?   @db.VarChar(100)
-  total_outlets   Int       @default(4)
-  max_power_watts Float?    @default(10000) @db.Real
-  voltage_rating  Float?    @default(220) @db.Real
-  mqtt_base_topic String?   @db.VarChar(255)
-  manufacturer    String?   @db.VarChar(100)
-  model_number    String?   @db.VarChar(100)
-  serial_number   String?   @db.VarChar(100)
-  is_mobile       Boolean?  @default(true)
-  is_active       Boolean?  @default(true)
-  specifications  Json?     @default("{}")
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
-  created_by      String?   @db.Uuid
-  
-  organization organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  department   departments?  @relation(fields: [department_id], references: [id], onDelete: Cascade)
-  creator      users?        @relation("PDUCreator", fields: [created_by], references: [id])
-  outlets      outlets[]
-  
-  @@unique([organization_id, code], map: "unique_org_pdu_code")
-  @@index([organization_id], map: "idx_pdu_org")
-  @@index([department_id], map: "idx_pdu_dept")
-  @@index([type], map: "idx_pdu_type")
-  @@index([is_active], map: "idx_pdu_active")
-  @@index([location], map: "idx_pdu_location")
-}
-
-model outlets {
-  id                String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  pdu_id            String        @db.Uuid
-  outlet_number     Int
-  name              String?       @db.VarChar(100)
-  description       String?       @db.VarChar(255)
-  mqtt_topic_suffix String        @db.VarChar(100)
-  max_power_watts   Float?        @default(3000) @db.Real
-  outlet_type       String?       @db.VarChar(50)
-  device_id         String?       @unique @db.Uuid
-  assigned_at       DateTime?     @db.Timestamptz(6)
-  assigned_by       String?       @db.Uuid
-  status            outlet_status @default(inactive)
-  last_data_at      DateTime?     @db.Timestamptz(6)
-  current_power     Float?        @db.Real
-  current_voltage   Float?        @db.Real
-  current_current   Float?        @db.Real
-  is_enabled        Boolean?      @default(true)
-  display_order     Int?          @default(1)
-  notes             String?       @db.VarChar(500)
-  created_at        DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime?     @default(now()) @updatedAt @db.Timestamptz(6)
-  
-  pdu                     power_distribution_units @relation(fields: [pdu_id], references: [id], onDelete: Cascade)
-  device                  device?                   @relation(fields: [device_id], references: [id], onDelete: SetNull)
-  assigned_by_user        users?                    @relation("OutletAssignedBy", fields: [assigned_by], references: [id])
-  device_data             device_data[]
-  device_data_logs        device_data_logs[]
-  
-  @@unique([pdu_id, outlet_number], map: "unique_pdu_outlet")
-  @@index([pdu_id], map: "idx_outlets_pdu")
-  @@index([device_id], map: "idx_outlets_device")
-  @@index([status], map: "idx_outlets_status")
-  @@index([is_enabled], map: "idx_outlets_enabled")
-  @@index([outlet_number], map: "idx_outlets_number")
 }

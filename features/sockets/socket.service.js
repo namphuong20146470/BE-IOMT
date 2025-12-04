@@ -1,94 +1,94 @@
-// features/outlets/outlet.service.js
-import outletRepository from './outlet.repository.js';
-import OutletModel from './outlet.model.js';
+// features/sockets/socket.service.js
+import socketRepository from './socket.repository.js';
+import SocketModel from './socket.model.js';
 import { AppError } from '../../shared/utils/errorHandler.js';
 
 /**
- * Outlet Service - Business logic for outlet operations
+ * Socket Service - Business logic for socket operations
  */
-class OutletService {
-    async getAllOutlets(query, user) {
-        const validatedQuery = OutletModel.query.parse(query);
+class SocketService {
+    async getAllSockets(query, user) {
+        const validatedQuery = SocketModel.query.parse(query);
         const filters = this.buildFilters(validatedQuery, user);
         const { skip, take } = this.getPagination(validatedQuery);
         
         const includeOptions = this.buildIncludeOptions(validatedQuery);
         
-        const [outlets, total] = await Promise.all([
-            outletRepository.findMany(filters, {
+        const [sockets, total] = await Promise.all([
+            socketRepository.findMany(filters, {
                 skip,
                 take,
                 include: includeOptions,
-                orderBy: { outlet_number: 'asc' }
+                orderBy: { socket_number: 'asc' }
             }),
-            outletRepository.count(filters)
+            socketRepository.count(filters)
         ]);
 
         return {
             success: true,
-            data: outlets,
+            data: sockets,
             pagination: this.formatPagination(validatedQuery, total)
         };
     }
 
-    async getOutletById(id, user, options = {}) {
+    async getSocketById(id, user, options = {}) {
         const include = this.buildDetailedInclude(options);
         
-        const outlet = await outletRepository.findById(id, include);
-        if (!outlet) {
-            throw new AppError('Outlet not found', 404);
+        const socket = await socketRepository.findById(id, include);
+        if (!socket) {
+            throw new AppError('Socket not found', 404);
         }
 
         // Check access through PDU organization
-        this.checkAccess(outlet, user);
+        this.checkAccess(socket, user);
 
         return {
             success: true,
-            data: outlet
+            data: socket
         };
     }
 
-    async updateOutlet(id, data, user) {
-        const validatedData = OutletModel.update.parse(data);
+    async updateSocket(id, data, user) {
+        const validatedData = SocketModel.update.parse(data);
         
-        const outlet = await outletRepository.findById(id, {
+        const socket = await socketRepository.findById(id, {
             pdu: { include: { organization: true } }
         });
         
-        if (!outlet) {
-            throw new AppError('Outlet not found', 404);
+        if (!socket) {
+            throw new AppError('Socket not found', 404);
         }
 
-        this.checkAccess(outlet, user);
+        this.checkAccess(socket, user);
 
-        const updatedOutlet = await outletRepository.update(id, validatedData);
+        const updatedSocket = await socketRepository.update(id, validatedData);
 
         return {
             success: true,
-            data: updatedOutlet,
-            message: 'Outlet updated successfully'
+            data: updatedSocket,
+            message: 'Socket updated successfully'
         };
     }
 
-    async assignDevice(outletId, deviceId, user, notes = null) {
+    async assignDevice(socketId, deviceId, user, notes = null) {
         // Validate assignment
-        await this.validateAssignment(outletId, deviceId);
+        await this.validateAssignment(socketId, deviceId);
         
-        const outlet = await outletRepository.findById(outletId, {
+        const socket = await socketRepository.findById(socketId, {
             pdu: { include: { organization: true } }
         });
         
-        if (!outlet) {
-            throw new AppError('Outlet not found', 404);
+        if (!socket) {
+            throw new AppError('Socket not found', 404);
         }
 
-        this.checkAccess(outlet, user);
+        this.checkAccess(socket, user);
 
-        if (outlet.device_id) {
-            throw new AppError('Outlet already has a device assigned', 400);
+        if (socket.device_id) {
+            throw new AppError('Socket already has a device assigned', 400);
         }
 
-        const updatedOutlet = await outletRepository.update(outletId, {
+        const updatedSocket = await socketRepository.update(socketId, {
             device_id: deviceId,
             assigned_at: new Date(),
             assigned_by: user.id,
@@ -97,28 +97,28 @@ class OutletService {
 
         return {
             success: true,
-            data: updatedOutlet,
-            message: 'Device assigned to outlet successfully'
+            data: updatedSocket,
+            message: 'Device assigned to socket successfully'
         };
     }
 
-    async unassignDevice(outletId, user, notes = null) {
-        const outlet = await outletRepository.findById(outletId, {
+    async unassignDevice(socketId, user, notes = null) {
+        const socket = await socketRepository.findById(socketId, {
             pdu: { include: { organization: true } },
             device: true
         });
         
-        if (!outlet) {
-            throw new AppError('Outlet not found', 404);
+        if (!socket) {
+            throw new AppError('Socket not found', 404);
         }
 
-        this.checkAccess(outlet, user);
+        this.checkAccess(socket, user);
 
-        if (!outlet.device_id) {
-            throw new AppError('Outlet has no device assigned', 400);
+        if (!socket.device_id) {
+            throw new AppError('Socket has no device assigned', 400);
         }
 
-        const updatedOutlet = await outletRepository.update(outletId, {
+        const updatedSocket = await socketRepository.update(socketId, {
             device_id: null,
             assigned_at: null,
             assigned_by: null,
@@ -127,25 +127,25 @@ class OutletService {
 
         return {
             success: true,
-            data: updatedOutlet,
-            message: 'Device unassigned from outlet successfully'
+            data: updatedSocket,
+            message: 'Device unassigned from socket successfully'
         };
     }
 
-    async getOutletData(outletId, query, user) {
-        const validatedQuery = OutletModel.dataQuery.parse(query);
+    async getSocketData(socketId, query, user) {
+        const validatedQuery = SocketModel.dataQuery.parse(query);
         
-        const outlet = await outletRepository.findById(outletId, {
+        const socket = await socketRepository.findById(socketId, {
             pdu: { include: { organization: true } }
         });
         
-        if (!outlet) {
-            throw new AppError('Outlet not found', 404);
+        if (!socket) {
+            throw new AppError('Socket not found', 404);
         }
 
-        this.checkAccess(outlet, user);
+        this.checkAccess(socket, user);
 
-        const data = await outletRepository.getOutletData(outletId, validatedQuery);
+        const data = await socketRepository.getSocketData(socketId, validatedQuery);
         
         return {
             success: true,
@@ -197,10 +197,7 @@ class OutletService {
         if (query.include_device) {
             include.device = {
                 include: {
-                    model: { select: { name: true, manufacturer_id: true } },
-                    device_connectivity: {
-                        select: { mqtt_topic: true, last_connected: true, is_active: true }
-                    }
+                    model: { select: { name: true, manufacturer_id: true } }
                 }
             };
         }
@@ -233,8 +230,7 @@ class OutletService {
             },
             device: options.include_device ? {
                 include: {
-                    model: { select: { name: true } },
-                    device_connectivity: true
+                    model: { select: { name: true } }
                 }
             } : true,
             assigned_by_user: {
@@ -247,24 +243,24 @@ class OutletService {
         };
     }
 
-    async validateAssignment(outletId, deviceId) {
+    async validateAssignment(socketId, deviceId) {
         // Check if device exists and is not already assigned
-        const device = await outletRepository.findDeviceById(deviceId);
+        const device = await socketRepository.findDeviceById(deviceId);
         if (!device) {
             throw new AppError('Device not found', 404);
         }
 
-        // Check if device is already assigned to another outlet
-        const existingAssignment = await outletRepository.findDeviceAssignment(deviceId);
+        // Check if device is already assigned to another socket
+        const existingAssignment = await socketRepository.findDeviceAssignment(deviceId);
         if (existingAssignment) {
-            throw new AppError('Device is already assigned to another outlet', 400);
+            throw new AppError('Device is already assigned to another socket', 400);
         }
     }
 
-    checkAccess(outlet, user) {
+    checkAccess(socket, user) {
         if (!user.permissions?.includes('system.admin') && 
-            user.organization_id !== outlet.pdu.organization_id) {
-            throw new AppError('Access denied: Outlet belongs to different organization', 403);
+            user.organization_id !== socket.pdu.organization_id) {
+            throw new AppError('Access denied: Socket belongs to different organization', 403);
         }
     }
 
@@ -283,4 +279,4 @@ class OutletService {
     }
 }
 
-export default new OutletService();
+export default new SocketService();

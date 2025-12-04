@@ -307,7 +307,7 @@ export const simulateDeviceData = async (req, res) => {
     // Process data using dynamic MQTT manager logic
     await dynamicMqttManager.processDeviceData(device[0], data);
 
-    res.json({
+     res.json({
       success: true,
       message: 'Device data simulated successfully',
       device: {
@@ -423,6 +423,66 @@ export const getAvailableDataTables = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve data tables',
+      details: error.message
+    });
+  }
+};
+
+// Get device current state (real-time status)
+export const getDeviceCurrentState = async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+
+    // Validate UUID
+    if (!isValidUUID(deviceId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid device ID format'
+      });
+    }
+
+    // Get current state - focus on real-time data, minimal metadata
+    const currentState = await prisma.device_current_state.findUnique({
+      where: { device_id: deviceId },
+      include: {
+        device: {
+          select: {
+            serial_number: true,
+            status: true
+          }
+        },
+        socket: {
+          select: {
+            socket_number: true,
+            pdu: {
+              select: {
+                name: true,
+                code: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!currentState) {
+      return res.status(404).json({
+        success: false,
+        message: 'Device current state not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: currentState,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error getting device current state:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve device current state',
       details: error.message
     });
   }

@@ -48,22 +48,7 @@ info:
     - Header `X-RateLimit-Remaining` hiển thị số request còn lại
     - Header `Retry-After` hiển thị thời gian chờ khi bị limit
     
-    ## 🛡️ **Bảo Mật**
-    
-    - **TLS 1.2+** bắt buộc cho production
-    - **JWT tokens** có thời hạn và được sign
-    - **Password hashing** với bcrypt + salt
-    - **SQL Injection prevention** với Prisma ORM
-    - **CORS protection** với whitelist domains
-    - **Input validation** với Joi schemas
-    
-    ## 📞 **Hỗ Trợ**
-    
-    **Trong trường hợp khẩn cấp hoặc vấn đề bảo mật:**
-    - 📧 Email: security@iomt.com (urgent)
-    - 📞 Hotline: +84-xxx-xxx-xxx (24/7)
-    - 💬 Slack: #iomt-support
-    
+  
   version: 2.0.0
   contact:
     name: IoMT Development Team
@@ -74,7 +59,16 @@ info:
     url: https://iomt.hoangphucthanh.vn/license
 
 servers:
-  - url: https://iomt.hoangphucthanh.vn
+  - url: http://localhost:3030/api/v1  
+    description: |-
+      🚧 **Development Server**
+      
+      - Local development environment
+      - Relaxed rate limits
+      - Debug logging enabled
+      - Hot reload support
+
+  - url: https://iomt.hoangphucthanh.vn/api/v1
     description: |-
       🔒 **Production Server** (TLS 1.2+ Required)
       
@@ -83,22 +77,7 @@ servers:
       - Monitored 24/7 với security alerts
       - Backup every 6 hours
       
-  - url: http://localhost:3030  
-    description: |-
-      🚧 **Development Server** (HTTPS)
-      
-      - Local development với SSL certificate
-      - Relaxed rate limits
-      - Debug logging enabled
-      - Hot reload support
-      
-  - url: http://localhost:3031
-    description: |-
-      🔄 **HTTP Redirect Server** 
-      
-      - Automatically redirects to HTTPS (3030)
-      - For legacy client compatibility only
-      - No API endpoints served directly
+  
 
 # 🔐 Global Security (Most endpoints require authentication)
 security:
@@ -122,6 +101,12 @@ tags:
     description: Quản lý danh mục thiết bị
   - name: Device Models
     description: Quản lý model thiết bị
+  - name: PDU Management
+    description: Power Distribution Unit - Quản lý tủ phân phối điện
+  - name: Socket Management
+    description: Socket Control & Monitoring - Quản lý và điều khiển socket
+  - name: Device Assignment
+    description: Device-Socket Assignment System - Hệ thống gán thiết bị vào socket
   - name: MQTT & IoT
     description: Kết nối và giám sát thiết bị IoT
   - name: Device Data
@@ -150,11 +135,11 @@ paths:
               properties:
                 username:
                   type: string
-                  example: admin
+                  example: superadmin
                 password:
                   type: string
                   format: password
-                  example: password123
+                  example: SuperAdmin@2024!
       responses:
         '200':
           description: Đăng nhập thành công
@@ -1684,6 +1669,610 @@ paths:
           description: Xóa thành công
 
   # ============================================================
+  # PDU MANAGEMENT - POWER DISTRIBUTION UNITS
+  # ============================================================
+  /pdus:
+    get:
+      tags: [PDU Management]
+      summary: Lấy danh sách PDUs với filtering và pagination
+      operationId: getPDUs
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter theo organization
+        - name: department_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter theo department
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [cart, wall_mount, floor_stand, ceiling, rack, extension]
+          description: Filter theo loại PDU
+        - name: location
+          in: query
+          schema:
+            type: string
+          description: Filter theo location
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Tìm kiếm theo tên hoặc mã
+        - name: include_stats
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Bao gồm thống kê socket
+      responses:
+        '200':
+          description: Danh sách PDUs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PDU'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+    post:
+      tags: [PDU Management]
+      summary: Tạo PDU mới
+      operationId: createPDU
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PDUCreate'
+      responses:
+        '201':
+          description: PDU được tạo thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PDU'
+                  message:
+                    type: string
+
+  /pdus/statistics:
+    get:
+      tags: [PDU Management]
+      summary: Lấy thống kê PDU
+      operationId: getPDUStatistics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: department_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Thống kê PDU
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PDUStatistics'
+
+  /pdus/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      tags: [PDU Management]
+      summary: Lấy thông tin chi tiết PDU
+      operationId: getPDUById
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: include_sockets
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Bao gồm thông tin sockets
+      responses:
+        '200':
+          description: Thông tin PDU
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PDU'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+    put:
+      tags: [PDU Management]
+      summary: Cập nhật PDU
+      operationId: updatePDU
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PDUUpdate'
+      responses:
+        '200':
+          description: PDU được cập nhật thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PDU'
+
+    delete:
+      tags: [PDU Management]
+      summary: Xóa PDU
+      operationId: deletePDU
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: PDU đã được xóa
+        '409':
+          description: Không thể xóa PDU có sockets đang được sử dụng
+
+  /pdus/{id}/sockets:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      tags: [PDU Management]
+      summary: Lấy danh sách sockets của PDU
+      operationId: getPDUSockets
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: include_device
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Bao gồm thông tin device
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, idle, inactive, error, maintenance]
+          description: Filter theo status
+      responses:
+        '200':
+          description: Danh sách outlets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Outlet'
+
+  # ============================================================
+  # OUTLET MANAGEMENT - OUTLET CONTROL & MONITORING
+  # ============================================================
+  /outlets:
+    get:
+      tags: [Socket Management]
+      summary: Lấy danh sách sockets với filtering
+      operationId: getSockets
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: pdu_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter theo PDU
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, idle, inactive, error, maintenance]
+        - name: assigned
+          in: query
+          schema:
+            type: boolean
+          description: Filter theo trạng thái gán device
+        - name: include_device
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Danh sách outlets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Outlet'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /outlets/available:
+    get:
+      tags: [Outlet Management]
+      summary: Lấy danh sách outlets có thể gán device
+      operationId: getAvailableOutlets
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Danh sách outlets available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Outlet'
+
+  /outlets/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      tags: [Outlet Management]
+      summary: Lấy thông tin chi tiết outlet
+      operationId: getOutletById
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: include_device
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: include_data
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Thông tin outlet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Outlet'
+
+    put:
+      tags: [Outlet Management]
+      summary: Cập nhật cấu hình outlet
+      operationId: updateOutlet
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutletUpdate'
+      responses:
+        '200':
+          description: Outlet được cập nhật thành công
+
+  /outlets/{id}/assign:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    post:
+      tags: [Outlet Management]
+      summary: Gán device vào outlet
+      operationId: assignDeviceToOutlet
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id]
+              properties:
+                device_id:
+                  type: string
+                  format: uuid
+                  example: '80181773-6b19-4542-bfba-121eb926be30'
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Device được gán thành công
+        '409':
+          description: Outlet đã có device hoặc device đã được gán
+
+  /outlets/{id}/unassign:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    post:
+      tags: [Outlet Management]
+      summary: Bỏ gán device khỏi outlet
+      operationId: unassignDeviceFromOutlet
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Device được bỏ gán thành công
+
+  /outlets/{id}/data:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      tags: [Outlet Management]
+      summary: Lấy dữ liệu power và metrics của outlet
+      operationId: getOutletData
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: interval
+          in: query
+          schema:
+            type: string
+            enum: [minute, hour, day]
+            default: hour
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+      responses:
+        '200':
+          description: Dữ liệu outlet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OutletData'
+
+  /outlets/{id}/control:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    post:
+      tags: [Outlet Management]
+      summary: Điều khiển outlet (bật/tắt/reset)
+      operationId: controlOutlet
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [turn_on, turn_off, reset, toggle]
+                force:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Lệnh điều khiển đã được gửi
+
+  /outlets/transfer:
+    post:
+      tags: [Outlet Management]
+      summary: Chuyển device giữa các outlets
+      operationId: transferDevice
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_outlet_id, to_outlet_id]
+              properties:
+                from_outlet_id:
+                  type: string
+                  format: uuid
+                to_outlet_id:
+                  type: string
+                  format: uuid
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Device được chuyển thành công
+
+  # ============================================================
+  # DEVICE ASSIGNMENT - ASSIGNMENT SYSTEM
+  # ============================================================
+  /device-assignment/validate:
+    post:
+      tags: [Device Assignment]
+      summary: Kiểm tra tính hợp lệ của việc gán device-outlet
+      operationId: validateDeviceAssignment
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outlet_id, device_id]
+              properties:
+                outlet_id:
+                  type: string
+                  format: uuid
+                device_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Kết quả validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  valid:
+                    type: boolean
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+
+  /device-assignment/available:
+    get:
+      tags: [Device Assignment]
+      summary: Lấy danh sách devices hoặc outlets có thể gán
+      operationId: getAvailableForAssignment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+            enum: [devices, outlets]
+            default: devices
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Danh sách resources available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/Device'
+                        - $ref: '#/components/schemas/Outlet'
+
+  # ============================================================
   # MQTT & IoT - EXTENDED
   # ============================================================
   /mqtt/devices:
@@ -2811,3 +3400,385 @@ components:
                 type: string
               cost:
                 type: number
+
+    # ============================================================
+    # PDU & OUTLET SCHEMAS - POWER MANAGEMENT SYSTEM
+    # ============================================================
+    PDU:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - location
+        - max_outlets
+        - organization_id
+        - mqtt_base_topic
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "PDU-ICU-001"
+        type:
+          type: string
+          enum: [cart, wall_mount, floor_stand, ceiling, rack, extension]
+          example: "rack"
+        location:
+          type: string
+          example: "ICU Room 101"
+        max_outlets:
+          type: integer
+          minimum: 1
+          maximum: 24
+          example: 8
+        organization_id:
+          type: string
+          format: uuid
+        department_id:
+          type: string
+          format: uuid
+          nullable: true
+        mqtt_base_topic:
+          type: string
+          example: "hospital/icu/pdu001"
+        specifications:
+          type: object
+          nullable: true
+          properties:
+            voltage:
+              type: number
+            current_rating:
+              type: number
+            power_rating:
+              type: number
+            frequency:
+              type: number
+            phase:
+              type: string
+              enum: ["single", "three_phase"]
+            manufacturer:
+              type: string
+            model:
+              type: string
+            serial_number:
+              type: string
+        status:
+          type: string
+          enum: [active, inactive, maintenance, error]
+          default: active
+        is_active:
+          type: boolean
+          default: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        outlets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Outlet'
+        organization:
+          $ref: '#/components/schemas/Organization'
+        department:
+          $ref: '#/components/schemas/Department'
+        outlet_count:
+          type: integer
+        active_outlets:
+          type: integer
+        assigned_devices:
+          type: integer
+
+    PDUCreate:
+      type: object
+      required:
+        - name
+        - type
+        - location
+        - max_outlets
+        - organization_id
+        - mqtt_base_topic
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        type:
+          type: string
+          enum: [cart, wall_mount, floor_stand, ceiling, rack, extension]
+        location:
+          type: string
+          minLength: 1
+          maxLength: 500
+        max_outlets:
+          type: integer
+          minimum: 1
+          maximum: 24
+        organization_id:
+          type: string
+          format: uuid
+        department_id:
+          type: string
+          format: uuid
+        mqtt_base_topic:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '^[a-zA-Z0-9_/-]+$'
+        specifications:
+          type: object
+          properties:
+            voltage:
+              type: number
+              minimum: 0
+            current_rating:
+              type: number
+              minimum: 0
+            power_rating:
+              type: number
+              minimum: 0
+            frequency:
+              type: number
+              minimum: 0
+            phase:
+              type: string
+              enum: ["single", "three_phase"]
+            manufacturer:
+              type: string
+            model:
+              type: string
+            serial_number:
+              type: string
+
+    PDUUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        type:
+          type: string
+          enum: [cart, wall_mount, floor_stand, ceiling, rack, extension]
+        location:
+          type: string
+          minLength: 1
+          maxLength: 500
+        department_id:
+          type: string
+          format: uuid
+        mqtt_base_topic:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '^[a-zA-Z0-9_/-]+$'
+        specifications:
+          type: object
+        status:
+          type: string
+          enum: [active, inactive, maintenance, error]
+        is_active:
+          type: boolean
+
+    PDUStatistics:
+      type: object
+      properties:
+        total_pdus:
+          type: integer
+        by_type:
+          type: object
+          properties:
+            cart:
+              type: integer
+            wall_mount:
+              type: integer
+            floor_stand:
+              type: integer
+            ceiling:
+              type: integer
+            rack:
+              type: integer
+            extension:
+              type: integer
+        by_status:
+          type: object
+          properties:
+            active:
+              type: integer
+            inactive:
+              type: integer
+            maintenance:
+              type: integer
+            error:
+              type: integer
+        outlet_utilization:
+          type: object
+          properties:
+            total_outlets:
+              type: integer
+            assigned_outlets:
+              type: integer
+            available_outlets:
+              type: integer
+            utilization_rate:
+              type: number
+              format: float
+        by_organization:
+          type: array
+          items:
+            type: object
+            properties:
+              organization_id:
+                type: string
+                format: uuid
+              organization_name:
+                type: string
+              pdu_count:
+                type: integer
+              outlet_utilization:
+                type: number
+
+    Outlet:
+      type: object
+      required:
+        - id
+        - outlet_number
+        - pdu_id
+        - mqtt_topic_suffix
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_number:
+          type: integer
+          minimum: 1
+          example: 3
+        pdu_id:
+          type: string
+          format: uuid
+        mqtt_topic_suffix:
+          type: string
+          example: "outlet/3"
+        name:
+          type: string
+          nullable: true
+          example: "Outlet 3 - Monitor"
+        description:
+          type: string
+          nullable: true
+        voltage_rating:
+          type: number
+          nullable: true
+          example: 220
+        current_rating:
+          type: number
+          nullable: true
+          example: 10
+        power_rating:
+          type: number
+          nullable: true
+          example: 2200
+        is_controllable:
+          type: boolean
+          default: true
+        status:
+          type: string
+          enum: [active, idle, inactive, error, maintenance]
+          default: idle
+        current_voltage:
+          type: number
+          nullable: true
+        current_amperage:
+          type: number
+          nullable: true
+        current_power:
+          type: number
+          nullable: true
+        last_data_received:
+          type: string
+          format: date-time
+          nullable: true
+        device_id:
+          type: string
+          format: uuid
+          nullable: true
+        assigned_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        pdu:
+          $ref: '#/components/schemas/PDU'
+        device:
+          $ref: '#/components/schemas/Device'
+        full_mqtt_topic:
+          type: string
+          readOnly: true
+          example: "hospital/icu/pdu001/outlet/3"
+
+    OutletUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+        voltage_rating:
+          type: number
+          minimum: 0
+        current_rating:
+          type: number
+          minimum: 0
+        power_rating:
+          type: number
+          minimum: 0
+        is_controllable:
+          type: boolean
+        status:
+          type: string
+          enum: [active, idle, inactive, error, maintenance]
+
+    OutletData:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        voltage:
+          type: number
+        amperage:
+          type: number
+        power:
+          type: number
+        power_factor:
+          type: number
+        frequency:
+          type: number
+        energy:
+          type: number
+        temperature:
+          type: number
+        status:
+          type: string
+        error_codes:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object

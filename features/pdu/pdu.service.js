@@ -68,7 +68,7 @@ class PduService {
             // Check for duplicate PDU name in organization
             await this.validatePDUUniqueness(validatedData);
             
-            // Create PDU with outlets
+            // Create PDU with sockets
             const newPDU = await pduRepository.create(validatedData, user.id);
             
             return {
@@ -145,7 +145,7 @@ class PduService {
                 throw new AppError('Cannot delete PDU with active device assignments', 400);
             }
             
-            // Delete PDU and its outlets
+            // Delete PDU and its sockets
             await pduRepository.delete(validatedId, user.id);
             
             return {
@@ -188,9 +188,9 @@ class PduService {
     }
 
     /**
-     * Get PDU outlets with status
+     * Get PDU sockets with status
      */
-    async getPDUOutlets(pduId, user) {
+    async getPDUSockets(pduId, user) {
         try {
             // Validate PDU ID
             const validatedId = pduModel.validatePduId(pduId);
@@ -201,17 +201,17 @@ class PduService {
                 throw new AppError('PDU not found or access denied', 404);
             }
 
-            // Get outlets with current status
-            const outlets = await pduRepository.getPDUOutlets(validatedId);
+            // Get sockets with current status
+            const sockets = await pduRepository.getPDUSockets(validatedId);
             
             return {
                 success: true,
-                message: 'PDU outlets retrieved successfully',
-                data: outlets
+                message: 'PDU sockets retrieved successfully',
+                data: sockets
             };
         } catch (error) {
-            console.error('Error in getPDUOutlets service:', error);
-            throw new AppError(error.message || 'Failed to fetch PDU outlets', error.statusCode || 500);
+            console.error('Error in getPDUSockets service:', error);
+            throw new AppError(error.message || 'Failed to fetch PDU sockets', error.statusCode || 500);
         }
     }
 

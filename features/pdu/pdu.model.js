@@ -15,7 +15,7 @@ export const PduCreateSchema = z.object({
     floor: z.string().max(50).optional(),
     building: z.string().max(100).optional(),
     description: z.string().max(255).optional(),
-    total_outlets: z.number().int().min(1).max(48).default(4),
+    total_sockets: z.number().int().min(1).max(48).default(4),
     voltage_rating: z.number().positive().default(220),
     max_power_watts: z.number().positive().default(10000).optional(),
     mqtt_base_topic: z.string().max(255).optional(),
@@ -73,7 +73,7 @@ export const PduIdSchema = z.string().uuid('Invalid PDU ID');
 export const PduDataQuerySchema = z.object({
     timeframe: z.enum(['1h', '6h', '24h', '7d', '30d']).default('24h'),
     metric: z.enum(['power', 'voltage', 'current', 'all']).default('all'),
-    outlet_id: z.string().uuid().optional(),
+    socket_id: z.string().uuid().optional(),
     start_date: z.string().datetime().optional(),
     end_date: z.string().datetime().optional()
 });

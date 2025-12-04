@@ -36,44 +36,44 @@ class PduRepository {
             include: {
                 organization: { select: { id: true, name: true } },
                 department: { select: { id: true, name: true } },
-                outlets: {
+                sockets: {
                     select: {
                         id: true,
-                        outlet_number: true,
-                        status: true,
-                        device_id: true
+                        socket_number: true,
+                        name: true,
+                        status: true
                     },
-                    orderBy: { outlet_number: 'asc' }
+                    orderBy: { socket_number: 'asc' }
                 }
             }
         });
     }
 
-    async createWithOutlets(pduData) {
+    async createWithSockets(pduData) {
         return prisma.$transaction(async (tx) => {
             // Create PDU
             const pdu = await tx.power_distribution_units.create({
                 data: pduData
             });
 
-            // Auto-create outlets based on total_outlets
-            const outlets = [];
-            for (let i = 1; i <= pduData.total_outlets; i++) {
-                const outlet = await tx.outlets.create({
+            // Auto-create sockets based on total_sockets
+            const sockets = [];
+            for (let i = 1; i <= pduData.total_sockets; i++) {
+                const socket = await tx.sockets.create({
                     data: {
                         pdu_id: pdu.id,
-                        outlet_number: i,
-                        name: `Outlet ${i}`,
+                        socket_number: i,
+                        name: `Socket ${i}`,
                         mqtt_topic_suffix: `socket${i}`,
                         status: 'inactive',
                         is_enabled: true,
                         display_order: i
                     }
                 });
-                outlets.push(outlet);
+                sockets.push(socket);
             }
 
-            return { pdu, outlets };
+            return { pdu, sockets };
         });
     }
 
@@ -84,14 +84,14 @@ class PduRepository {
             include: {
                 organization: { select: { id: true, name: true } },
                 department: { select: { id: true, name: true } },
-                outlets: {
+                sockets: {
                     select: {
                         id: true,
-                        outlet_number: true,
+                        socket_number: true,
                         status: true,
                         device_id: true
                     },
-                    orderBy: { outlet_number: 'asc' }
+                    orderBy: { socket_number: 'asc' }
                 }
             }
         });
@@ -107,14 +107,14 @@ class PduRepository {
         return prisma.power_distribution_units.count({ where });
     }
 
-    async getPDUOutlets(pduId, filters = {}, include = {}) {
-        return prisma.outlets.findMany({
+    async getPDUSockets(pduId, filters = {}, include = {}) {
+        return prisma.sockets.findMany({
             where: {
                 pdu_id: pduId,
                 ...filters
             },
             include,
-            orderBy: { outlet_number: 'asc' }
+            orderBy: { socket_number: 'asc' }
         });
     }
 
@@ -126,6 +126,24 @@ class PduRepository {
             timeframe,
             // Add actual statistics implementation here
         };
+    }
+
+    /**
+     * Find PDU by name in organization (for uniqueness check)
+     */
+    async findByNameInOrganization(name, organizationId, excludeId = null) {
+        const whereClause = {
+            name,
+            organization_id: organizationId
+        };
+        
+        if (excludeId) {
+            whereClause.id = { not: excludeId };
+        }
+        
+        return prisma.power_distribution_units.findFirst({
+            where: whereClause
+        });
     }
 
     /**
@@ -173,10 +191,10 @@ class PduRepository {
         };
         
         if (include_stats) {
-            include.outlets = {
+            include.sockets = {
                 select: {
                     id: true,
-                    outlet_number: true,
+                    socket_number: true,
                     status: true,
                     device_id: true
                 }
@@ -221,17 +239,17 @@ class PduRepository {
         const include = {
             organization: { select: { id: true, name: true } },
             department: { select: { id: true, name: true } },
-            outlets: {
+            sockets: {
                 select: {
                     id: true,
-                    outlet_number: true,
+                    socket_number: true,
                     name: true,
                     status: true,
                     device_id: true,
                     current_power: true,
                     is_enabled: true
                 },
-                orderBy: { outlet_number: 'asc' }
+                orderBy: { socket_number: 'asc' }
             },
             ...options.include
         };

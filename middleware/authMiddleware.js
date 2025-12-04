@@ -5,7 +5,7 @@ import { getUserAllPermissions } from '../shared/utils/permissionHelpers.js';
 const prisma = new PrismaClient();
 
 /**
- * 🔐 AUTHENTICATE - Support both HttpOnly Cookie và Bearer Token
+ * 🔐 AUTHENTICATE - Support Bearer Token, HttpOnly Cookie, và URL Parameter
  */
 export const authMiddleware = async (req, res, next) => {
     try {
@@ -17,7 +17,15 @@ export const authMiddleware = async (req, res, next) => {
             token = req.headers.authorization.substring(7);
             tokenSource = 'bearer';
         }
-        // ✅ Priority 2: Check HttpOnly Cookie (fallback)
+        // ✅ Priority 2: Check URL Query Parameter (for Swagger UI convenience)
+        else if (req.query?.token) {
+            // Handle both "Bearer_token" and "token" formats
+            token = req.query.token.startsWith('Bearer_') 
+                ? req.query.token.substring(7) 
+                : req.query.token;
+            tokenSource = 'url_param';
+        }
+        // ✅ Priority 3: Check HttpOnly Cookie (fallback)
         else if (req.cookies?.access_token) {
             token = req.cookies.access_token;
             tokenSource = 'cookie';

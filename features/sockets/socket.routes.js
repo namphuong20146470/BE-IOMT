@@ -1,6 +1,6 @@
-// features/outlets/outlet.routes.js
+// features/sockets/socket.routes.js
 import express from 'express';
-import outletController from './outlet.controller.js';
+import socketController from './socket.controller.js';
 import { authMiddleware } from '../../middleware/authMiddleware.js';
 import { requirePermission } from '../../middleware/rbacMiddleware.js';
 
@@ -13,31 +13,31 @@ router.use(authMiddleware);
  * @swagger
  * components:
  *   schemas:
- *     Outlet:
+ *     Socket:
  *       type: object
  *       properties:
  *         id:
  *           type: integer
- *           description: Unique identifier for the outlet
+ *           description: Unique identifier for the socket
  *         pdu_id:
  *           type: integer
  *           description: ID of the parent PDU
- *         outlet_number:
+ *         socket_number:
  *           type: integer
- *           description: Physical outlet number on the PDU
+ *           description: Physical socket number on the PDU
  *         name:
  *           type: string
- *           description: Outlet name/label
+ *           description: Socket name/label
  *         status:
  *           type: string
  *           enum: [active, inactive, maintenance, error]
  *         assigned_device_id:
  *           type: integer
  *           nullable: true
- *           description: ID of device assigned to this outlet
+ *           description: ID of device assigned to this socket
  *         is_controllable:
  *           type: boolean
- *           description: Whether the outlet can be controlled remotely
+ *           description: Whether the socket can be controlled remotely
  *         power_limit_watts:
  *           type: number
  *           nullable: true
@@ -49,7 +49,7 @@ router.use(authMiddleware);
  *           type: string
  *           format: date-time
  *
- *     OutletAssignment:
+ *     SocketAssignment:
  *       type: object
  *       required:
  *         - device_id
@@ -64,13 +64,13 @@ router.use(authMiddleware);
  *     DeviceTransfer:
  *       type: object
  *       required:
- *         - from_outlet_id
- *         - to_outlet_id
+ *         - from_socket_id
+ *         - to_socket_id
  *         - device_id
  *       properties:
- *         from_outlet_id:
+ *         from_socket_id:
  *           type: integer
- *         to_outlet_id:
+ *         to_socket_id:
  *           type: integer
  *         device_id:
  *           type: integer
@@ -87,17 +87,17 @@ router.use(authMiddleware);
  *           items:
  *             type: object
  *             required:
- *               - outlet_id
+ *               - socket_id
  *               - device_id
  *             properties:
- *               outlet_id:
+ *               socket_id:
  *                 type: integer
  *               device_id:
  *                 type: integer
  *               notes:
  *                 type: string
  *
- *     OutletControl:
+ *     SocketControl:
  *       type: object
  *       required:
  *         - action
@@ -114,10 +114,10 @@ router.use(authMiddleware);
 
 /**
  * @swagger
- * /api/v1/outlets:
+ * /api/v1/sockets:
  *   get:
- *     summary: Get all outlets with filtering
- *     tags: [Outlets]
+ *     summary: Get all sockets with filtering
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -156,18 +156,18 @@ router.use(authMiddleware);
  *           default: 20
  *     responses:
  *       200:
- *         description: Outlets retrieved successfully
+ *         description: Sockets retrieved successfully
  *       403:
  *         description: Access denied
  */
-router.get('/', requirePermission('device.read'), outletController.getAllOutlets);
+router.get('/', requirePermission('device.read'), socketController.getAllSockets);
 
 /**
  * @swagger
- * /api/v1/outlets/available:
+ * /api/v1/sockets/available:
  *   get:
- *     summary: Get available outlets for device assignment
- *     tags: [Outlets]
+ *     summary: Get available sockets for device assignment
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -186,16 +186,16 @@ router.get('/', requirePermission('device.read'), outletController.getAllOutlets
  *         description: Minimum power capacity required
  *     responses:
  *       200:
- *         description: Available outlets retrieved successfully
+ *         description: Available sockets retrieved successfully
  */
-router.get('/available', requirePermission('device.read'), outletController.getAvailableOutlets);
+router.get('/available', requirePermission('device.read'), socketController.getAvailableSockets);
 
 /**
  * @swagger
- * /api/v1/outlets/transfer:
+ * /api/v1/sockets/transfer:
  *   post:
- *     summary: Transfer device between outlets
- *     tags: [Outlets]
+ *     summary: Transfer device between sockets
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -212,14 +212,14 @@ router.get('/available', requirePermission('device.read'), outletController.getA
  *       403:
  *         description: Access denied
  */
-router.post('/transfer', requirePermission('device.manage'), outletController.transferDevice);
+router.post('/transfer', requirePermission('device.manage'), socketController.transferDevice);
 
 /**
  * @swagger
- * /api/v1/outlets/bulk-assign:
+ * /api/v1/sockets/bulk-assign:
  *   post:
- *     summary: Bulk assign devices to outlets
- *     tags: [Outlets]
+ *     summary: Bulk assign devices to sockets
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -236,14 +236,14 @@ router.post('/transfer', requirePermission('device.manage'), outletController.tr
  *       403:
  *         description: Access denied
  */
-router.post('/bulk-assign', requirePermission('device.manage'), outletController.bulkAssignDevices);
+router.post('/bulk-assign', requirePermission('device.manage'), socketController.bulkAssignDevices);
 
 /**
  * @swagger
- * /api/outlets/{id}:
+ * /api/sockets/{id}:
  *   get:
- *     summary: Get outlet by ID
- *     tags: [Outlets]
+ *     summary: Get socket by ID
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -266,18 +266,18 @@ router.post('/bulk-assign', requirePermission('device.manage'), outletController
  *           type: boolean
  *     responses:
  *       200:
- *         description: Outlet retrieved successfully
+ *         description: Socket retrieved successfully
  *       404:
- *         description: Outlet not found
+ *         description: Socket not found
  */
-router.get('/:id', requirePermission('device.read'), outletController.getOutletById);
+router.get('/:id', requirePermission('device.read'), socketController.getSocketById);
 
 /**
  * @swagger
- * /api/outlets/{id}:
+ * /api/sockets/{id}:
  *   patch:
- *     summary: Update outlet configuration
- *     tags: [Outlets]
+ *     summary: Update socket configuration
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -304,22 +304,22 @@ router.get('/:id', requirePermission('device.read'), outletController.getOutletB
  *                 enum: [active, inactive, maintenance]
  *     responses:
  *       200:
- *         description: Outlet updated successfully
+ *         description: Socket updated successfully
  *       400:
  *         description: Invalid update data
  *       403:
  *         description: Access denied
  *       404:
- *         description: Outlet not found
+ *         description: Socket not found
  */
-router.patch('/:id', requirePermission('device.manage'), outletController.updateOutlet);
+router.patch('/:id', requirePermission('device.manage'), socketController.updateSocket);
 
 /**
  * @swagger
- * /api/v1/outlets/{id}/data:
+ * /api/v1/sockets/{id}/data:
  *   get:
- *     summary: Get outlet data and metrics
- *     tags: [Outlets]
+ *     summary: Get socket data and metrics
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -346,16 +346,16 @@ router.patch('/:id', requirePermission('device.manage'), outletController.update
  *           default: hour
  *     responses:
  *       200:
- *         description: Outlet data retrieved successfully
+ *         description: Socket data retrieved successfully
  */
-router.get('/:id/data', requirePermission('device.read'), outletController.getOutletData);
+router.get('/:id/data', requirePermission('device.read'), socketController.getSocketData);
 
 /**
  * @swagger
- * /api/v1/outlets/{id}/assign:
+ * /api/v1/sockets/{id}/assign:
  *   post:
- *     summary: Assign device to outlet
- *     tags: [Outlets]
+ *     summary: Assign device to socket
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -369,7 +369,7 @@ router.get('/:id/data', requirePermission('device.read'), outletController.getOu
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/OutletAssignment'
+ *             $ref: '#/components/schemas/SocketAssignment'
  *     responses:
  *       200:
  *         description: Device assigned successfully
@@ -378,14 +378,14 @@ router.get('/:id/data', requirePermission('device.read'), outletController.getOu
  *       403:
  *         description: Access denied
  */
-router.post('/:id/assign', requirePermission('device.manage'), outletController.assignDevice);
+router.post('/:id/assign', requirePermission('device.manage'), socketController.assignDevice);
 
 /**
  * @swagger
- * /api/v1/outlets/{id}/unassign:
+ * /api/v1/sockets/{id}/unassign:
  *   post:
- *     summary: Unassign device from outlet
- *     tags: [Outlets]
+ *     summary: Unassign device from socket
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -406,18 +406,18 @@ router.post('/:id/assign', requirePermission('device.manage'), outletController.
  *       200:
  *         description: Device unassigned successfully
  *       400:
- *         description: No device assigned to outlet
+ *         description: No device assigned to socket
  *       403:
  *         description: Access denied
  */
-router.post('/:id/unassign', requirePermission('device.manage'), outletController.unassignDevice);
+router.post('/:id/unassign', requirePermission('device.manage'), socketController.unassignDevice);
 
 /**
  * @swagger
- * /api/v1/outlets/{id}/history:
+ * /api/v1/sockets/{id}/history:
  *   get:
- *     summary: Get outlet assignment history
- *     tags: [Outlets]
+ *     summary: Get socket assignment history
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -428,16 +428,16 @@ router.post('/:id/unassign', requirePermission('device.manage'), outletControlle
  *           type: integer
  *     responses:
  *       200:
- *         description: Outlet history retrieved successfully
+ *         description: Socket history retrieved successfully
  */
-router.get('/:id/history', requirePermission('device.read'), outletController.getOutletHistory);
+router.get('/:id/history', requirePermission('device.read'), socketController.getSocketHistory);
 
 /**
  * @swagger
- * /api/v1/outlets/{id}/control:
+ * /api/v1/sockets/{id}/control:
  *   post:
- *     summary: Control outlet (turn on/off/reset)
- *     tags: [Outlets]
+ *     summary: Control socket (turn on/off/reset)
+ *     tags: [Sockets]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -451,15 +451,15 @@ router.get('/:id/history', requirePermission('device.read'), outletController.ge
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/OutletControl'
+ *             $ref: '#/components/schemas/SocketControl'
  *     responses:
  *       200:
- *         description: Outlet controlled successfully
+ *         description: Socket controlled successfully
  *       400:
  *         description: Invalid control command
  *       403:
- *         description: Access denied - outlet not controllable
+ *         description: Access denied - socket not controllable
  */
-router.post('/:id/control', requirePermission('device.manage'), outletController.controlOutlet);
+router.post('/:id/control', requirePermission('device.manage'), socketController.controlSocket);
 
 export default router;
