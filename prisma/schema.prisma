@@ -60,10 +60,8 @@ model device {
   department            departments?            @relation(fields: [department_id], references: [id], onUpdate: NoAction)
   model                 device_models           @relation(fields: [model_id], references: [id], onUpdate: NoAction)
   organization          organizations           @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  device_current_state  device_current_state?
   device_data           device_data[]
-  device_latest_data    device_latest_data[]
-
+  device_data_latest    device_data_latest?
   maintenance_history   maintenance_history[]
   maintenance_schedules maintenance_schedules[]
   socket                sockets?
@@ -357,53 +355,30 @@ model data_values {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model device_data {
-  id             String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  device_id      String        @db.Uuid
-  socket_id      String?       @db.Uuid
-  
-  // Measurement values (mirrored from device_current_state)
-  voltage        Float?        @db.Real
-  current        Float?        @db.Real
-  power          Float?        @db.Real
-  frequency      Float?        @db.Real
-  power_factor   Float?        @db.Real
-  
-  // State indicators  
-  machine_state  Boolean?      @default(false)
-  socket_state   Boolean?      @default(false)
-  sensor_state   Boolean?      @default(false)
-  
-  // Alert indicators
-  over_voltage   Boolean?      @default(false)
-  under_voltage  Boolean?      @default(false)
-  
-  // Timestamps
-  timestamp      DateTime      @default(now()) @db.Timestamptz(6)
-  created_at     DateTime      @default(now()) @db.Timestamptz(6)
-  
-  // Relations
-  device         device        @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  socket         sockets?      @relation(fields: [socket_id], references: [id], map: "device_data_socket_id_fkey")
-  alerts         alerts[]
-  data_values    data_values[]
+  id            String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id     String        @db.Uuid
+  timestamp     DateTime      @default(now()) @db.Timestamptz(6)
+  socket_id     String?       @db.Uuid
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  current       Float?        @db.Real
+  frequency     Float?        @db.Real
+  machine_state Boolean?      @default(false)
+  over_voltage  Boolean?      @default(false)
+  power         Float?        @db.Real
+  power_factor  Float?        @db.Real
+  sensor_state  Boolean?      @default(false)
+  socket_state  Boolean?      @default(false)
+  under_voltage Boolean?      @default(false)
+  voltage       Float?        @db.Real
+  alerts        alerts[]
+  data_values   data_values[]
+  device        device        @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  socket        sockets?      @relation(fields: [socket_id], references: [id], map: "device_data_socket_id_fkey")
 
   @@index([device_id, timestamp(sort: Desc)], map: "idx_device_data_device_time")
-  @@index([socket_id, timestamp(sort: Desc)], map: "idx_device_data_socket_time") 
+  @@index([socket_id, timestamp(sort: Desc)], map: "idx_device_data_socket_time")
   @@index([timestamp(sort: Desc)], map: "idx_device_data_timestamp")
   @@index([device_id, created_at(sort: Desc)], map: "idx_device_data_device_created")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model device_latest_data {
-  device_id      String       @db.Uuid
-  measurement_id String       @db.Uuid
-  latest_value   Float?
-  updated_at     DateTime     @default(now()) @db.Timestamptz(6)
-  device         device       @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  measurements   measurements @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([device_id, measurement_id])
-  @@index([updated_at(sort: Desc)], map: "idx_device_latest_data_updated")
 }
 
 model maintenance_schedules {
@@ -430,7 +405,6 @@ model measurements {
   alert_rules        alert_rules[]
   alert_suppressions alert_suppressions[]
   alerts             alerts[]
-  device_latest_data device_latest_data[]
 
   @@index([data_type], map: "idx_measurements_data_type")
   @@index([name], map: "idx_measurements_name")
@@ -973,34 +947,33 @@ model power_distribution_units {
 }
 
 model sockets {
-  id                   String                   @id(map: "outlets_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  pdu_id               String                   @db.Uuid
-  socket_number        Int
-  name                 String?                  @db.VarChar(100)
-  description          String?                  @db.VarChar(255)
-  mqtt_topic_suffix    String                   @db.VarChar(100)
-  max_power_watts      Float?                   @default(3000) @db.Real
-  socket_type          String?                  @db.VarChar(50)
-  device_id            String?                  @unique(map: "outlets_device_id_key") @db.Uuid
-  assigned_at          DateTime?                @db.Timestamptz(6)
-  assigned_by          String?                  @db.Uuid
-  status               socket_status            @default(inactive)
-  is_enabled           Boolean                  @default(true)
-  display_order        Int?                     @default(1)
-  notes                String?                  @db.VarChar(500)
-  created_at           DateTime?                @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime?                @default(now()) @updatedAt @db.Timestamptz(6)
-  mqtt_broker_host     String?                  @db.VarChar(255)
-  mqtt_broker_port     Int?                     @default(1883)
-  mqtt_credentials     Json?                    @default("{}")
-  mqtt_config          Json?                    @default("{}")
-  device_current_state device_current_state[]
-  device_data          device_data[]
-  device_data_logs     device_data_logs[]
-
-  assigned_by_user     users?                   @relation("SocketAssignedBy", fields: [assigned_by], references: [id], map: "outlets_assigned_by_fkey")
-  device               device?                  @relation(fields: [device_id], references: [id], map: "outlets_device_id_fkey")
-  pdu                  power_distribution_units @relation(fields: [pdu_id], references: [id], onDelete: Cascade, map: "outlets_pdu_id_fkey")
+  id                 String                   @id(map: "outlets_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  pdu_id             String                   @db.Uuid
+  socket_number      Int
+  name               String?                  @db.VarChar(100)
+  description        String?                  @db.VarChar(255)
+  mqtt_topic_suffix  String                   @db.VarChar(100)
+  max_power_watts    Float?                   @default(3000) @db.Real
+  socket_type        String?                  @db.VarChar(50)
+  device_id          String?                  @unique(map: "outlets_device_id_key") @db.Uuid
+  assigned_at        DateTime?                @db.Timestamptz(6)
+  assigned_by        String?                  @db.Uuid
+  status             socket_status            @default(inactive)
+  is_enabled         Boolean                  @default(true)
+  display_order      Int?                     @default(1)
+  notes              String?                  @db.VarChar(500)
+  created_at         DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?                @default(now()) @updatedAt @db.Timestamptz(6)
+  mqtt_broker_host   String?                  @db.VarChar(255)
+  mqtt_broker_port   Int?                     @default(1883)
+  mqtt_credentials   Json?                    @default("{}")
+  mqtt_config        Json?                    @default("{}")
+  device_data        device_data[]
+  device_data_latest device_data_latest[]
+  device_data_logs   device_data_logs[]
+  assigned_by_user   users?                   @relation("SocketAssignedBy", fields: [assigned_by], references: [id], map: "outlets_assigned_by_fkey")
+  device             device?                  @relation(fields: [device_id], references: [id], map: "outlets_device_id_fkey")
+  pdu                power_distribution_units @relation(fields: [pdu_id], references: [id], onDelete: Cascade, map: "outlets_pdu_id_fkey")
 
   @@unique([pdu_id, socket_number], map: "unique_pdu_socket")
   @@index([pdu_id], map: "idx_sockets_pdu")
@@ -1011,46 +984,29 @@ model sockets {
   @@index([mqtt_broker_host], map: "idx_sockets_mqtt_broker")
 }
 
-
-
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// Real-time device state with full MQTT payload fields
 /// socket_id is kept for performance optimization in IoMT monitoring scenarios
-model device_current_state {
-  device_id           String    @id @db.Uuid
-  socket_id           String?   @db.Uuid
-  
-  // Measurement values from MQTT payload
-  voltage             Float?    @db.Real
-  current             Float?    @db.Real
-  power               Float?    @db.Real
-  frequency           Float?    @db.Real
-  power_factor        Float?    @db.Real
-  
-  // State indicators from MQTT payload
-  machine_state       Boolean?  @default(false)
-  socket_state        Boolean?  @default(false)
-  sensor_state        Boolean?  @default(false)
-  
-  // Alert indicators from MQTT payload
-  over_voltage        Boolean?  @default(false)
-  under_voltage       Boolean?  @default(false)
-  
-  // Timestamp from MQTT payload
-  timestamp           DateTime? @db.Timestamptz(6)
-  
-  // System tracking fields
-  is_connected        Boolean?  @default(false)
-  last_seen_at        DateTime? @db.Timestamptz(6)
-  updated_at          DateTime  @default(now()) @db.Timestamptz(6)
-  
-  device              device    @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  socket              sockets?  @relation(fields: [socket_id], references: [id], onUpdate: NoAction)
+model device_data_latest {
+  device_id     String    @id @db.Uuid
+  socket_id     String?   @db.Uuid
+  voltage       Float?    @db.Real
+  current       Float?    @db.Real
+  power         Float?    @db.Real
+  frequency     Float?    @db.Real
+  power_factor  Float?    @db.Real
+  machine_state Boolean?  @default(false)
+  socket_state  Boolean?  @default(false)
+  sensor_state  Boolean?  @default(false)
+  over_voltage  Boolean?  @default(false)
+  under_voltage Boolean?  @default(false)
+  timestamp     DateTime? @db.Timestamptz(6)
+  is_connected  Boolean?  @default(false)
+  last_seen_at  DateTime? @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @db.Timestamptz(6)
+  device        device    @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "device_current_state_device_id_fkey")
+  socket        sockets?  @relation(fields: [socket_id], references: [id], onUpdate: NoAction, map: "device_current_state_socket_id_fkey")
 }
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-
 
 model socket1_data {
   id            Int       @id @default(autoincrement())

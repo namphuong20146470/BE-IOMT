@@ -5,6 +5,17 @@ import prisma from '../../config/db.js';
  * PDU Repository - Handles all database operations for PDUs
  */
 class PduRepository {
+    /**
+     * ✅ Check if organization exists
+     */
+    async checkOrganizationExists(organizationId) {
+        const organization = await prisma.organizations.findUnique({
+            where: { id: organizationId },
+            select: { id: true }
+        });
+        return !!organization;
+    }
+
     async findMany(where = {}, options = {}) {
         return prisma.power_distribution_units.findMany({
             where,
@@ -150,7 +161,12 @@ class PduRepository {
      * Find PDUs accessible to the user with filtering and pagination
      */
     async findAccessiblePDUs(user, queryParams) {
-        const { page, limit, organization_id, department_id, type, is_active, location, search, sort_by, sort_order, include_stats } = queryParams;
+        const { 
+            page, limit, organization_id, department_id, type, is_active, 
+            location, search, sort_by, sort_order, 
+            include_stats,
+            detail // ✅ New: detailed response flag
+        } = queryParams;
         
         // Build where clause based on user permissions and filters
         let whereClause = {};
@@ -184,28 +200,59 @@ class PduRepository {
         // Calculate pagination
         const skip = (page - 1) * limit;
         
-        // Build include clause
-        const include = {
-            organization: { select: { id: true, name: true } },
-            department: { select: { id: true, name: true } }
-        };
-        
-        if (include_stats) {
-            include.sockets = {
-                select: {
-                    id: true,
-                    socket_number: true,
-                    status: true,
-                    device_id: true
+        // ✅ Build select clause - simple by default, detailed if requested
+        const select = detail === 'true' || detail === true
+            ? {
+                // Detailed response - all PDU fields + related data
+                id: true,
+                name: true,
+                code: true,
+                type: true,
+                location: true,
+                total_sockets: true,
+                is_active: true,
+                organization_id: true,
+                department_id: true,
+                created_at: true,
+                updated_at: true,
+                ip_address: true,
+                port: true,
+                specifications: true,
+                organization: { select: { id: true, name: true } },
+                department: { select: { id: true, name: true } },
+                ...(include_stats && {
+                    sockets: {
+                        select: {
+                            id: true,
+                            socket_number: true,
+                            status: true,
+                            device_id: true
+                        }
+                    }
+                })
+            }
+            : {
+                // Simple response - only essential fields
+                id: true,
+                name: true,
+                code: true,
+                type: true,
+                location: true,
+                total_sockets: true,
+                is_active: true,
+                organization: { select: { name: true } },
+                department: { select: { name: true } },
+                sockets: {
+                    where: { device_id: { not: null } },
+                    select: { id: true }
                 }
             };
-        }
         
         // Execute queries
         const [data, total] = await Promise.all([
             prisma.power_distribution_units.findMany({
                 where: whereClause,
-                include,
+                select,
                 skip,
                 take: limit,
                 orderBy: { [sort_by]: sort_order }
@@ -213,8 +260,17 @@ class PduRepository {
             prisma.power_distribution_units.count({ where: whereClause })
         ]);
         
+        // ✅ Transform data to add assigned_count for simple response
+        const transformedData = detail === 'true' || detail === true
+            ? data
+            : data.map(pdu => ({
+                ...pdu,
+                assigned_count: pdu.sockets?.length || 0,
+                sockets: undefined // Remove sockets array from response
+            }));
+        
         return {
-            data,
+            data: transformedData,
             pagination: {
                 page,
                 limit,

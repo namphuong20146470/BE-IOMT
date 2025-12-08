@@ -48,7 +48,8 @@ export const getAllDevices = async (req, res) => {
             organization_id, 
             department_id, 
             model_id, 
-            status, 
+            status,
+            assigned, // ✅ Add assigned filter
             manufacturer,
             category_id,
             page = 1, 
@@ -173,6 +174,23 @@ export const getAllDevices = async (req, res) => {
             whereConditions.push(`dc.id = $${paramIndex}::uuid`);
             params.push(category_id);
             paramIndex++;
+        }
+
+        // ✅ Filter by assignment status
+        if (assigned !== undefined) {
+            if (assigned === 'false' || assigned === false) {
+                // Show only unassigned devices (no socket assignment)
+                whereConditions.push(`NOT EXISTS (
+                    SELECT 1 FROM sockets s 
+                    WHERE s.device_id = d.id
+                )`);
+            } else if (assigned === 'true' || assigned === true) {
+                // Show only assigned devices (has socket assignment)
+                whereConditions.push(`EXISTS (
+                    SELECT 1 FROM sockets s 
+                    WHERE s.device_id = d.id
+                )`);
+            }
         }
 
         const whereClause = whereConditions.length > 0 

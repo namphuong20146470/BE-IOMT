@@ -62,19 +62,31 @@ class PduService {
             // Validate PDU data
             const validatedData = pduModel.validateCreatePDU(pduData);
             
+            // ✅ FIRST: Validate organization exists
+            const organizationExists = await pduRepository.checkOrganizationExists(validatedData.organization_id);
+            if (!organizationExists) {
+                throw new AppError(
+                    `Organization with ID ${validatedData.organization_id} not found. Please provide a valid organization_id.`, 
+                    400
+                );
+            }
+            
             // Check user permissions for organization/department
             await this.validateUserPDUAccess(user, validatedData.organization_id, validatedData.department_id, 'create');
             
             // Check for duplicate PDU name in organization
             await this.validatePDUUniqueness(validatedData);
             
-            // Create PDU with sockets
-            const newPDU = await pduRepository.create(validatedData, user.id);
+            // ✅ Create PDU with auto-generated sockets
+            const result = await pduRepository.createWithSockets(validatedData);
             
             return {
                 success: true,
-                message: 'PDU created successfully',
-                data: newPDU
+                message: `PDU created successfully with ${result.sockets.length} sockets`,
+                data: {
+                    ...result.pdu,
+                    sockets: result.sockets
+                }
             };
         } catch (error) {
             console.error('Error in createPDU service:', error);

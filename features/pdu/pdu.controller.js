@@ -226,24 +226,30 @@ export const getPDUSockets = async (req, res) => {
 
         // Build include options
         const includeOptions = {};
-        if (include_device) {
+        
+        if (include_device === 'true' || include_device === true) {
             includeOptions.device = {
                 include: {
                     model: { select: { name: true, manufacturer_id: true } }
                 }
             };
-        }
 
-        if (include_data) {
-            includeOptions.device_data = {
-                take: 10,
-                orderBy: { timestamp: 'desc' },
-                select: {
-                    data_payload: true,
-                    timestamp: true,
-                    measurements: { select: { name: true, unit: true } }
-                }
-            };
+            // Add device data if requested
+            if (include_data === 'true' || include_data === true) {
+                includeOptions.device.include.device_data_latest = {
+                    select: {
+                        voltage: true,
+                        current: true,
+                        power: true,
+                        power_factor: true,
+                        machine_state: true,
+                        socket_state: true,
+                        sensor_state: true,
+                        timestamp: true,
+                        updated_at: true
+                    }
+                };
+            }
         }
 
         // Get sockets

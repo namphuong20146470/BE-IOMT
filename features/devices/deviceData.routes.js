@@ -16,7 +16,7 @@ const router = express.Router();
 router.get('/devices/:deviceId/data', getDeviceData);
 router.get('/devices/:deviceId/data/stats', getDeviceDataStats);
 router.get('/devices/:deviceId/data/stream', getDeviceDataStream);
-router.get('/devices/:deviceId/data/current-state', getDeviceCurrentState);
+router.get('/devices/:deviceId/data/current', getDeviceCurrentState);
 router.post('/devices/:deviceId/data/simulate', simulateDeviceData);
 
 // Alternative endpoints for different data types

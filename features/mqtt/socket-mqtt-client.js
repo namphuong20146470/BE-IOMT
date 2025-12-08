@@ -354,8 +354,8 @@ class SocketMQTTClient extends EventEmitter {
                     over_voltage: mqttData.over_voltage || false,
                     under_voltage: mqttData.under_voltage || false,
                     
-                    timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date(),
-                    data_payload: mqttData
+                    timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date()
+                    // Note: data_payload removed - not in schema, use device_data_logs for raw JSON
                 };
 
                 console.log(`🆕 [Device ${deviceId}] Creating first record with ${Object.keys(mqttData).length} MQTT fields`);
@@ -394,7 +394,7 @@ class SocketMQTTClient extends EventEmitter {
             console.log(`📊 [Device ${deviceId}] Updating current state with MERGE strategy:`, Object.keys(mqttData));
             
             // Get current state from database
-            const currentState = await prisma.device_current_state.findUnique({
+            const currentState = await prisma.device_data_latest.findUnique({
                 where: { device_id: deviceId }
             });
 
@@ -446,7 +446,7 @@ class SocketMQTTClient extends EventEmitter {
                     }
                 }
 
-                await prisma.device_current_state.update({
+                await prisma.device_data_latest.update({
                     where: { device_id: deviceId },
                     data: updateData
                 });
@@ -480,7 +480,7 @@ class SocketMQTTClient extends EventEmitter {
                     timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date()
                 };
 
-                await prisma.device_current_state.create({
+                await prisma.device_data_latest.create({
                     data: createData
                 });
                 

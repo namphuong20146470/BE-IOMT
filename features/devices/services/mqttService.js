@@ -169,11 +169,17 @@ class MQTTService {
                     device: {
                         select: { serial_number: true, model: { select: { name: true } } }
                     },
-                    device_data: {
-                        take: 1,
-                        orderBy: { timestamp: 'desc' },
-                        include: {
-                            measurements: { select: { name: true, unit: true } }
+                    device_data_latest: {
+                        select: {
+                            voltage: true,
+                            current: true,
+                            power: true,
+                            power_factor: true,
+                            machine_state: true,
+                            socket_state: true,
+                            sensor_state: true,
+                            timestamp: true,
+                            updated_at: true
                         }
                     }
                 }

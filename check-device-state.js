@@ -4,9 +4,9 @@ const prisma = new PrismaClient();
 
 async function checkDeviceCurrentState() {
     try {
-        console.log('🔍 Checking device_current_state table...');
+        console.log('🔍 Checking device_data_latest table...');
         
-        const states = await prisma.device_current_state.findMany({
+        const states = await prisma.device_data_latest.findMany({
             include: {
                 device: {
                     select: { 

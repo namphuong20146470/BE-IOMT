@@ -202,14 +202,18 @@ class SocketService {
             };
         }
 
-        if (query.include_data) {
-            include.device_data = {
-                take: 10,
-                orderBy: { timestamp: 'desc' },
+        if (query.include_data && query.include_device) {
+            include.device.include.device_data_latest = {
                 select: {
-                    data_payload: true,
+                    voltage: true,
+                    current: true,
+                    power: true,
+                    power_factor: true,
+                    machine_state: true,
+                    socket_state: true,
+                    sensor_state: true,
                     timestamp: true,
-                    measurements: { select: { name: true, unit: true } }
+                    updated_at: true
                 }
             };
         }
