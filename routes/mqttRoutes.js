@@ -16,16 +16,7 @@ import {
     publishToDevice
 } from '../features/devices/mqttDevice.controller.js';
 
-// Import device connectivity controllers (from features)
-import {
-    getDeviceConnectivity,
-    getAllDeviceConnectivities,
-    createDeviceConnectivity,
-    updateDeviceConnectivity,
-    updateLastConnected,
-    deleteDeviceConnectivity,
-    getConnectivityStatistics
-} from '../features/devices/deviceConnectivity.controller.js';
+// Note: deviceConnectivity.controller.js removed - MQTT config now handled via sockets
 
 const router = express.Router();
 
@@ -44,27 +35,20 @@ router.delete('/devices/:deviceId', authMiddleware, deleteMqttDevice);        //
 router.post('/devices/:deviceId/activate', authMiddleware, activateMqttDevice);     // Activate MQTT device
 router.post('/devices/:deviceId/deactivate', authMiddleware, deactivateMqttDevice); // Deactivate MQTT device
 router.post('/devices/:deviceId/publish', authMiddleware, publishToDevice);         // Publish data to device
-router.put('/devices/:deviceId/heartbeat', authMiddleware, updateLastConnected);    // Update last connected timestamp
+// Note: Heartbeat/connectivity status is now managed through socket-based MQTT architecture
 
 // Data & Analytics
 router.get('/devices/:deviceId/data', authMiddleware, getMqttDeviceData);     // Get device data history
 
 // System Status & Monitoring
 router.get('/status', authMiddleware, getMqttStatus);                         // Get MQTT system status
-router.get('/statistics', authMiddleware, getConnectivityStatistics);         // Get connectivity statistics
 
 // Testing & Debugging
 router.post('/test-publish', authMiddleware, testPublishMessage);             // Test publish message to device
 
 // ====================================================================
-// LEGACY DEVICE CONNECTIVITY ROUTES (for backward compatibility)
+// MQTT CONNECTIVITY NOW HANDLED VIA PDU/SOCKET CONFIGURATION
+// Legacy device_connectivity routes removed - use socket endpoints instead
 // ====================================================================
-
-// Legacy connectivity endpoints
-router.get('/connectivity', authMiddleware, getAllDeviceConnectivities);      // Get all connectivities
-router.get('/connectivity/:deviceId', authMiddleware, getDeviceConnectivity); // Get device connectivity
-router.post('/connectivity', authMiddleware, createDeviceConnectivity);       // Create connectivity
-router.put('/connectivity/:id', authMiddleware, updateDeviceConnectivity);    // Update connectivity
-router.delete('/connectivity/:id', authMiddleware, deleteDeviceConnectivity); // Delete connectivity
 
 export default router;

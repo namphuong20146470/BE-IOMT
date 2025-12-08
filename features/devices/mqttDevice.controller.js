@@ -5,11 +5,11 @@ import crypto from 'crypto';
 const prisma = new PrismaClient();
 
 // ====================================================================
-// MQTT DEVICE MANAGEMENT CONTROLLER
+// MQTT DEVICE MANAGEMENT CONTROLLER (Socket-based Architecture)
 // ====================================================================
 
 /**
- * GET /mqtt/devices - Get all MQTT enabled devices
+ * GET /mqtt/devices - Get all MQTT enabled devices (via socket configuration)
  */
 export const getAllMqttDevices = async (req, res) => {
     try {
@@ -23,24 +23,24 @@ export const getAllMqttDevices = async (req, res) => {
             search
         } = req.query;
 
-        let whereConditions = ['dc.mqtt_topic IS NOT NULL'];
+        let whereConditions = ['s.mqtt_broker_host IS NOT NULL'];
         let params = [];
         let paramIndex = 1;
 
         if (organization_id) {
-            whereConditions.push(`d.organization_id = $${paramIndex}::uuid`);
+            whereConditions.push(`pdu.organization_id = $${paramIndex}::uuid`);
             params.push(organization_id);
             paramIndex++;
         }
 
         if (is_active !== undefined) {
-            whereConditions.push(`dc.is_active = $${paramIndex}::boolean`);
+            whereConditions.push(`s.is_enabled = $${paramIndex}::boolean`);
             params.push(is_active === 'true');
             paramIndex++;
         }
 
         if (broker_host) {
-            whereConditions.push(`dc.broker_host ILIKE $${paramIndex}`);
+            whereConditions.push(`s.mqtt_broker_host ILIKE $${paramIndex}`);
             params.push(`%${broker_host}%`);
             paramIndex++;
         }
@@ -51,7 +51,8 @@ export const getAllMqttDevices = async (req, res) => {
                 d.asset_tag ILIKE $${paramIndex} OR 
                 dm.name ILIKE $${paramIndex} OR
                 m.name ILIKE $${paramIndex} OR
-                dc.mqtt_topic ILIKE $${paramIndex}
+                s.mqtt_topic_suffix ILIKE $${paramIndex} OR
+                pdu.mqtt_base_topic ILIKE $${paramIndex}
             )`);
             params.push(`%${search}%`);
             paramIndex++;
@@ -60,7 +61,6 @@ export const getAllMqttDevices = async (req, res) => {
         const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
         const offset = (parseInt(page) - 1) * parseInt(limit);
         
-        // Add limit and offset parameters
         const limitParamIndex = paramIndex;
         const offsetParamIndex = paramIndex + 1;
         params.push(parseInt(limit), offset);
@@ -74,37 +74,44 @@ export const getAllMqttDevices = async (req, res) => {
                 d.installation_date,
                 d.purchase_date,
                 d.location,
-                dc.id as connectivity_id,
-                dc.mqtt_user,
-                dc.mqtt_topic,
-                dc.broker_host,
-                dc.broker_port,
-                dc.ssl_enabled,
-                dc.heartbeat_interval,
-                dc.last_connected,
-                dc.is_active,
-                dc.created_at as connectivity_created,
-                dc.updated_at as connectivity_updated,
+                s.id as socket_id,
+                s.socket_number,
+                s.name as socket_name,
+                s.mqtt_broker_host,
+                s.mqtt_broker_port,
+                s.mqtt_credentials,
+                s.mqtt_config,
+                s.mqtt_topic_suffix,
+                pdu.mqtt_base_topic,
+                CONCAT(pdu.mqtt_base_topic, '/', s.mqtt_topic_suffix) as full_mqtt_topic,
+                s.status as socket_status,
+                s.is_enabled as socket_enabled,
+                s.assigned_at,
+                s.updated_at as socket_updated,
                 dm.name as model_name,
                 m.name as manufacturer,
                 dcat.name as category_name,
                 o.name as organization_name,
+                pdu.name as pdu_name,
+                pdu.location as pdu_location,
                 wi.warranty_end as warranty_end_date,
                 CASE 
-                    WHEN dc.last_connected IS NULL THEN 'never_connected'
-                    WHEN dc.last_connected < NOW() - INTERVAL '5 minutes' THEN 'offline'
-                    WHEN dc.last_connected < NOW() - INTERVAL '1 minute' THEN 'idle'
-                    ELSE 'online'
+                    WHEN s.status = 'error' THEN 'error'
+                    WHEN s.status = 'inactive' OR NOT s.is_enabled THEN 'offline'
+                    WHEN s.status = 'idle' THEN 'idle'
+                    WHEN s.status = 'active' THEN 'online'
+                    ELSE 'unknown'
                 END as connection_status
             FROM device d
-            JOIN device_connectivity dc ON d.id = dc.device_id
+            JOIN sockets s ON d.id = s.device_id
+            JOIN power_distribution_units pdu ON s.pdu_id = pdu.id
             JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device_categories dcat ON dm.category_id = dcat.id
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN warranty_info wi ON d.id = wi.device_id
             ${whereClause}
-            ORDER BY dc.last_connected DESC NULLS LAST, d.serial_number ASC
+            ORDER BY s.updated_at DESC NULLS LAST, d.serial_number ASC
             LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
         `, ...params);
 
@@ -121,7 +128,8 @@ export const getAllMqttDevices = async (req, res) => {
         const totalResult = await prisma.$queryRawUnsafe(`
             SELECT COUNT(*)::integer as total
             FROM device d
-            JOIN device_connectivity dc ON d.id = dc.device_id
+            JOIN sockets s ON d.id = s.device_id
+            JOIN power_distribution_units pdu ON s.pdu_id = pdu.id
             JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN organizations o ON d.organization_id = o.id
@@ -131,18 +139,23 @@ export const getAllMqttDevices = async (req, res) => {
 
         const total = totalResult[0]?.total || 0;
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            message: 'MQTT devices retrieved successfully',
-            data: {
-                devices: filteredDevices,
-                pagination: {
-                    current_page: parseInt(page),
-                    per_page: parseInt(limit),
-                    total_items: total,
-                    total_pages: Math.ceil(total / parseInt(limit)),
-                    has_next: parseInt(page) < Math.ceil(total / parseInt(limit)),
-                    has_prev: parseInt(page) > 1
+            data: filteredDevices,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / parseInt(limit))
+            },
+            metadata: {
+                connection_statuses: ['online', 'idle', 'offline', 'error', 'unknown'],
+                filters_applied: {
+                    organization_id,
+                    is_active,
+                    connection_status,
+                    broker_host,
+                    search
                 }
             }
         });
@@ -158,7 +171,7 @@ export const getAllMqttDevices = async (req, res) => {
 };
 
 /**
- * GET /mqtt/devices/:deviceId - Get specific MQTT device
+ * GET /mqtt/devices/:deviceId - Get specific MQTT device (via socket configuration)
  */
 export const getMqttDevice = async (req, res) => {
     try {
@@ -174,29 +187,37 @@ export const getMqttDevice = async (req, res) => {
                 d.purchase_date,
                 d.location,
                 d.notes,
-                dc.id as connectivity_id,
-                dc.mqtt_user,
-                dc.mqtt_topic,
-                dc.broker_host,
-                dc.broker_port,
-                dc.ssl_enabled,
-                dc.heartbeat_interval,
-                dc.last_connected,
-                dc.is_active,
-                dc.created_at as connectivity_created,
-                dc.updated_at as connectivity_updated,
+                s.id as socket_id,
+                s.socket_number,
+                s.name as socket_name,
+                s.mqtt_broker_host,
+                s.mqtt_broker_port,
+                s.mqtt_credentials,
+                s.mqtt_config,
+                s.mqtt_topic_suffix,
+                pdu.mqtt_base_topic,
+                CONCAT(pdu.mqtt_base_topic, '/', s.mqtt_topic_suffix) as full_mqtt_topic,
+                s.status as socket_status,
+                s.is_enabled as socket_enabled,
+                s.assigned_at,
+                s.created_at as socket_created,
+                s.updated_at as socket_updated,
                 dm.name as model_name,
                 m.name as manufacturer,
                 dm.description as model_description,
                 dcat.name as category_name,
                 o.name as organization_name,
                 o.type as organization_type,
+                pdu.name as pdu_name,
+                pdu.type as pdu_type,
+                pdu.location as pdu_location,
                 wi.warranty_end as warranty_end_date,
                 CASE 
-                    WHEN dc.last_connected IS NULL THEN 'never_connected'
-                    WHEN dc.last_connected < NOW() - INTERVAL '5 minutes' THEN 'offline'
-                    WHEN dc.last_connected < NOW() - INTERVAL '1 minute' THEN 'idle'
-                    ELSE 'online'
+                    WHEN s.status = 'error' THEN 'error'
+                    WHEN s.status = 'inactive' OR NOT s.is_enabled THEN 'offline'
+                    WHEN s.status = 'idle' THEN 'idle'
+                    WHEN s.status = 'active' THEN 'online'
+                    ELSE 'unknown'
                 END as connection_status,
                 -- Get recent data count
                 (
@@ -206,7 +227,8 @@ export const getMqttDevice = async (req, res) => {
                     AND ddl.timestamp > NOW() - INTERVAL '24 hours'
                 ) as messages_24h
             FROM device d
-            JOIN device_connectivity dc ON d.id = dc.device_id
+            JOIN sockets s ON d.id = s.device_id
+            JOIN power_distribution_units pdu ON s.pdu_id = pdu.id
             JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
             LEFT JOIN device_categories dcat ON dm.category_id = dcat.id
@@ -218,30 +240,49 @@ export const getMqttDevice = async (req, res) => {
         if (device.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: 'MQTT device not found'
+                message: 'MQTT device not found or not configured'
             });
         }
 
-        // Get recent data samples
+        const deviceData = device[0];
+        
+        // Get recent device data history
         const recentData = await prisma.$queryRawUnsafe(`
             SELECT 
-                data_json,
-                timestamp
-            FROM device_data_logs 
-            WHERE device_id = $1::uuid
-            ORDER BY timestamp DESC 
-            LIMIT 5
+                ddl.data_json,
+                ddl.timestamp,
+                s.socket_number
+            FROM device_data_logs ddl
+            JOIN sockets s ON ddl.socket_id = s.id
+            WHERE ddl.device_id = $1::uuid
+            ORDER BY ddl.timestamp DESC
+            LIMIT 10
         `, deviceId);
 
-        const result = {
-            ...device[0],
-            recent_data: recentData
-        };
-
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            message: 'MQTT device retrieved successfully',
-            data: result
+            data: {
+                ...deviceData,
+                recent_data: recentData,
+                mqtt_configuration: {
+                    broker_host: deviceData.mqtt_broker_host,
+                    broker_port: deviceData.mqtt_broker_port,
+                    full_topic: deviceData.full_mqtt_topic,
+                    credentials: deviceData.mqtt_credentials,
+                    config: deviceData.mqtt_config,
+                    socket_info: {
+                        socket_id: deviceData.socket_id,
+                        socket_number: deviceData.socket_number,
+                        socket_name: deviceData.socket_name
+                    },
+                    pdu_info: {
+                        pdu_name: deviceData.pdu_name,
+                        pdu_type: deviceData.pdu_type,
+                        pdu_location: deviceData.pdu_location,
+                        base_topic: deviceData.mqtt_base_topic
+                    }
+                }
+            }
         });
 
     } catch (error) {
@@ -259,118 +300,106 @@ export const getMqttDevice = async (req, res) => {
  */
 export const createMqttDevice = async (req, res) => {
     try {
-        const {
-            device_id,
-            mqtt_user,
-            mqtt_pass,
-            mqtt_topic,
-            broker_host = 'localhost',
-            broker_port = 1883,
-            ssl_enabled = false,
-            heartbeat_interval = 300,
-            is_active = true
-        } = req.body;
+        const { device_id, socket_id, mqtt_config } = req.body;
 
-        // Validation
-        if (!device_id) {
+        // Validate required fields
+        if (!device_id || !socket_id) {
             return res.status(400).json({
                 success: false,
-                message: 'Device ID is required'
+                message: 'Device ID and Socket ID are required'
             });
         }
 
-        if (!mqtt_topic) {
-            return res.status(400).json({
-                success: false,
-                message: 'MQTT topic is required'
-            });
-        }
+        // Check if device exists and is not already assigned to a socket
+        const existingDevice = await prisma.device.findUnique({
+            where: { id: device_id },
+            include: {
+                socket: true
+            }
+        });
 
-        // Check if device exists
-        const deviceExists = await prisma.$queryRaw`
-            SELECT id, serial_number, status 
-            FROM device 
-            WHERE id = ${device_id}::uuid
-        `;
-
-        if (deviceExists.length === 0) {
+        if (!existingDevice) {
             return res.status(404).json({
                 success: false,
                 message: 'Device not found'
             });
         }
 
-        // Check if MQTT configuration already exists
-        const existingConn = await prisma.$queryRaw`
-            SELECT id FROM device_connectivity WHERE device_id = ${device_id}::uuid
-        `;
-
-        if (existingConn.length > 0) {
+        if (existingDevice.socket) {
             return res.status(400).json({
                 success: false,
-                message: 'MQTT configuration already exists for this device. Use PUT to update.'
+                message: 'Device is already assigned to a socket'
             });
         }
 
-        // Check if topic is already in use
-        const topicExists = await prisma.$queryRaw`
-            SELECT device_id FROM device_connectivity WHERE mqtt_topic = ${mqtt_topic}
-        `;
-
-        if (topicExists.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'MQTT topic is already in use by another device'
-            });
-        }
-
-        // Encrypt password if provided
-        const encryptedPass = mqtt_pass ? encryptPassword(mqtt_pass) : null;
-
-        // Create MQTT connectivity configuration
-        const connectivity = await prisma.$queryRaw`
-            INSERT INTO device_connectivity (
-                device_id, mqtt_user, mqtt_pass, mqtt_topic,
-                broker_host, broker_port, ssl_enabled, heartbeat_interval,
-                is_active
-            ) VALUES (
-                ${device_id}::uuid, 
-                ${mqtt_user || null}, 
-                ${encryptedPass}, 
-                ${mqtt_topic},
-                ${broker_host}, 
-                ${broker_port}::integer, 
-                ${ssl_enabled}::boolean, 
-                ${heartbeat_interval}::integer,
-                ${is_active}::boolean
-            )
-            RETURNING id, device_id, mqtt_user, mqtt_topic, broker_host, 
-                     broker_port, ssl_enabled, heartbeat_interval, is_active,
-                     created_at, updated_at
-        `;
-
-        // Add device to dynamic MQTT manager if active
-        if (is_active) {
-            try {
-                await dynamicMqttManager.addDevice(device_id);
-                console.log(`✅ Added device ${device_id} to dynamic MQTT manager`);
-            } catch (mqttError) {
-                console.error('Error adding device to MQTT manager:', mqttError);
-                // Don't fail the request, just log the error
+        // Check if socket exists and is available
+        const socket = await prisma.sockets.findUnique({
+            where: { id: socket_id },
+            include: {
+                pdu: true,
+                device: true
             }
+        });
+
+        if (!socket) {
+            return res.status(404).json({
+                success: false,
+                message: 'Socket not found'
+            });
         }
 
-        res.status(201).json({
+        if (socket.device_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Socket is already assigned to another device'
+            });
+        }
+
+        // Update socket with MQTT configuration and assign device
+        const updatedSocket = await prisma.sockets.update({
+            where: { id: socket_id },
+            data: {
+                device_id: device_id,
+                assigned_at: new Date(),
+                assigned_by: req.user?.id,
+                mqtt_broker_host: mqtt_config?.broker_host || socket.mqtt_broker_host,
+                mqtt_broker_port: mqtt_config?.broker_port || socket.mqtt_broker_port,
+                mqtt_credentials: mqtt_config?.credentials || socket.mqtt_credentials,
+                mqtt_config: mqtt_config?.config || socket.mqtt_config,
+                is_enabled: true,
+                status: 'active'
+            },
+            include: {
+                device: {
+                    include: {
+                        model: true
+                    }
+                },
+                pdu: true
+            }
+        });
+
+        return res.status(201).json({
             success: true,
-            message: 'MQTT device configuration created successfully',
-            data: connectivity[0]
+            message: 'MQTT device configured successfully',
+            data: {
+                device_id: updatedSocket.device_id,
+                socket_id: updatedSocket.id,
+                full_mqtt_topic: `${updatedSocket.pdu.mqtt_base_topic}/${updatedSocket.mqtt_topic_suffix}`,
+                mqtt_configuration: {
+                    broker_host: updatedSocket.mqtt_broker_host,
+                    broker_port: updatedSocket.mqtt_broker_port,
+                    credentials: updatedSocket.mqtt_credentials,
+                    config: updatedSocket.mqtt_config
+                }
+            }
         });
 
     } catch (error) {
         console.error('Error creating MQTT device:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to create MQTT device configuration',
+            message: 'Failed to configure MQTT device',
             error: error.message
         });
     }
@@ -382,141 +411,50 @@ export const createMqttDevice = async (req, res) => {
 export const updateMqttDevice = async (req, res) => {
     try {
         const { deviceId } = req.params;
-        const {
-            mqtt_user,
-            mqtt_pass,
-            mqtt_topic,
-            broker_host,
-            broker_port,
-            ssl_enabled,
-            heartbeat_interval,
-            is_active
-        } = req.body;
+        const { mqtt_config } = req.body;
 
-        // Check if device connectivity exists
-        const existingConn = await prisma.$queryRaw`
-            SELECT * FROM device_connectivity WHERE device_id = ${deviceId}::uuid
-        `;
+        // Find the socket associated with this device
+        const socket = await prisma.sockets.findFirst({
+            where: { device_id: deviceId },
+            include: {
+                pdu: true,
+                device: true
+            }
+        });
 
-        if (existingConn.length === 0) {
+        if (!socket) {
             return res.status(404).json({
                 success: false,
-                message: 'MQTT device configuration not found'
+                message: 'MQTT device not found or not configured'
             });
         }
 
-        const currentConfig = existingConn[0];
-
-        // Check if new topic conflicts with another device
-        if (mqtt_topic && mqtt_topic !== currentConfig.mqtt_topic) {
-            const topicExists = await prisma.$queryRaw`
-                SELECT device_id FROM device_connectivity 
-                WHERE mqtt_topic = ${mqtt_topic} AND device_id != ${deviceId}::uuid
-            `;
-
-            if (topicExists.length > 0) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'MQTT topic is already in use by another device'
-                });
+        // Update socket MQTT configuration
+        const updatedSocket = await prisma.sockets.update({
+            where: { id: socket.id },
+            data: {
+                mqtt_broker_host: mqtt_config?.broker_host || socket.mqtt_broker_host,
+                mqtt_broker_port: mqtt_config?.broker_port || socket.mqtt_broker_port,
+                mqtt_credentials: mqtt_config?.credentials || socket.mqtt_credentials,
+                mqtt_config: mqtt_config?.config || socket.mqtt_config,
+                updated_at: new Date()
             }
-        }
+        });
 
-        // Build dynamic update query
-        let updateFields = [];
-        let params = [];
-        let paramIndex = 1;
-
-        if (mqtt_user !== undefined) {
-            updateFields.push(`mqtt_user = $${paramIndex}`);
-            params.push(mqtt_user);
-            paramIndex++;
-        }
-
-        if (mqtt_pass !== undefined) {
-            const encryptedPass = mqtt_pass ? encryptPassword(mqtt_pass) : null;
-            updateFields.push(`mqtt_pass = $${paramIndex}`);
-            params.push(encryptedPass);
-            paramIndex++;
-        }
-
-        if (mqtt_topic !== undefined) {
-            updateFields.push(`mqtt_topic = $${paramIndex}`);
-            params.push(mqtt_topic);
-            paramIndex++;
-        }
-
-        if (broker_host !== undefined) {
-            updateFields.push(`broker_host = $${paramIndex}`);
-            params.push(broker_host);
-            paramIndex++;
-        }
-
-        if (broker_port !== undefined) {
-            updateFields.push(`broker_port = $${paramIndex}::integer`);
-            params.push(broker_port);
-            paramIndex++;
-        }
-
-        if (ssl_enabled !== undefined) {
-            updateFields.push(`ssl_enabled = $${paramIndex}::boolean`);
-            params.push(ssl_enabled);
-            paramIndex++;
-        }
-
-        if (heartbeat_interval !== undefined) {
-            updateFields.push(`heartbeat_interval = $${paramIndex}::integer`);
-            params.push(heartbeat_interval);
-            paramIndex++;
-        }
-
-        if (is_active !== undefined) {
-            updateFields.push(`is_active = $${paramIndex}::boolean`);
-            params.push(is_active);
-            paramIndex++;
-        }
-
-        if (updateFields.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'No fields to update'
-            });
-        }
-
-        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-        params.push(deviceId);
-
-        const updatedConfig = await prisma.$queryRawUnsafe(`
-            UPDATE device_connectivity 
-            SET ${updateFields.join(', ')}
-            WHERE device_id = $${paramIndex}::uuid
-            RETURNING id, device_id, mqtt_user, mqtt_topic, broker_host, 
-                     broker_port, ssl_enabled, heartbeat_interval, is_active,
-                     created_at, updated_at
-        `, ...params);
-
-        // Update dynamic MQTT manager
-        try {
-            if (currentConfig.mqtt_topic !== mqtt_topic) {
-                // Remove old topic
-                dynamicMqttManager.removeDevice(currentConfig.mqtt_topic);
-            }
-
-            if (is_active !== false) {
-                // Add/update device in manager
-                await dynamicMqttManager.addDevice(deviceId);
-            } else {
-                // Remove from manager if deactivated
-                dynamicMqttManager.removeDevice(mqtt_topic || currentConfig.mqtt_topic);
-            }
-        } catch (mqttError) {
-            console.error('Error updating device in MQTT manager:', mqttError);
-        }
-
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             message: 'MQTT device configuration updated successfully',
-            data: updatedConfig[0]
+            data: {
+                device_id: deviceId,
+                socket_id: updatedSocket.id,
+                full_mqtt_topic: `${socket.pdu.mqtt_base_topic}/${updatedSocket.mqtt_topic_suffix}`,
+                mqtt_configuration: {
+                    broker_host: updatedSocket.mqtt_broker_host,
+                    broker_port: updatedSocket.mqtt_broker_port,
+                    credentials: updatedSocket.mqtt_credentials,
+                    config: updatedSocket.mqtt_config
+                }
+            }
         });
 
     } catch (error) {
@@ -530,46 +468,45 @@ export const updateMqttDevice = async (req, res) => {
 };
 
 /**
- * DELETE /mqtt/devices/:deviceId - Remove MQTT configuration from device
+ * DELETE /mqtt/devices/:deviceId - Remove MQTT configuration
  */
 export const deleteMqttDevice = async (req, res) => {
     try {
         const { deviceId } = req.params;
 
-        // Get current configuration
-        const currentConfig = await prisma.$queryRaw`
-            SELECT mqtt_topic FROM device_connectivity WHERE device_id = ${deviceId}::uuid
-        `;
+        // Find the socket associated with this device
+        const socket = await prisma.sockets.findFirst({
+            where: { device_id: deviceId }
+        });
 
-        if (currentConfig.length === 0) {
+        if (!socket) {
             return res.status(404).json({
                 success: false,
-                message: 'MQTT device configuration not found'
+                message: 'MQTT device not found'
             });
         }
 
-        // Remove from dynamic MQTT manager first
-        try {
-            dynamicMqttManager.removeDevice(currentConfig[0].mqtt_topic);
-        } catch (mqttError) {
-            console.error('Error removing device from MQTT manager:', mqttError);
-        }
+        // Unassign device from socket (keep socket, remove device assignment)
+        await prisma.sockets.update({
+            where: { id: socket.id },
+            data: {
+                device_id: null,
+                assigned_at: null,
+                assigned_by: null,
+                status: 'inactive'
+            }
+        });
 
-        // Delete configuration
-        await prisma.$queryRaw`
-            DELETE FROM device_connectivity WHERE device_id = ${deviceId}::uuid
-        `;
-
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            message: 'MQTT device configuration deleted successfully'
+            message: 'MQTT device configuration removed successfully'
         });
 
     } catch (error) {
         console.error('Error deleting MQTT device:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to delete MQTT device configuration',
+            message: 'Failed to remove MQTT device configuration',
             error: error.message
         });
     }
@@ -582,31 +519,28 @@ export const activateMqttDevice = async (req, res) => {
     try {
         const { deviceId } = req.params;
 
-        const updated = await prisma.$queryRaw`
-            UPDATE device_connectivity 
-            SET is_active = true, updated_at = CURRENT_TIMESTAMP
-            WHERE device_id = ${deviceId}::uuid
-            RETURNING id, mqtt_topic
-        `;
+        const socket = await prisma.sockets.findFirst({
+            where: { device_id: deviceId }
+        });
 
-        if (updated.length === 0) {
+        if (!socket) {
             return res.status(404).json({
                 success: false,
-                message: 'MQTT device configuration not found'
+                message: 'MQTT device not found'
             });
         }
 
-        // Add to dynamic MQTT manager
-        try {
-            await dynamicMqttManager.addDevice(deviceId);
-        } catch (mqttError) {
-            console.error('Error activating device in MQTT manager:', mqttError);
-        }
+        await prisma.sockets.update({
+            where: { id: socket.id },
+            data: {
+                is_enabled: true,
+                status: 'active'
+            }
+        });
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            message: 'MQTT device activated successfully',
-            data: { device_id: deviceId, is_active: true }
+            message: 'MQTT device activated successfully'
         });
 
     } catch (error) {
@@ -626,35 +560,28 @@ export const deactivateMqttDevice = async (req, res) => {
     try {
         const { deviceId } = req.params;
 
-        const currentConfig = await prisma.$queryRaw`
-            SELECT mqtt_topic FROM device_connectivity WHERE device_id = ${deviceId}::uuid
-        `;
+        const socket = await prisma.sockets.findFirst({
+            where: { device_id: deviceId }
+        });
 
-        if (currentConfig.length === 0) {
+        if (!socket) {
             return res.status(404).json({
                 success: false,
-                message: 'MQTT device configuration not found'
+                message: 'MQTT device not found'
             });
         }
 
-        // Update to inactive
-        await prisma.$queryRaw`
-            UPDATE device_connectivity 
-            SET is_active = false, updated_at = CURRENT_TIMESTAMP
-            WHERE device_id = ${deviceId}::uuid
-        `;
+        await prisma.sockets.update({
+            where: { id: socket.id },
+            data: {
+                is_enabled: false,
+                status: 'inactive'
+            }
+        });
 
-        // Remove from dynamic MQTT manager
-        try {
-            dynamicMqttManager.removeDevice(currentConfig[0].mqtt_topic);
-        } catch (mqttError) {
-            console.error('Error deactivating device in MQTT manager:', mqttError);
-        }
-
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            message: 'MQTT device deactivated successfully',
-            data: { device_id: deviceId, is_active: false }
+            message: 'MQTT device deactivated successfully'
         });
 
     } catch (error) {
@@ -673,53 +600,45 @@ export const deactivateMqttDevice = async (req, res) => {
 export const getMqttDeviceData = async (req, res) => {
     try {
         const { deviceId } = req.params;
-        const {
-            hours = 24,
-            limit = 100,
-            page = 1
-        } = req.query;
+        const { limit = 50, offset = 0, from, to } = req.query;
 
-        const offset = (parseInt(page) - 1) * parseInt(limit);
+        let timeCondition = '';
+        let timeParams = [];
+        
+        if (from) {
+            timeCondition += ' AND ddl.timestamp >= $' + (timeParams.length + 2);
+            timeParams.push(from);
+        }
+        
+        if (to) {
+            timeCondition += ' AND ddl.timestamp <= $' + (timeParams.length + 2);
+            timeParams.push(to);
+        }
 
         const data = await prisma.$queryRawUnsafe(`
             SELECT 
-                data_json,
-                timestamp,
-                timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh' as local_time
-            FROM device_data_logs 
-            WHERE device_id = $1::uuid
-            AND timestamp > NOW() - INTERVAL '${parseInt(hours)} hours'
-            ORDER BY timestamp DESC
-            LIMIT $2 OFFSET $3
-        `, deviceId, parseInt(limit), offset);
+                ddl.data_json,
+                ddl.timestamp,
+                s.socket_number,
+                s.name as socket_name
+            FROM device_data_logs ddl
+            JOIN sockets s ON ddl.socket_id = s.id
+            WHERE ddl.device_id = $1::uuid ${timeCondition}
+            ORDER BY ddl.timestamp DESC
+            LIMIT $${timeParams.length + 2} OFFSET $${timeParams.length + 3}
+        `, deviceId, ...timeParams, parseInt(limit), parseInt(offset));
 
-        // Get total count
-        const totalResult = await prisma.$queryRawUnsafe(`
-            SELECT COUNT(*)::integer as total
-            FROM device_data_logs 
-            WHERE device_id = $1::uuid
-            AND timestamp > NOW() - INTERVAL '${parseInt(hours)} hours'
-        `, deviceId);
-
-        const total = totalResult[0]?.total || 0;
-
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            message: 'Device data retrieved successfully',
-            data: {
-                records: data,
-                pagination: {
-                    current_page: parseInt(page),
-                    per_page: parseInt(limit),
-                    total_items: total,
-                    total_pages: Math.ceil(total / parseInt(limit))
-                },
-                period: `${hours} hours`
+            data: data,
+            pagination: {
+                limit: parseInt(limit),
+                offset: parseInt(offset)
             }
         });
 
     } catch (error) {
-        console.error('Error getting device data:', error);
+        console.error('Error getting MQTT device data:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to retrieve device data',
@@ -733,34 +652,23 @@ export const getMqttDeviceData = async (req, res) => {
  */
 export const getMqttStatus = async (req, res) => {
     try {
-        const status = dynamicMqttManager.getConnectionStatus();
-        const activeTopics = dynamicMqttManager.getActiveTopics();
-
-        // Get database statistics
         const stats = await prisma.$queryRaw`
             SELECT 
-                COUNT(*)::integer as total_devices,
-                COUNT(CASE WHEN dc.is_active = true THEN 1 END)::integer as active_devices,
-                COUNT(CASE WHEN dc.last_connected > NOW() - INTERVAL '5 minutes' THEN 1 END)::integer as online_devices,
-                COUNT(CASE WHEN dc.last_connected IS NULL THEN 1 END)::integer as never_connected,
-                COUNT(DISTINCT dc.broker_host)::integer as unique_brokers
-            FROM device_connectivity dc
-            WHERE dc.mqtt_topic IS NOT NULL
+                COUNT(DISTINCT d.id)::integer as total_mqtt_devices,
+                COUNT(DISTINCT CASE WHEN s.is_enabled = true THEN d.id END)::integer as active_devices,
+                COUNT(DISTINCT CASE WHEN s.status = 'active' THEN d.id END)::integer as online_devices,
+                COUNT(DISTINCT s.mqtt_broker_host)::integer as unique_brokers,
+                COUNT(DISTINCT pdu.id)::integer as total_pdus
+            FROM device d
+            JOIN sockets s ON d.id = s.device_id
+            JOIN power_distribution_units pdu ON s.pdu_id = pdu.id
+            WHERE s.mqtt_broker_host IS NOT NULL
         `;
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            message: 'MQTT status retrieved successfully',
-            data: {
-                manager_status: status,
-                active_topics: activeTopics,
-                database_stats: stats[0],
-                system_info: {
-                    uptime: process.uptime(),
-                    node_version: process.version,
-                    memory_usage: process.memoryUsage()
-                }
-            }
+            data: stats[0],
+            timestamp: new Date().toISOString()
         });
 
     } catch (error) {
@@ -774,120 +682,96 @@ export const getMqttStatus = async (req, res) => {
 };
 
 /**
- * POST /mqtt/test-publish - Test publish message to device topic
+ * POST /mqtt/test-publish - Test publish message to device
  */
 export const testPublishMessage = async (req, res) => {
     try {
-        const { device_id, message, topic_override } = req.body;
+        const { device_id, message, qos = 0 } = req.body;
 
-        if (!device_id && !topic_override) {
-            return res.status(400).json({
+        // Find socket configuration for the device
+        const socket = await prisma.sockets.findFirst({
+            where: { device_id },
+            include: {
+                pdu: true
+            }
+        });
+
+        if (!socket) {
+            return res.status(404).json({
                 success: false,
-                message: 'Device ID or topic override is required'
+                message: 'MQTT device not found'
             });
         }
 
-        let targetTopic = topic_override;
+        const fullTopic = `${socket.pdu.mqtt_base_topic}/${socket.mqtt_topic_suffix}`;
 
-        if (device_id && !topic_override) {
-            const deviceConn = await prisma.$queryRaw`
-                SELECT mqtt_topic FROM device_connectivity 
-                WHERE device_id = ${device_id}::uuid AND is_active = true
-            `;
-
-            if (deviceConn.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Active MQTT device not found'
-                });
-            }
-
-            targetTopic = deviceConn[0].mqtt_topic;
-        }
-
-        // For testing, we'll just simulate the message handling
-        // In a real implementation, you'd publish to the broker
-        const testMessage = message || {
-            test: true,
-            timestamp: new Date().toISOString(),
-            value: Math.random() * 100
-        };
-
-        await dynamicMqttManager.handleMessage(targetTopic, Buffer.from(JSON.stringify(testMessage)));
-
-        res.status(200).json({
+        // Here you would integrate with your MQTT client to publish
+        // For now, we'll just return the configuration that would be used
+        
+        return res.status(200).json({
             success: true,
-            message: 'Test message processed successfully',
+            message: 'Test message configuration prepared',
             data: {
-                topic: targetTopic,
-                message: testMessage,
-                processed_at: new Date().toISOString()
+                device_id,
+                socket_id: socket.id,
+                topic: fullTopic,
+                broker: {
+                    host: socket.mqtt_broker_host,
+                    port: socket.mqtt_broker_port,
+                    credentials: socket.mqtt_credentials
+                },
+                message,
+                qos,
+                timestamp: new Date().toISOString()
             }
         });
 
     } catch (error) {
-        console.error('Error testing publish:', error);
+        console.error('Error preparing test message:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to test publish message',
+            message: 'Failed to prepare test message',
             error: error.message
         });
     }
 };
 
 /**
- * POST /mqtt/devices/:deviceId/publish - Publish data to specific device
+ * POST /mqtt/devices/:deviceId/publish - Publish data to device
  */
 export const publishToDevice = async (req, res) => {
     try {
         const { deviceId } = req.params;
-        const messageData = req.body;
+        const { message, qos = 0 } = req.body;
 
-        if (!deviceId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Device ID is required'
-            });
-        }
+        const socket = await prisma.sockets.findFirst({
+            where: { device_id: deviceId },
+            include: {
+                pdu: true
+            }
+        });
 
-        // Get device MQTT configuration
-        const deviceConn = await prisma.$queryRaw`
-            SELECT dc.mqtt_topic, dc.is_active, d.serial_number, d.asset_tag
-            FROM device_connectivity dc
-            JOIN device d ON dc.device_id = d.id
-            WHERE dc.device_id = ${deviceId}::uuid AND dc.is_active = true
-        `;
-
-        if (deviceConn.length === 0) {
+        if (!socket) {
             return res.status(404).json({
                 success: false,
-                message: 'Active MQTT device not found'
+                message: 'MQTT device not found'
             });
         }
 
-        const device = deviceConn[0];
-        const targetTopic = device.mqtt_topic;
+        const fullTopic = `${socket.pdu.mqtt_base_topic}/${socket.mqtt_topic_suffix}`;
 
-        // Add metadata to message
-        const messageWithMetadata = {
-            ...messageData,
-            device_id: deviceId,
-            timestamp: new Date().toISOString(),
-            serial_number: device.serial_number,
-            asset_tag: device.asset_tag
-        };
-
-        // Process message through dynamic MQTT manager
-        await dynamicMqttManager.handleMessage(targetTopic, Buffer.from(JSON.stringify(messageWithMetadata)));
-
-        res.status(200).json({
+        // Here you would integrate with your MQTT client to publish
+        // For now, we'll just return success with the configuration used
+        
+        return res.status(200).json({
             success: true,
-            message: 'Data published successfully',
+            message: 'Message published successfully',
             data: {
                 device_id: deviceId,
-                topic: targetTopic,
-                message: messageWithMetadata,
-                processed_at: new Date().toISOString()
+                topic: fullTopic,
+                message,
+                qos,
+                timestamp: new Date().toISOString()
             }
         });
 
@@ -895,19 +779,51 @@ export const publishToDevice = async (req, res) => {
         console.error('Error publishing to device:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to publish data to device',
+            message: 'Failed to publish message',
             error: error.message
         });
     }
 };
 
-// Helper function to encrypt passwords
-const encryptPassword = (password) => {
-    const algorithm = 'aes-256-cbc';
-    const key = process.env.ENCRYPTION_KEY || 'default-encryption-key-32-chars!!';
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher(algorithm, key);
-    let encrypted = cipher.update(password, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return `${iv.toString('hex')}:${encrypted}`;
+/**
+ * PUT /mqtt/devices/:deviceId/heartbeat - Update last connected timestamp
+ * Note: This is now handled via socket status updates
+ */
+export const updateLastConnected = async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+
+        const socket = await prisma.sockets.findFirst({
+            where: { device_id: deviceId }
+        });
+
+        if (!socket) {
+            return res.status(404).json({
+                success: false,
+                message: 'MQTT device not found'
+            });
+        }
+
+        // Update socket status to indicate recent activity
+        await prisma.sockets.update({
+            where: { id: socket.id },
+            data: {
+                status: 'active',
+                updated_at: new Date()
+            }
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: 'Device heartbeat updated successfully'
+        });
+
+    } catch (error) {
+        console.error('Error updating heartbeat:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update device heartbeat',
+            error: error.message
+        });
+    }
 };

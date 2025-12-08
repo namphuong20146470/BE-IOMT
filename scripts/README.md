@@ -7,24 +7,30 @@ Essential utility scripts for managing the IoMT backend system.
 ### 🚀 Setup & Installation
 - **`setup-simple.js`** - Main system setup (users, roles, permissions, organizations)
 - **`reset-system.js`** - Complete system reset utility
+- **`run-pdu-migration.js`** - Migration script for PDU system
 
-### 📊 System Monitoring
-- **`check-system-status.js`** - Health check and system validation
+### 📊 Database & Monitoring
+- **`check-db-status.js`** - Database connectivity and status check
 
-### 🔍 Database Utilities
-- **`database/verify-schema.js`** - Schema validation and integrity check
+### 🔧 MQTT Configuration
+- **`update-mqtt-topics.js`** - Update MQTT topics for PDUs
+- **`check-mqtt-topics.js`** - Validate MQTT topic configuration
+- **`check-mqtt-configuration.js`** - Complete MQTT setup validation
 
 ## 🎯 Quick Commands
 
 ```bash
 # Complete system setup
-npm run setup
+node scripts/setup-simple.js
 
-# Check system health
-npm run system:status
+# Check database status
+node scripts/check-db-status.js
+
+# Validate MQTT configuration
+node scripts/check-mqtt-configuration.js
 
 # Reset system (DANGER!)
-npm run setup:reset
+node scripts/reset-system.js
 ```
 
 ## 📖 Script Details

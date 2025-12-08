@@ -13,8 +13,7 @@ import swaggerUI from 'swagger-ui-express';
 import YAML from 'yaml';
 import fs from 'fs';
 
-// Swagger Security Middleware
-import { swaggerSecurityMiddleware } from './middleware/swaggerSecurity.js';
+// No longer need custom security - using Swagger built-in auth
 
 // ==========================================
 // 🏗️ FEATURE-BASED ARCHITECTURE ROUTES
@@ -30,13 +29,14 @@ import { swaggerSecurityMiddleware } from './middleware/swaggerSecurity.js';
 import deviceDataRoutes from './features/devices/deviceData.routes.js';
 
 // Legacy routes (to be migrated to features)
-import masterDataRoutes from './routes/masterDataRoutes.js';
 import mqttRoutes from './routes/mqttRoutes.js';
 
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
 // New Dynamic MQTT system (parallel)
 import './Database/mqtt.dynamic.js';
+// Socket-based MQTT system (for PDU sockets)
+import socketMQTTClient from './features/mqtt/socket-mqtt-client.js';
 import { configureSSL } from './config/ssl.js';
 
 
@@ -120,51 +120,29 @@ app.options('*', cors(corsOptions));
 const file = fs.readFileSync('./swagger.yaml', 'utf8');
 const swaggerDocument = YAML.parse(file);
 
-// 🔐 Swagger UI với đầy đủ bảo mật 
-// Route: /secure-api-docs (thay vì /api-docs để tránh bị scan)
-app.use('/secure-api-docs', 
-    ...swaggerSecurityMiddleware,  // Áp dụng tất cả middleware bảo mật
+// 📚 Swagger UI - Simple Setup with Built-in Security
+app.use('/api-docs', 
     swaggerUI.serve, 
     swaggerUI.setup(swaggerDocument, {
         customCss: `
             .swagger-ui .topbar { display: none !important; }
-            .swagger-ui .info .title { color: #d32f2f !important; }
-            .swagger-ui .info .title:before { 
-                content: "🔒 RESTRICTED ACCESS - "; 
-                color: #d32f2f !important; 
-                font-weight: bold; 
-            }
-            .swagger-ui .info .description { 
-                border: 2px solid #d32f2f !important; 
-                padding: 15px !important; 
-                background-color: #ffebee !important; 
-                border-radius: 8px !important; 
-                margin: 10px 0 !important;
-            }
+            .swagger-ui .info .title { color: #1976d2 !important; }
         `,
-        customSiteTitle: '🔒 IoMT API Documentation - Restricted Access',
-        customfavIcon: '/favicon-secure.ico',
+        customSiteTitle: '📚 IoMT API Documentation',
         swaggerOptions: {
-            persistAuthorization: false, // Không lưu token trong localStorage
+            persistAuthorization: true, // Lưu token trong localStorage để tiện dùng
             displayRequestDuration: true,
-            docExpansion: 'none', // Đóng tất cả sections mặc định
-            defaultModelsExpandDepth: 1,
-            defaultModelExpandDepth: 1,
+            docExpansion: 'list',
+            defaultModelsExpandDepth: 2,
+            defaultModelExpandDepth: 2,
             showCommonExtensions: true,
-            showExtensions: true
+            showExtensions: true,
+            tryItOutEnabled: true
         }
     })
 );
 
-// 🚫 Redirect old /api-docs để tránh confusion 
-app.get('/api-docs*', (req, res) => {
-    res.status(301).json({
-        success: false,
-        message: 'API Documentation has been moved for security reasons',
-        code: 'DOCS_MOVED',
-        hint: 'Contact administrator for new documentation URL'
-    });
-});
+// API docs now available at /api-docs with Swagger built-in auth
 // ==========================================
 // 🚀 FEATURE-BASED ROUTES
 // ==========================================
@@ -179,15 +157,14 @@ app.use('/dashboards', dashboardRoutes);
 import apiRoutes from './routes/index.js';
 app.use('/api/v1', apiRoutes);
 
-// Master Data & Device Data (legacy)
-app.use('/', deviceDataRoutes, masterDataRoutes);
+//Device Data API
+app.use('/api/v1', deviceDataRoutes);
 
 // ==========================================
 // 🔄 LEGACY ROUTES (To be migrated)  
 // ==========================================
 
-// MQTT Device Management
-app.use('/mqtt', mqttRoutes);
+// MQTT routes moved to /api/v1/mqtt
 
 // SSL Configuration
 const { options, useHttps } = configureSSL();
@@ -253,6 +230,28 @@ if (process.env.NODE_ENV !== 'test') {
         global.io = io;
         
         console.log('✅ Socket.IO initialized successfully');
+        
+        // ==================== INITIALIZE SOCKET-BASED MQTT CLIENT ====================
+        setTimeout(async () => {
+            try {
+                console.log('🚀 Initializing Socket-based MQTT Client...');
+                
+                // Add error handler to prevent crashes
+                socketMQTTClient.on('error', (errorData) => {
+                    console.error('🚨 Socket MQTT Error:', {
+                        socketId: errorData.socketId,
+                        socketNumber: errorData.socket?.socket_number,
+                        error: errorData.error.message,
+                        code: errorData.error.code
+                    });
+                });
+
+                await socketMQTTClient.initializeAll();
+                console.log('✅ Socket-based MQTT Client initialized successfully');
+            } catch (error) {
+                console.error('❌ Error initializing Socket MQTT Client:', error);
+            }
+        }, 3000); // Wait 3s for server to be fully ready
     }
 }
 

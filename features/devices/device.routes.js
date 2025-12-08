@@ -42,16 +42,7 @@ import {
     assignDeviceToDepartment
 } from './device.controller.js';
 
-// Device Connectivity Controllers
-import {
-    getDeviceConnectivity,
-    getAllDeviceConnectivities,
-    createDeviceConnectivity,
-    updateDeviceConnectivity,
-    updateLastConnected,
-    deleteDeviceConnectivity,
-    getConnectivityStatistics
-} from './deviceConnectivity.controller.js';
+// Note: Device Connectivity functionality has been migrated to socket-based MQTT architecture
 
 // Warranty Controllers
 import {
@@ -195,29 +186,10 @@ router.get('/:id/summary',
 );
 
 // ====================================================================
-// DEVICE CONNECTIVITY ROUTES
+// SOCKET-BASED MQTT ROUTES (Replaced Device Connectivity)
 // ====================================================================
-
-// GET /device-connectivity - Get all device connectivities with filtering
-router.get('/device-connectivity', getAllDeviceConnectivities);
-
-// GET /device-connectivity/statistics - Get connectivity statistics
-router.get('/device-connectivity/statistics', getConnectivityStatistics);
-
-// GET /device-connectivity/device/:deviceId - Get connectivity by device ID
-router.get('/device-connectivity/device/:deviceId', getDeviceConnectivity);
-
-// POST /device-connectivity - Create device connectivity
-router.post('/device-connectivity', authMiddleware, createDeviceConnectivity);
-
-// PUT /device-connectivity/:id - Update device connectivity
-router.put('/device-connectivity/:id', authMiddleware, updateDeviceConnectivity);
-
-// PUT /device-connectivity/device/:deviceId/heartbeat - Update last connected
-router.put('/device-connectivity/device/:deviceId/heartbeat', updateLastConnected);
-
-// DELETE /device-connectivity/:id - Delete device connectivity
-router.delete('/device-connectivity/:id', authMiddleware, deleteDeviceConnectivity);
+// Note: Device connectivity is now managed through socket-based MQTT architecture
+// See /api/sockets and /api/mqtt endpoints for MQTT configuration and management
 
 // ====================================================================
 // WARRANTY ROUTES

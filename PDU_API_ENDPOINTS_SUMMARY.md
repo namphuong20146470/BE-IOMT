@@ -1,176 +1,194 @@
-# PDU Management System - API Endpoints Summary
+# 📚 PDU Management System - Complete API Documentation
 
-## Base URL
+> **Version**: 1.0.0  
+> **Last Updated**: December 2025  
+> **Environment**: Development
+
+## 🚀 Quick Start
+
+### Base URL
 ```
-http://localhost:3000
+Development: http://localhost:3000
+Production: https://your-production-url.com
 ```
 
-## Authentication
-Tất cả endpoints yêu cầu Bearer token trong header:
+### Authentication
+All API endpoints require authentication using Bearer token:
+
+```bash
+Authorization: Bearer <your_jwt_token>
 ```
-Authorization: Bearer <token>
+
+**Getting Started:**
+1. Login to obtain JWT token: `POST /api/auth/login`
+2. Include token in all subsequent requests
+3. Token expires after 24 hours (configurable)
+
+### API Versioning
+All endpoints use `/api/v1` prefix for version 1:
+```
+/api/v1/pdus
+/api/v1/sockets  
+/api/v1/device-assignment
 ```
 
 ---
 
 ## 📋 PDU ENDPOINTS
 
-### 1. GET /pdus
-**Lấy danh sách tất cả PDUs với filter và pagination**
+### 1. GET /api/v1/pdus
+**Retrieve all PDUs**
+
+**Description**: Get a list of Power Distribution Units (PDUs) with basic information including associated sockets.
 
 **Query Parameters:**
-- `page` (number, default: 1) - Số trang
-- `limit` (number, default: 20, max: 100) - Số item mỗi trang  
-- `organization_id` (uuid, optional) - Filter theo organization
-- `department_id` (uuid, optional) - Filter theo department
-- `type` (enum, optional) - Filter theo loại PDU: `cart`, `wall_mount`, `floor_stand`, `ceiling`, `rack`, `extension`
-- `status` (enum, optional) - Filter theo trạng thái: `active`, `inactive`, `maintenance`
-- `location` (string, optional) - Filter theo địa điểm
-- `search` (string, optional) - Tìm kiếm theo tên hoặc mã
-- `sort_by` (enum, default: name) - Sắp xếp: `name`, `code`, `type`, `created_at`, `updated_at`
-- `sort_order` (enum, default: asc) - Thứ tự: `asc`, `desc`
-- `include_stats` (boolean, optional) - Bao gồm thống kê
+- `page` (number, default: 1) - Page number for pagination
+- `limit` (number, default: 20, max: 100) - Items per page  
+- `organization_id` (uuid, optional) - Filter by organization ID
+- `department_id` (uuid, optional) - Filter by department ID
+- `type` (enum, optional) - PDU type: `cart`, `wall_mount`, `floor_stand`, `ceiling`, `rack`, `extension`
+- `status` (enum, optional) - PDU status: `active`, `inactive`, `maintenance`
+- `location` (string, optional) - Filter by location/room
+- `search` (string, optional) - Search by name, code, or serial number
+- `sort_by` (enum, default: name) - Sort field: `name`, `code`, `type`, `created_at`, `updated_at`
+- `sort_order` (enum, default: asc) - Sort direction: `asc`, `desc`
+- `include_stats` (boolean, optional) - Include outlet usage statistics
 
 **Permissions:** `pdu_view`, `system.admin`
 
-### 2. GET /pdus/statistics
-**Lấy thống kê PDU**
 
-**Query Parameters:**
-- `organization_id` (uuid, optional)
-- `department_id` (uuid, optional) 
-- `date_from` (datetime, optional)
-- `date_to` (datetime, optional)
 
-**Permissions:** `device.read`, `device.manage`, `system.admin`
+### 2. GET /api/v1/pdus/{id}
+**Get detailed PDU information by ID**
 
-### 3. GET /pdus/{id}
-**Lấy thông tin chi tiết PDU theo ID**
+**Description**: Retrieve complete PDU details including specifications, socket configuration, current status, and associated devices.
 
 **Path Parameters:**
-- `id` (uuid, required) - PDU ID
+- `id` (uuid, required) - PDU unique identifier
+
+**Query Parameters:**
+- `include_sockets` (boolean, default: false) - Include all socket details
+- `include_devices` (boolean, default: false) - Include connected device information
 
 **Permissions:** `device.read`, `device.manage`, `system.admin`
 
-### 4. POST /pdus
-**Tạo PDU mới**
+### 3. POST /api/v1/pdus
+**Create a new PDU**
+
+**Description**: Register a new Power Distribution Unit in the system. Automatically creates associated sockets based on `total_sockets` parameter.
 
 **Request Body:**
 ```json
 {
-  "name": "PDU-Floor-1",
-  "code": "PDU001", 
-  "type": "cart",
-  "organization_id": "uuid",
-  "department_id": "uuid", // optional
-  "total_outlets": 8,
+  "name": "PDU-ServerRoom-A1",
+  "code": "PDU-001", 
+  "type": "rack",
+  "organization_id": "550e8400-e29b-41d4-a716-446655440000",
+  "department_id": "550e8400-e29b-41d4-a716-446655440001",
+  "total_sockets": 8,
   "voltage_rating": 220,
-  "max_power_watts": 3520, // optional
-  "location": "Server Room A", // optional
-  "floor": "1", // optional
-  "building": "Building A", // optional
-  "description": "Main PDU for server rack", // optional
-  "mqtt_base_topic": "/pdu/floor1", // optional
-  "manufacturer": "APC", // optional
-  "model_number": "AP7900", // optional
-  "serial_number": "SN123456", // optional
-  "is_mobile": true, // optional
-  "specifications": {} // optional
+  "max_power_watts": 3520,
+  "location": "Server Room A - Rack 1",
+  "floor": "1",
+  "building": "Data Center Building A",
+  "description": "Primary PDU for server rack infrastructure",
+  "mqtt_base_topic": "/datacenter/floor1/rack1",
+  "manufacturer": "APC",
+  "model_number": "AP7900",
+  "serial_number": "SN-PDU-001-2024",
+  "is_mobile": false,
+  "specifications": {
+    "input_voltage_range": "200-240V",
+    "frequency": "50/60Hz",
+    "form_factor": "1U",
+    "mounting": "rack"
+  }
 }
 ```
 
+**Validation Rules:**
+- `name`: Required, 3-100 characters
+- `code`: Required, unique within organization
+- `total_sockets`: Required, 1-48 sockets
+- `voltage_rating`: Required, common values: 110, 220, 380
+- `type`: Must be valid enum value
+
 **Permissions:** `device.create`, `device.manage`, `system.admin`
 
-### 5. PUT /pdus/{id}
-**Cập nhật PDU**
+### 4. PUT /api/v1/pdus/{id}
+**Update existing PDU**
+
+**Description**: Update PDU configuration and properties. Cannot modify `total_sockets` after creation - use socket management endpoints instead.
 
 **Path Parameters:**
-- `id` (uuid, required)
+- `id` (uuid, required) - PDU unique identifier
 
-**Request Body:** Tương tự POST nhưng tất cả field đều optional
+**Request Body:** Same as POST but all fields optional (partial update supported)
+
+**Note**: Updating critical fields like `voltage_rating` will trigger safety checks and may require confirmation.
 
 **Permissions:** `device.update`, `device.manage`, `system.admin`
 
-### 6. DELETE /pdus/{id}  
-**Xóa PDU**
+### 5. DELETE /api/v1/pdus/{id}
+**Delete PDU and associated sockets**
+
+**Description**: Permanently remove PDU from system. All connected devices must be unassigned first. This action cannot be undone.
 
 **Path Parameters:**
-- `id` (uuid, required)
+- `id` (uuid, required) - PDU unique identifier
+
+**Pre-conditions:**
+- No devices assigned to any sockets
+- PDU status must be `inactive`
+- User must have deletion permissions
+
+**Safety**: Returns 409 Conflict if PDU has active assignments
 
 **Permissions:** `device.delete`, `device.manage`, `system.admin`
 
-### 7. GET /pdus/{id}/outlets
-**Lấy danh sách outlets của PDU**
+### 6. GET /api/v1/pdus/{id}/sockets
+**Get all sockets for specific PDU**
+
+**Description**: Retrieve complete socket configuration for a PDU including assignment status and device information.
 
 **Path Parameters:**
-- `id` (uuid, required) - PDU ID
+- `id` (uuid, required) - PDU unique identifier
 
 **Query Parameters:**
-- `include_device` (boolean, default: false) - Bao gồm thông tin device
-- `include_data` (boolean, default: false) - Bao gồm dữ liệu power
-- `status` (enum, optional) - Filter: `active`, `idle`, `error`, `inactive`
+- `include_device` (boolean, default: false) - Include connected device details
 
 **Permissions:** `device.read`, `device.manage`, `system.admin`
 
 ---
 
-## 🔌 OUTLET ENDPOINTS
+## 🔌 SOCKET ENDPOINTS
 
-### 1. GET /outlets
-**Lấy danh sách outlets với filter và pagination**
+### 1. GET /api/v1/sockets
+**Get all sockets**
+
+**Description**: Retrieve all sockets with basic information.
 
 **Query Parameters:**
-- `page`, `limit`, `sort_by`, `sort_order` - Giống PDU
-- `pdu_id` (uuid, optional) - Filter theo PDU
-- `organization_id` (uuid, optional)
-- `department_id` (uuid, optional)
-- `status` (enum, optional) - `active`, `idle`, `error`, `inactive`
-- `assigned` (boolean, optional) - Filter theo trạng thái gán device
-- `search` (string, optional)
-- `include_device` (boolean, default: false)
-- `include_data` (boolean, default: false)
+- `pdu_id` (uuid, optional) - Filter by PDU
+- `include_device` (boolean, default: false) - Include device details
 
 **Permissions:** `device.read`, `device.manage`, `system.admin`
 
-### 2. GET /outlets/available  
-**Lấy danh sách outlets có thể gán device**
-
-**Query Parameters:**
-- `organization_id` (uuid, optional)
-- `department_id` (uuid, optional)
-
-**Permissions:** `device.read`, `device.manage`, `system.admin`
-
-### 3. GET /outlets/{id}
-**Lấy thông tin chi tiết outlet**
+### 2. GET /api/v1/sockets/{id}
+**Get socket details**
 
 **Path Parameters:**
 - `id` (uuid, required)
 
 **Query Parameters:**
-- `include_device` (boolean, default: false)
-- `include_data` (boolean, default: false) 
-- `include_history` (boolean, default: false)
+- `include_device` (boolean, default: false) - Include device details
 
 **Permissions:** `device.read`, `device.manage`, `system.admin`
 
-### 4. GET /outlets/{id}/data
-**Lấy dữ liệu power và metrics của outlet**
 
-**Path Parameters:**
-- `id` (uuid, required)
 
-**Query Parameters:**
-- `date_from` (datetime, optional)
-- `date_to` (datetime, optional)
-- `interval` (enum, default: hour) - `minute`, `hour`, `day`
-- `metrics` (string, optional) - Comma-separated: `power,voltage,current`
-- `limit` (number, default: 100, max: 1000)
-
-**Permissions:** `device.monitor`, `device.manage`, `system.admin`
-
-### 5. PUT /outlets/{id}
-**Cập nhật cấu hình outlet**
+### 3. PUT /api/v1/sockets/{id}
+**Update socket configuration**
 
 **Path Parameters:**
 - `id` (uuid, required)
@@ -178,322 +196,217 @@ Authorization: Bearer <token>
 **Request Body:**
 ```json
 {
-  "name": "Server Outlet 1", // optional
-  "is_enabled": true, // optional
-  "max_power_watts": 500, // optional
-  "voltage_rating": 220, // optional
-  "connector_type": "IEC C13", // optional
-  "notes": "Updated configuration", // optional
-  "mqtt_topic_suffix": "outlet_1" // optional
+  "name": "Server Socket 1", // optional
+  "mqtt_topic_suffix": "socket1" // optional
 }
 ```
 
 **Permissions:** `device.update`, `device.configure`, `system.admin`
 
-### 6. POST /outlets/{id}/assign
-**Gán device vào outlet**
+### 4. POST /api/v1/sockets/{id}/assign
+**Assign device to socket**
 
 **Path Parameters:**
-- `id` (uuid, required) - Outlet ID
+- `id` (uuid, required) - Socket ID
 
 **Request Body:**
 ```json
 {
-  "device_id": "uuid",
-  "notes": "Assignment notes" // optional
-}
-```
-
-**Permissions:** `device.manage`, `system.admin`
-
-### 7. POST /outlets/{id}/unassign
-**Bỏ gán device khỏi outlet**
-
-**Path Parameters:**
-- `id` (uuid, required) - Outlet ID
-
-**Request Body:**
-```json
-{
-  "notes": "Unassignment reason" // optional
-}
-```
-
-**Permissions:** `device.manage`, `system.admin`
-
-### 8. POST /outlets/transfer
-**Chuyển device giữa các outlets**
-
-**Request Body:**
-```json
-{
-  "from_outlet_id": "uuid",
-  "to_outlet_id": "uuid", 
-  "notes": "Transfer reason" // optional
-}
-```
-
-**Permissions:** `device.manage`, `system.admin`
-
-### 9. POST /outlets/bulk-assign
-**Gán nhiều devices cùng lúc**
-
-**Request Body:**
-```json
-{
-  "assignments": [
-    {
-      "outlet_id": "uuid",
-      "device_id": "uuid",
-      "notes": "Assignment 1" // optional
-    },
-    {
-      "outlet_id": "uuid", 
-      "device_id": "uuid",
-      "notes": "Assignment 2" // optional
-    }
-  ]
-}
-```
-
-**Permissions:** `device.manage`, `system.admin`
-
-### 10. GET /outlets/{id}/history
-**Lấy lịch sử gán device của outlet**
-
-**Path Parameters:**
-- `id` (uuid, required)
-
-**Permissions:** `device.read`, `device.manage`, `system.admin`
-
-### 11. POST /outlets/{id}/control
-**Điều khiển outlet (bật/tắt/reset)**
-
-**Path Parameters:**
-- `id` (uuid, required)
-
-**Request Body:**
-```json
-{
-  "action": "turn_on", // turn_on, turn_off, reset, toggle
-  "force": false // optional, default: false
-}
-```
-
-**Permissions:** `device.configure`, `device.manage`, `system.admin`
-
----
-
-## 🔄 DEVICE ASSIGNMENT ENDPOINTS
-
-### 1. POST /device-assignment/validate
-**Kiểm tra tính hợp lệ của việc gán device-outlet**
-
-**Request Body:**
-```json
-{
-  "outlet_id": "uuid",
   "device_id": "uuid"
 }
 ```
+
+**Permissions:** `device.manage`, `system.admin`
+
+### 5. POST /api/v1/sockets/{id}/unassign
+**Unassign device from socket**
+
+**Path Parameters:**
+- `id` (uuid, required) - Socket ID
+
+**Permissions:** `device.manage`, `system.admin`
+
+
+
+---
+
+## 🔧 DEVICE MANAGEMENT ENDPOINTS
+
+### 1. PUT /api/v1/devices/{id}
+**Update device information including status**
+
+**Description**: Update device properties including status, location, and other metadata.
+
+**Path Parameters:**
+- `id` (uuid, required) - Device unique identifier
+
+**Request Body:**
+```json
+{
+  "status": "maintenance", // optional: active, inactive, maintenance, decommissioned
+  "serial_number": "DEV-001", // optional
+  "asset_tag": "ASSET-001", // optional  
+  "purchase_date": "2024-01-15", // optional
+  "installation_date": "2024-01-20", // optional
+  "model_id": "uuid", // optional
+  "organization_id": "uuid", // optional
+  "department_id": "uuid" // optional
+}
+```
+
+**Status Values:**
+- `active` - Device is operational and in use
+- `inactive` - Device is not currently in use
+- `maintenance` - Device is under maintenance
+- `decommissioned` - Device is retired/disposed
+
+**Permissions:** `device.update`, `device.manage`, `system.admin`
 
 **Response:**
 ```json
 {
   "success": true,
-  "valid": true,
-  "errors": [],
-  "warnings": ["Device warranty has expired"],
-  "outlet_info": {
-    "id": "uuid",
-    "outlet_number": 1,
-    "pdu_name": "PDU-001",
-    "location": "Server Room A"
-  },
-  "device_info": {
-    "id": "uuid", 
-    "serial_number": "DEV001",
-    "model": "Server Model X",
-    "status": "active"
-  }
-}
-```
-
-**Permissions:** `device_manage`, `outlet_view`, `system.admin`
-
-### 2. POST /device-assignment/validate-bulk
-**Kiểm tra tính hợp lệ của nhiều assignments**
-
-**Request Body:**
-```json
-{
-  "assignments": [
-    {
-      "outlet_id": "uuid",
-      "device_id": "uuid"
-    }
-  ]
-}
-```
-
-**Permissions:** `device.manage`, `device.read`, `system.admin`
-
-### 3. POST /device-assignment/validate-transfer
-**Kiểm tra tính hợp lệ của việc chuyển device**
-
-**Request Body:**
-```json
-{
-  "from_outlet_id": "uuid",
-  "to_outlet_id": "uuid"
-}
-```
-
-**Permissions:** `device_manage`, `system.admin`
-
-### 4. GET /device-assignment/available
-**Lấy danh sách devices hoặc outlets có thể gán**
-
-**Query Parameters:**
-- `organization_id` (uuid, optional)
-- `department_id` (uuid, optional)
-- `resource_type` (enum, default: devices) - `devices`, `outlets`
-
-**Permissions:** `device.manage`, `device.read`, `system.admin`
-
-### 5. GET /device-assignment/history/{id}
-**Lấy lịch sử gán device hoặc outlet**
-
-**Path Parameters:**
-- `id` (uuid, required) - Device ID hoặc Outlet ID
-
-**Query Parameters:**
-- `resource_type` (enum, default: device) - `device`, `outlet`
-- `limit` (number, default: 50, max: 100)
-
-**Permissions:** `device.read`, `system.admin`
-
-### 6. POST /device-assignment/check-conflicts
-**Kiểm tra xung đột assignment real-time**
-
-**Request Body:**
-```json
-{
-  "outlet_id": "uuid",
-  "device_id": "uuid"
-}
-```
-
-**Permissions:** `device.manage`, `device.read`, `system.admin`
-
-### 7. GET /device-assignment/summary
-**Lấy tóm tắt thống kê assignment**
-
-**Query Parameters:**
-- `organization_id` (uuid, optional)
-- `department_id` (uuid, optional)
-
-**Permissions:** `device.read`, `system.admin`
-
----
-
-## 🔧 WEBSOCKET REAL-TIME
-
-### WebSocket Connection
-```
-ws://localhost:8080
-```
-
-### Subscription Messages
-**Đăng ký nhận updates của outlet:**
-```json
-{
-  "type": "subscribe_outlet",
-  "outlet_id": "uuid"
-}
-```
-
-**Đăng ký nhận updates của PDU:**
-```json
-{
-  "type": "subscribe_pdu", 
-  "pdu_id": "uuid"
-}
-```
-
-### Real-time Data Messages
-**Outlet power update:**
-```json
-{
-  "type": "outlet_data",
-  "outlet_id": "uuid",
   "data": {
-    "power": 450.5,
-    "voltage": 220.1,
-    "current": 2.05,
-    "status": "active",
-    "timestamp": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
-**Device assignment update:**
-```json
-{
-  "type": "device_assigned",
-  "outlet_id": "uuid", 
-  "device_id": "uuid",
-  "device_serial": "DEV001",
-  "timestamp": "2024-01-15T10:30:00Z"
+    "id": "uuid",
+    "status": "maintenance",
+    "updated_at": "2024-12-04T10:30:00Z"
+  },
+  "message": "Device updated successfully"
 }
 ```
 
 ---
 
-## 📊 RESPONSE FORMATS
+## 🔄 DEVICE ASSIGNMENT
 
-### Success Response
+### Assign Device to Socket
+Use the socket assignment endpoint: `POST /api/v1/sockets/{socket_id}/assign`
+
+### Unassign Device from Socket  
+Use the socket unassignment endpoint: `POST /api/v1/sockets/{socket_id}/unassign`
+
+---
+
+
+
+---
+
+## 📊 RESPONSE FORMATS & ERROR HANDLING
+
+### Success Response Structure
 ```json
 {
   "success": true,
-  "data": { /* response data */ },
-  "message": "Operation completed successfully",
-  "pagination": { // if applicable
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "PDU-ServerRoom-A1",
+    "code": "PDU-001",
+    "status": "active",
+    "created_at": "2024-12-01T10:30:00Z"
+  },
+  "message": "PDU retrieved successfully",
+  "timestamp": "2024-12-01T10:30:00Z",
+  "pagination": {
     "current_page": 1,
     "total_pages": 5,
     "total_items": 100,
-    "per_page": 20
+    "per_page": 20,
+    "has_next": true,
+    "has_prev": false
   }
 }
 ```
 
-### Error Response
-```json
-{
-  "success": false,
-  "message": "Error message",
-  "errors": [
-    {
-      "field": "device_id",
-      "message": "Invalid device ID format",
-      "received": "invalid-uuid"
-    }
-  ]
-}
-```
+### HTTP Status Codes
+| Code | Description | Usage |
+|------|-------------|-------|
+| 200 | OK | Successful GET, PUT requests |
+| 201 | Created | Successful POST requests |
+| 204 | No Content | Successful DELETE requests |
+| 400 | Bad Request | Invalid request data, validation errors |
+| 401 | Unauthorized | Missing or invalid authentication token |
+| 403 | Forbidden | Insufficient permissions for operation |
+| 404 | Not Found | Resource does not exist |
+| 409 | Conflict | Resource conflict (e.g., duplicate code) |
+| 422 | Unprocessable Entity | Business logic validation failed |
+| 500 | Internal Server Error | Unexpected server error |
 
-### Validation Error
+### Error Response Examples
+
+**Validation Error (400)**
 ```json
 {
   "success": false,
   "message": "Validation failed",
+  "error_code": "VALIDATION_ERROR",
   "errors": [
     {
-      "field": "outlet_count",
+      "field": "total_outlets",
       "message": "Outlet count must be between 1 and 48",
-      "received": 0
+      "received": 0,
+      "expected": "integer between 1 and 48"
+    },
+    {
+      "field": "voltage_rating",
+      "message": "Invalid voltage rating",
+      "received": "abc",
+      "expected": "number (110, 220, 380)"
     }
-  ]
+  ],
+  "timestamp": "2024-12-01T10:30:00Z"
+}
+```
+
+**Authentication Error (401)**
+```json
+{
+  "success": false,
+  "message": "Authentication required",
+  "error_code": "UNAUTHORIZED",
+  "details": "Bearer token is missing or invalid",
+  "timestamp": "2024-12-01T10:30:00Z"
+}
+```
+
+**Permission Error (403)**
+```json
+{
+  "success": false,
+  "message": "Insufficient permissions",
+  "error_code": "FORBIDDEN",
+  "required_permissions": ["device.manage", "system.admin"],
+  "user_permissions": ["device.read"],
+  "timestamp": "2024-12-01T10:30:00Z"
+}
+```
+
+**Resource Not Found (404)**
+```json
+{
+  "success": false,
+  "message": "PDU not found",
+  "error_code": "RESOURCE_NOT_FOUND",
+  "resource_type": "PDU",
+  "resource_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-12-01T10:30:00Z"
+}
+```
+
+**Business Logic Error (422)**
+```json
+{
+  "success": false,
+  "message": "Cannot delete PDU with active assignments",
+  "error_code": "BUSINESS_RULE_VIOLATION",
+  "details": {
+    "active_sockets": 3,
+    "assigned_devices": [
+      {"socket_id": "uuid1", "device_serial": "DEV001"},
+      {"socket_id": "uuid2", "device_serial": "DEV002"}
+    ]
+  },
+  "suggested_action": "Unassign all devices before deletion",
+  "timestamp": "2024-12-01T10:30:00Z"
 }
 ```
 
@@ -504,55 +417,122 @@ ws://localhost:8080
 | Endpoint Group | Required Permissions |
 |---------------|---------------------|
 | PDU Management | `device.create`, `device.read`, `device.update`, `device.delete`, `device.list`, `device.manage`, `system.admin` |
-| Outlet Management | `device.read`, `device.update`, `device.configure`, `device.monitor`, `device.manage`, `system.admin` |  
+| Socket Management | `device.read`, `device.update`, `device.configure`, `device.manage`, `system.admin` |  
 | Device Assignment | `device.manage`, `device.read`, `system.admin` |
-| Real-time Data | `device.read`, `device.monitor`, `system.admin` |
 
 ---
 
-## 📈 USAGE EXAMPLES
+## 🚀 INTEGRATION GUIDE & EXAMPLES
 
-### Tạo PDU với outlets
+### SDK & Client Libraries
+- **JavaScript/Node.js**: Use `axios` or `fetch` for HTTP requests
+- **Python**: Use `requests` library
+- **C#/.NET**: Use `HttpClient`
+- **Java**: Use `OkHttp` or Spring WebClient
+- **Postman Collection**: Available for testing and development
+
+### Authentication Setup
+```javascript
+// JavaScript/Node.js Example
+const API_BASE_URL = 'http://localhost:3000/api/v1';
+const authToken = 'your-jwt-token';
+
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Authorization': `Bearer ${authToken}`,
+    'Content-Type': 'application/json'
+  }
+});
+```
+
+### Common Integration Patterns
+
+#### 1. Creating PDU with Auto-Generated Sockets
 ```bash
-curl -X POST http://localhost:3000/api/pdus \
+curl -X POST http://localhost:3000/api/v1/pdus \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Server Rack PDU",
-    "code": "PDU-SR-01",
-    "type": "smart", 
-    "organization_id": "org-uuid",
-    "outlet_count": 8,
-    "voltage_rating": 220,
-    "max_current": 16,
-    "location": "Data Center Rack 1"
+    "name": "DataCenter-Rack-A1-PDU",
+    "code": "PDU-DC-A1-001",
+    "type": "rack", 
+    "organization_id": "550e8400-e29b-41d4-a716-446655440000",
+    "department_id": "550e8400-e29b-41d4-a716-446655440001",
+    "total_sockets": 12,
+    "location": "Data Center - Building A - Rack 1",
+    "mqtt_base_topic": "/datacenter/buildingA/rack1"
   }'
 ```
 
-### Gán device vào outlet
+#### 2. Update Device Status
 ```bash
-curl -X POST http://localhost:3000/api/outlets/{outlet-id}/assign \
+# Change device status to maintenance
+curl -X PUT http://localhost:3000/api/v1/devices/550e8400-e29b-41d4-a716-446655440020 \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "device_id": "device-uuid",
-    "notes": "Assigning server to outlet"
+    "status": "maintenance"
   }'
 ```
 
-### Lấy dữ liệu real-time outlet
+#### 3. Device Assignment
 ```bash
-curl -X GET "http://localhost:3000/api/outlets/{outlet-id}/data?interval=hour&limit=24" \
-  -H "Authorization: Bearer <token>"
-```
-
-### Kiểm tra assignment hợp lệ
-```bash
-curl -X POST http://localhost:3000/api/device-assignment/validate \
+# Assign device to socket
+curl -X POST http://localhost:3000/api/v1/sockets/550e8400-e29b-41d4-a716-446655440010/assign \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "outlet_id": "outlet-uuid",
-    "device_id": "device-uuid"
+    "device_id": "550e8400-e29b-41d4-a716-446655440020"
   }'
+```
+
+
+
+### Error Handling Best Practices
+
+```javascript
+async function assignDeviceToSocket(socketId, deviceId) {
+  try {
+    const result = await apiClient.post(`/api/v1/sockets/${socketId}/assign`, {
+      device_id: deviceId
+    });
+    
+    return result.data;
+    
+  } catch (error) {
+    if (error.response) {
+      switch (error.response.status) {
+        case 400:
+          console.error('Validation error:', error.response.data.errors);
+          break;
+        case 401:
+          console.error('Authentication required');
+          break;
+        case 403:
+          console.error('Insufficient permissions');
+          break;
+        case 409:
+          console.error('Conflict - socket may be already assigned');
+          break;
+        default:
+          console.error('Unexpected error:', error.response.data.message);
+      }
+    }
+    throw error;
+  }
+}
+```
+
+
+
+### Testing & Development
+```bash
+# Test authentication and get PDUs
+curl -X GET http://localhost:3000/api/v1/pdus \
+  -H "Authorization: Bearer <your-test-token>"
+
+# Get all sockets
+curl -X GET http://localhost:3000/api/v1/sockets \
+  -H "Authorization: Bearer <your-test-token>"
 ```

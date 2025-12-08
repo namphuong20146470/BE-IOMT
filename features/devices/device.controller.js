@@ -48,7 +48,8 @@ export const getAllDevices = async (req, res) => {
             organization_id, 
             department_id, 
             model_id, 
-            status, 
+            status,
+            assigned, // ✅ Add assigned filter
             manufacturer,
             category_id,
             page = 1, 
@@ -175,6 +176,23 @@ export const getAllDevices = async (req, res) => {
             paramIndex++;
         }
 
+        // ✅ Filter by assignment status
+        if (assigned !== undefined) {
+            if (assigned === 'false' || assigned === false) {
+                // Show only unassigned devices (no socket assignment)
+                whereConditions.push(`NOT EXISTS (
+                    SELECT 1 FROM sockets s 
+                    WHERE s.device_id = d.id
+                )`);
+            } else if (assigned === 'true' || assigned === true) {
+                // Show only assigned devices (has socket assignment)
+                whereConditions.push(`EXISTS (
+                    SELECT 1 FROM sockets s 
+                    WHERE s.device_id = d.id
+                )`);
+            }
+        }
+
         const whereClause = whereConditions.length > 0 
             ? `WHERE ${whereConditions.join(' AND ')}`
             : '';
@@ -285,10 +303,7 @@ export const getDeviceById = async (req, res) => {
                     o.name as organization_name,
                     dept.name as department_name,
                     -- Warranty info
-                    wi.warranty_start, wi.warranty_end, wi.provider as warranty_provider,
-                    -- Connectivity info
-                    conn.mqtt_user, conn.mqtt_topic, conn.broker_host, conn.broker_port,
-                    conn.ssl_enabled, conn.heartbeat_interval, conn.last_connected, conn.is_active
+                    wi.warranty_start, wi.warranty_end, wi.provider as warranty_provider
                 FROM device d
                 LEFT JOIN device_models dm ON d.model_id = dm.id
                 LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
@@ -296,7 +311,6 @@ export const getDeviceById = async (req, res) => {
                 LEFT JOIN organizations o ON d.organization_id = o.id
                 LEFT JOIN departments dept ON d.department_id = dept.id
                 LEFT JOIN warranty_info wi ON d.id = wi.device_id
-                LEFT JOIN device_connectivity conn ON d.id = conn.device_id
                 WHERE d.id = ${id}::uuid
             `;
         } else {
@@ -312,10 +326,7 @@ export const getDeviceById = async (req, res) => {
                     o.name as organization_name,
                     dept.name as department_name,
                     -- Warranty info
-                    wi.warranty_start, wi.warranty_end, wi.provider as warranty_provider,
-                    -- Connectivity info
-                    conn.mqtt_user, conn.mqtt_topic, conn.broker_host, conn.broker_port,
-                    conn.ssl_enabled, conn.heartbeat_interval, conn.last_connected, conn.is_active
+                    wi.warranty_start, wi.warranty_end, wi.provider as warranty_provider
                 FROM device d
                 LEFT JOIN device_models dm ON d.model_id = dm.id
                 LEFT JOIN manufacturers m ON dm.manufacturer_id = m.id
@@ -323,7 +334,6 @@ export const getDeviceById = async (req, res) => {
                 LEFT JOIN organizations o ON d.organization_id = o.id
                 LEFT JOIN departments dept ON d.department_id = dept.id
                 LEFT JOIN warranty_info wi ON d.id = wi.device_id
-                LEFT JOIN device_connectivity conn ON d.id = conn.device_id
                 WHERE d.id = ${id}::uuid 
                 AND d.organization_id = ${userOrgId}::uuid
             `;
@@ -575,13 +585,13 @@ export const createDevice = async (req, res) => {
         }
 
         // ====================================================================
-        // 7. CREATE DEVICE WITH CONNECTIVITY
+        // 7. CREATE DEVICE
         // ====================================================================
         
         const purchaseDateValue = purchase_date ? new Date(purchase_date) : null;
         const installationDateValue = installation_date ? new Date(installation_date) : null;
 
-        // Use transaction to create both device and device_connectivity
+        // Create device in transaction
         const result = await prisma.$transaction(async (tx) => {
             // Create device record
             // Determine visibility based on department assignment
@@ -617,24 +627,6 @@ export const createDevice = async (req, res) => {
                 RETURNING id
             `;
 
-            const deviceId = newDevice[0].id;
-
-            // Create device_connectivity record (this table has is_active)
-            await tx.$queryRaw`
-                INSERT INTO device_connectivity (
-                    device_id,
-                    is_active,
-                    created_at,
-                    updated_at
-                )
-                VALUES (
-                    ${deviceId}::uuid,
-                    true,
-                    ${getVietnamDate()}::timestamptz,
-                    ${getVietnamDate()}::timestamptz
-                )
-            `;
-
             return newDevice[0];
         });
 
@@ -648,14 +640,12 @@ export const createDevice = async (req, res) => {
                 dm.name as model_name,
                 o.name as organization_name,
                 dept.name as department_name,
-                dc.name as category_name,
-                conn.is_active as connectivity_active
+                dc.name as category_name
             FROM device d
             LEFT JOIN device_models dm ON d.model_id = dm.id
             LEFT JOIN device_categories dc ON dm.category_id = dc.id  
             LEFT JOIN organizations o ON d.organization_id = o.id
             LEFT JOIN departments dept ON d.department_id = dept.id
-            LEFT JOIN device_connectivity conn ON d.id = conn.device_id
             WHERE d.id = ${result.id}::uuid
         `;
 
@@ -859,11 +849,10 @@ export const getDeviceStatistics = async (req, res) => {
                 COUNT(CASE WHEN d.status = 'inactive' THEN 1 END)::integer as inactive_devices,
                 COUNT(CASE WHEN d.status = 'maintenance' THEN 1 END)::integer as maintenance_devices,
                 COUNT(CASE WHEN d.status = 'decommissioned' THEN 1 END)::integer as decommissioned_devices,
-                COUNT(CASE WHEN conn.last_connected > NOW() - INTERVAL '1 hour' THEN 1 END)::integer as online_devices,
+                0::integer as online_devices,
                 COUNT(CASE WHEN wi.warranty_end < CURRENT_DATE THEN 1 END)::integer as expired_warranties,
                 COUNT(CASE WHEN wi.warranty_end BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '30 days' THEN 1 END)::integer as expiring_warranties
             FROM device d
-            LEFT JOIN device_connectivity conn ON d.id = conn.device_id
             LEFT JOIN warranty_info wi ON d.id = wi.device_id
             ${whereCondition}
         `, ...params);

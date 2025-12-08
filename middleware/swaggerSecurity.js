@@ -22,9 +22,46 @@ export const checkEnvironment = (req, res, next) => {
 };
 
 /**
- * 2. 🛡️ Xác thực người dùng - Yêu cầu đăng nhập
+ * 2. 🛡️ Xác thực người dùng - Yêu cầu đăng nhập (với URL token support)
  */
 export const requireAuthentication = authMiddleware;
+
+/**
+ * 2.1 🚪 Swagger-specific authentication với better error messages
+ */
+export const swaggerAuthentication = async (req, res, next) => {
+    try {
+        // Sử dụng authMiddleware để verify token
+        await new Promise((resolve, reject) => {
+            authMiddleware(req, res, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+        
+        console.log(`✅ Swagger authentication success: ${req.user?.username}`);
+        next();
+        
+    } catch (error) {
+        console.log('🚫 Swagger authentication failed:', error.message);
+        
+        // Trả về response thân thiện hơn cho Swagger UI
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication required to access API documentation',
+            code: 'AUTH_REQUIRED',
+            hint: 'Please login first and use one of these methods:\n' +
+                  '1. Add ?token=Bearer_<your-jwt-token> to URL\n' +
+                  '2. Use Authorization header: Bearer <your-jwt-token>\n' +
+                  '3. Login at /auth/login to get a token',
+            login_url: '/auth/login',
+            examples: {
+                url_method: '/secure-api-docs?token=Bearer_<your-token>',
+                header_method: 'Authorization: Bearer <your-token>'
+            }
+        });
+    }
+};
 
 /**
  * 3. 🔑 Kiểm tra quyền truy cập tài liệu API
@@ -158,7 +195,7 @@ export const swaggerSecurityMiddleware = [
     checkEnvironment,          // 1. Kiểm tra môi trường
     ipWhitelist,              // 2. IP whitelist (nếu có)
     swaggerRateLimit,         // 3. Rate limiting
-    requireAuthentication,     // 4. Yêu cầu đăng nhập
+    swaggerAuthentication,     // 4. Yêu cầu đăng nhập (Swagger-specific)
     requireDocPermission,     // 5. Kiểm tra quyền
     businessHoursOnly,        // 6. Giới hạn thời gian (tùy chọn)
     auditSwaggerAccess        // 7. Ghi log truy cập

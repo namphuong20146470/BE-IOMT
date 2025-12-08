@@ -1,74 +1,82 @@
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
     try {
-        console.log('🌱 Starting database seeding...');
+        console.log('🌱 Starting IoMT database seeding...');
 
-        // 1. Create Organization
-        console.log('🏢 Creating organization...');
+        // Clean existing data (optional - for development)
+        console.log('🧹 Cleaning existing data...');
+        await prisma.user_roles.deleteMany();
+        await prisma.role_permissions.deleteMany();
+        await prisma.warranty_info.deleteMany();
+        await prisma.specifications.deleteMany();
+        await prisma.device.deleteMany();
+        await prisma.device_models.deleteMany();
+        await prisma.device_categories.deleteMany();
+        await prisma.suppliers.deleteMany();
+        await prisma.manufacturers.deleteMany();
+        await prisma.users.deleteMany();
+        await prisma.permissions.deleteMany();
+        await prisma.roles.deleteMany();
+        await prisma.departments.deleteMany();
+        await prisma.organizations.deleteMany();
+        await prisma.auo_display.deleteMany();
+        await prisma.iot_environment_status.deleteMany();
+
+        // 1. Create Organizations
+        console.log('📊 Creating organizations...');
         const organization = await prisma.organizations.create({
             data: {
-                name: 'Bệnh viện Đa khoa Thanh Hóa',
+                id: '7e983a73-c2b2-475d-a1dd-85b722ab4581',
+                name: 'Bệnh viện Đa khoa Thành phố',
                 type: 'hospital',
-                address: '57 Trần Hưng Đạo, TP. Thanh Hóa',
-                phone: '0237.3851.851',
-                email: 'info@bvdkthanh.vn'
+                code: 'BVDK-TP',
+                address: '123 Nguyễn Huệ, Quận 1, TP.HCM',
+                phone: '028-3822-1234',
+                email: 'contact@bvdkthanh.vn',
+                website: 'https://bvdkthanh.vn',
+                status: 'ACTIVE'
             }
         });
 
         // 2. Create Departments
-        console.log('🏥 Creating departments...');
+        console.log('🏢 Creating departments...');
         const departments = await Promise.all([
             prisma.departments.create({
                 data: {
-                    name: 'Khoa Cấp cứu',
-                    code: 'CC',
-                    description: 'Khoa Cấp cứu và Hồi sức tích cực',
-                    organization_id: organization.id
+                    name: 'Phòng Xét nghiệm',
+                    organization_id: organization.id,
+                    description: 'Phòng xét nghiệm tổng hợp'
                 }
             }),
             prisma.departments.create({
                 data: {
-                    name: 'Khoa Nội tim mạch',
-                    code: 'NTM',
-                    description: 'Khoa Nội tim mạch',
-                    organization_id: organization.id
+                    name: 'Phòng Chẩn đoán hình ảnh',
+                    organization_id: organization.id,
+                    description: 'Phòng X-quang, CT, MRI, siêu âm'
                 }
             }),
             prisma.departments.create({
                 data: {
-                    name: 'Khoa Ngoại Tổng hợp',
-                    code: 'NTH',
-                    description: 'Khoa Ngoại Tổng hợp',
-                    organization_id: organization.id
+                    name: 'Phòng Hồi sức cấp cứu',
+                    organization_id: organization.id,
+                    description: 'Phòng hồi sức tích cực'
                 }
             }),
             prisma.departments.create({
                 data: {
-                    name: 'Phòng Kỹ thuật',
-                    code: 'PKT',
-                    description: 'Phòng Kỹ thuật và Bảo trì thiết bị y tế',
-                    organization_id: organization.id
+                    name: 'Phòng IT',
+                    organization_id: organization.id,
+                    description: 'Phòng Công nghệ thông tin'
                 }
             })
         ]);
 
         // 3. Create Roles
         console.log('👥 Creating roles...');
-        
-        // Create SuperAdmin role (global, not tied to any organization)
-        const superAdminRole = await prisma.roles.create({
-            data: {
-                name: 'SuperAdmin',
-                description: 'Quản trị viên cấp cao toàn hệ thống',
-                is_system_role: true,
-                organization_id: null // Global role, not tied to any organization
-            }
-        });
-
         const roles = await Promise.all([
             prisma.roles.create({
                 data: {
@@ -81,7 +89,7 @@ async function main() {
             prisma.roles.create({
                 data: {
                     name: 'Manager',
-                    description: 'Quản lý khoa/phòng',
+                    description: 'Quản lý phòng ban',
                     is_system_role: false,
                     organization_id: organization.id
                 }
@@ -231,10 +239,6 @@ async function main() {
         
         // Define role-based permission mapping
         const rolePermissionMapping = {
-            'SuperAdmin': [
-                // SuperAdmin has ALL 79 permissions - complete global system access
-                ...permissionData.map(p => p.name)
-            ],
             'Admin': [
                 // Admin has ALL 79 permissions - complete system access
                 ...permissionData.map(p => p.name)
@@ -262,7 +266,7 @@ async function main() {
                 'warning.read', 'warning.acknowledge'
             ],
             'User': [
-                // Read-only access for basic users (10 permissions)
+                // Read-only access for basic users (11 permissions)
                 'dashboard.view',
                 'data.read',
                 'device.read', 'device.list', 'device.monitor', 
@@ -276,25 +280,6 @@ async function main() {
         // Create role-permission assignments
         const rolePermissionAssignments = [];
         
-        // Assign permissions to SuperAdmin role
-        const superAdminPermissionNames = rolePermissionMapping['SuperAdmin'] || [];
-        superAdminPermissionNames.forEach(permissionName => {
-            const permission = findPermissionByName(permissionName);
-            if (permission) {
-                rolePermissionAssignments.push(
-                    prisma.role_permissions.create({
-                        data: {
-                            role_id: superAdminRole.id,
-                            permission_id: permission.id
-                        }
-                    })
-                );
-            } else {
-                console.warn(`⚠️ Permission '${permissionName}' not found for SuperAdmin role`);
-            }
-        });
-        
-        // Assign permissions to organization roles
         roles.forEach(role => {
             const permissionNames = rolePermissionMapping[role.name] || [];
             
@@ -316,118 +301,249 @@ async function main() {
         });
 
         await Promise.all(rolePermissionAssignments);
-
-        // 6. Create Device Categories
-        console.log('📂 Creating device categories...');
-        const categories = await Promise.all([
-            prisma.device_categories.create({
+            prisma.role_permissions.create({
                 data: {
-                    name: 'Thiết bị theo dõi',
-                    description: 'Thiết bị theo dõi sinh hiệu'
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('device.read')].id
                 }
             }),
-            prisma.device_categories.create({
+            prisma.role_permissions.create({
                 data: {
-                    name: 'Thiết bị hỗ trợ sống',
-                    description: 'Thiết bị hỗ trợ sống và thở'
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('device.create')].id
                 }
             }),
-            prisma.device_categories.create({
+            prisma.role_permissions.create({
                 data: {
-                    name: 'Thiết bị chẩn đoán',
-                    description: 'Thiết bị chẩn đoán hình ảnh và điện sinh lý'
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('device.update')].id
                 }
             }),
-            prisma.device_categories.create({
+            prisma.role_permissions.create({
                 data: {
-                    name: 'Thiết bị tiêm truyền',
-                    description: 'Thiết bị tiêm truyền và bơm thuốc'
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('user.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('user.create')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('pdu.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('pdu.create')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('socket.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('socket.assign')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('data.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('data.export')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('alert.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('alert.create')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('maintenance.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('maintenance.create')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[1].id, // Manager
+                    permission_id: permissions[findPermission('department.read')].id
+                }
+            }),
+            
+            // Technician permissions (device maintenance, MQTT config, socket management)
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('device.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('device.update')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('pdu.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('pdu.update')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('socket.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('socket.update')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('socket.assign')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('mqtt.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('mqtt.configure')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('mqtt.publish')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('data.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('alert.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('alert.acknowledge')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('maintenance.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('maintenance.create')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[2].id, // Technician
+                    permission_id: permissions[findPermission('maintenance.update')].id
+                }
+            }),
+            
+            // User permissions (basic read access only)
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[3].id, // User
+                    permission_id: permissions[findPermission('device.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[3].id, // User
+                    permission_id: permissions[findPermission('pdu.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[3].id, // User
+                    permission_id: permissions[findPermission('socket.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[3].id, // User
+                    permission_id: permissions[findPermission('data.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[3].id, // User
+                    permission_id: permissions[findPermission('alert.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[3].id, // User
+                    permission_id: permissions[findPermission('maintenance.read')].id
+                }
+            }),
+            prisma.role_permissions.create({
+                data: {
+                    role_id: roles[3].id, // User
+                    permission_id: permissions[findPermission('department.read')].id
                 }
             })
         ]);
 
-        // 7. Create Manufacturers
-        console.log('🏭 Creating manufacturers...');
-        const manufacturers = await Promise.all([
-            prisma.manufacturers.create({
-                data: {
-                    name: 'Philips Healthcare',
-                    country: 'Netherlands'
-                }
-            }),
-            prisma.manufacturers.create({
-                data: {
-                    name: 'Medtronic',
-                    country: 'USA'
-                }
-            }),
-            prisma.manufacturers.create({
-                data: {
-                    name: 'GE Healthcare',
-                    country: 'USA'
-                }
-            }),
-            prisma.manufacturers.create({
-                data: {
-                    name: 'B.Braun',
-                    country: 'Germany'
-                }
-            })
-        ]);
-
-        // 8. Create Device Models
-        console.log('🔧 Creating device models...');
-        const deviceModels = await Promise.all([
-            prisma.device_models.create({
-                data: {
-                    name: 'IntelliVue MX450',
-                    model_number: 'MX450',
-                    category_id: categories[0].id, // Monitoring
-                    manufacturer_id: manufacturers[0].id // Philips
-                }
-            }),
-            prisma.device_models.create({
-                data: {
-                    name: 'Puritan Bennett 980',
-                    model_number: 'PB980',
-                    category_id: categories[1].id, // Life support
-                    manufacturer_id: manufacturers[1].id // Medtronic
-                }
-            }),
-            prisma.device_models.create({
-                data: {
-                    name: 'MAC 2000',
-                    model_number: 'MAC2000',
-                    category_id: categories[2].id, // Diagnostic
-                    manufacturer_id: manufacturers[2].id // GE Healthcare
-                }
-            }),
-            prisma.device_models.create({
-                data: {
-                    name: 'Perfusor Space',
-                    model_number: 'SPACE',
-                    category_id: categories[3].id, // Infusion
-                    manufacturer_id: manufacturers[3].id // B.Braun
-                }
-            })
-        ]);
-
-        // 9. Create Users
+        // 6. Create Users
         console.log('👤 Creating users...');
         const hashedPassword = await bcrypt.hash('admin123', 10);
-        
-        // Create SuperAdmin user (not tied to any organization or department)
-        const superAdminUser = await prisma.users.create({
-            data: {
-                username: 'superadmin',
-                email: 'superadmin@iomt.vn',
-                password_hash: hashedPassword,
-                full_name: 'Super Administrator',
-                phone: '0000000000',
-                is_active: true
-                // No organization or department connection - global access
-            }
-        });
         
         const users = await Promise.all([
             prisma.users.create({
@@ -448,11 +564,11 @@ async function main() {
             }),
             prisma.users.create({
                 data: {
-                    username: 'manager01',
-                    email: 'manager01@bvdkthanh.vn',
-                    password_hash: hashedPassword,
-                    full_name: 'Trưởng khoa Cấp cứu',
-                    phone: '0123456790',
+                    username: 'BSNHhai',
+                    email: 'hai.nguyen@bvdkthanh.vn',
+                    password_hash: await bcrypt.hash('password123', 10),
+                    full_name: 'BS. Nguyễn Hồng Hải',
+                    phone: '0987654321',
                     is_active: true,
                     organizations: {
                         connect: { id: organization.id }
@@ -464,27 +580,11 @@ async function main() {
             }),
             prisma.users.create({
                 data: {
-                    username: 'tech01',
-                    email: 'tech01@bvdkthanh.vn',
-                    password_hash: hashedPassword,
-                    full_name: 'Kỹ thuật viên IoMT',
-                    phone: '0123456791',
-                    is_active: true,
-                    organizations: {
-                        connect: { id: organization.id }
-                    },
-                    departments: {
-                        connect: { id: departments[3].id }
-                    }
-                }
-            }),
-            prisma.users.create({
-                data: {
-                    username: 'user01',
-                    email: 'user01@bvdkthanh.vn',
-                    password_hash: hashedPassword,
-                    full_name: 'Bác sỹ Nội tim mạch',
-                    phone: '0123456792',
+                    username: 'technician1',
+                    email: 'tech1@bvdkthanh.vn',
+                    password_hash: await bcrypt.hash('tech123', 10),
+                    full_name: 'Nguyễn Văn Tâm',
+                    phone: '0912345678',
                     is_active: true,
                     organizations: {
                         connect: { id: organization.id }
@@ -496,217 +596,290 @@ async function main() {
             })
         ]);
 
-        // 10. Assign roles to users
-        console.log('🎭 Assigning roles to users...');
-        
-        // Assign SuperAdmin role to SuperAdmin user
-        await prisma.user_roles.create({
-            data: {
-                user_id: superAdminUser.id,
-                role_id: superAdminRole.id, // SuperAdmin
-                assigned_by: superAdminUser.id,
-                assigned_at: new Date()
-            }
-        });
-        
+        // 7. Assign roles to users
+        console.log('🔗 Assigning roles to users...');
         await Promise.all([
             prisma.user_roles.create({
                 data: {
                     user_id: users[0].id,
-                    role_id: roles[0].id, // Admin
-                    assigned_by: superAdminUser.id, // Assigned by SuperAdmin
-                    assigned_at: new Date()
+                    role_id: roles[0].id, // Admin role
+                    assigned_by: users[0].id,
+                    is_active: true
                 }
             }),
             prisma.user_roles.create({
                 data: {
                     user_id: users[1].id,
-                    role_id: roles[1].id, // Manager
-                    assigned_by: superAdminUser.id, // Assigned by SuperAdmin
-                    assigned_at: new Date()
+                    role_id: roles[1].id, // Manager role
+                    assigned_by: users[0].id,
+                    is_active: true
                 }
             }),
             prisma.user_roles.create({
                 data: {
                     user_id: users[2].id,
-                    role_id: roles[2].id, // Technician
-                    assigned_by: superAdminUser.id, // Assigned by SuperAdmin
-                    assigned_at: new Date()
-                }
-            }),
-            prisma.user_roles.create({
-                data: {
-                    user_id: users[3].id,
-                    role_id: roles[3].id, // User
-                    assigned_by: superAdminUser.id, // Assigned by SuperAdmin
-                    assigned_at: new Date()
+                    role_id: roles[2].id, // Technician role
+                    assigned_by: users[0].id,
+                    is_active: true
                 }
             })
         ]);
 
-        // 11. Create PDUs
-        console.log('⚡ Creating PDUs...');
-        const pdus = await Promise.all([
-            prisma.power_distribution_units.create({
+        // 8. Create Device Categories
+        console.log('📱 Creating device categories...');
+        const categories = await Promise.all([
+            prisma.device_categories.create({
                 data: {
-                    name: 'PDU-CC-01',
-                    code: 'CC01',
-                    type: 'cart',
-                    description: 'PDU Khoa Cấp cứu',
-                    location: 'Khoa Cấp cứu - Tủ rack chính',
-                    mqtt_base_topic: 'iomt/pdu/cc01',
-                    total_sockets: 8,
-                    department_id: departments[0].id,
-                    organization_id: organization.id
-                }
-            }),
-            prisma.power_distribution_units.create({
-                data: {
-                    name: 'PDU-NTM-01',
-                    code: 'NTM01', 
-                    type: 'cart',
-                    description: 'PDU Khoa Nội tim mạch',
-                    location: 'Khoa Nội tim mạch - Phòng theo dõi',
-                    mqtt_base_topic: 'iomt/pdu/ntm01',
-                    total_sockets: 6,
-                    department_id: departments[1].id,
-                    organization_id: organization.id
-                }
-            }),
-            prisma.power_distribution_units.create({
-                data: {
-                    name: 'PDU-NTH-01',
-                    code: 'NTH01',
-                    type: 'cart',
-                    description: 'PDU Khoa Ngoại tổng hợp',
-                    location: 'Khoa Ngoại - Phòng phẫu thuật',
-                    mqtt_base_topic: 'iomt/pdu/nth01',
-                    total_sockets: 12,
-                    department_id: departments[2].id,
-                    organization_id: organization.id
+                    name: 'Thiết bị y tế',
+                    description: 'Tất cả thiết bị y tế trong bệnh viện'
                 }
             })
         ]);
 
-        // 13. Create Sockets
-        console.log('🔌 Creating sockets...');
-        const sockets = [];
-        
-        // PDU CC-01: 8 sockets
-        for (let i = 1; i <= 8; i++) {
-            const socket = await prisma.sockets.create({
+        const subCategories = await Promise.all([
+            prisma.device_categories.create({
                 data: {
-                    socket_number: i,
-                    name: `Socket ${i}`,
-                    mqtt_topic_suffix: `socket${i}`,
-                    pdu_id: pdus[0].id
+                    name: 'Máy xét nghiệm',
+                    description: 'Các loại máy xét nghiệm tự động',
+                    parent_id: categories[0].id
                 }
-            });
-            sockets.push(socket);
-        }
-
-        // PDU NTM-01: 6 sockets
-        for (let i = 1; i <= 6; i++) {
-            const socket = await prisma.sockets.create({
+            }),
+            prisma.device_categories.create({
                 data: {
-                    socket_number: i,
-                    name: `Socket ${i}`,
-                    mqtt_topic_suffix: `socket${i}`,
-                    pdu_id: pdus[1].id
+                    name: 'Máy chẩn đoán hình ảnh',
+                    description: 'X-quang, CT, MRI, siêu âm',
+                    parent_id: categories[0].id
                 }
-            });
-            sockets.push(socket);
-        }
-
-        // PDU NTH-01: 12 sockets  
-        for (let i = 1; i <= 12; i++) {
-            const socket = await prisma.sockets.create({
+            }),
+            prisma.device_categories.create({
                 data: {
-                    socket_number: i,
-                    name: `Socket ${i}`,
-                    mqtt_topic_suffix: `socket${i}`,
-                    pdu_id: pdus[2].id
+                    name: 'Thiết bị hồi sức',
+                    description: 'Máy thở, monitor, máy sốc tim',
+                    parent_id: categories[0].id
                 }
-            });
-            sockets.push(socket);
-        }
+            }),
+            prisma.device_categories.create({
+                data: {
+                    name: 'Thiết bị môi trường',
+                    description: 'Cảm biến nhiệt độ, độ ẩm, ánh sáng',
+                    parent_id: categories[0].id
+                }
+            })
+        ]);
 
-        // 12. Create Devices
-        console.log('🏥 Creating devices...');
+        // 8. Create Manufacturers & Suppliers
+        console.log('🏭 Creating manufacturers and suppliers...');
+        const manufacturers = await Promise.all([
+            prisma.manufacturers.create({
+                data: {
+                    name: 'Roche Diagnostics',
+                    country: 'Germany',
+                    website: 'https://www.roche.com',
+                    contact_info: {
+                        email: 'contact@roche.com',
+                        phone: '+49-7624-14-0'
+                    }
+                }
+            }),
+            prisma.manufacturers.create({
+                data: {
+                    name: 'Siemens Healthineers',
+                    country: 'Germany', 
+                    website: 'https://www.siemens-healthineers.com',
+                    contact_info: {
+                        email: 'contact@siemens.com',
+                        phone: '+49-9131-84-0'
+                    }
+                }
+            }),
+            prisma.manufacturers.create({
+                data: {
+                    name: 'GE Healthcare',
+                    country: 'USA',
+                    website: 'https://www.gehealthcare.com',
+                    contact_info: {
+                        email: 'contact@ge.com',
+                        phone: '+1-262-544-3011'
+                    }
+                }
+            }),
+            prisma.manufacturers.create({
+                data: {
+                    name: 'AUO Corporation',
+                    country: 'Taiwan',
+                    website: 'https://www.auo.com',
+                    contact_info: {
+                        email: 'contact@auo.com',
+                        phone: '+886-3-520-8888'
+                    }
+                }
+            })
+        ]);
+
+        const suppliers = await Promise.all([
+            prisma.suppliers.create({
+                data: {
+                    name: 'Công ty TNHH Thiết bị Y tế Việt Nam',
+                    country: 'Vietnam',
+                    website: 'https://medviet.com',
+                    contact_info: {
+                        contact_person: 'Nguyễn Văn A',
+                        phone: '028-3456-7890',
+                        email: 'info@medviet.com',
+                        address: '123 Lê Lợi, Q1, TP.HCM'
+                    }
+                }
+            }),
+            prisma.suppliers.create({
+                data: {
+                    name: 'Công ty CP Công nghệ Y tế Quốc tế',
+                    country: 'Vietnam',
+                    website: 'https://intlmed.vn',
+                    contact_info: {
+                        contact_person: 'Trần Thị B',
+                        phone: '024-3456-7891',
+                        email: 'sales@intlmed.vn',
+                        address: '456 Trần Hưng Đạo, Hà Nội'
+                    }
+                }
+            })
+        ]);
+
+        // 9. Create Device Models
+        console.log('🔧 Creating device models...');
+        const deviceModels = await Promise.all([
+            prisma.device_models.create({
+                data: {
+                    category_id: subCategories[0].id, // Lab equipment
+                    name: 'Cobas 6000',
+                    model_number: 'COBAS-6000',
+                    manufacturer_id: manufacturers[0].id, // Roche
+                    supplier_id: suppliers[0].id
+                }
+            }),
+            prisma.device_models.create({
+                data: {
+                    category_id: subCategories[1].id, // Imaging
+                    name: 'Multix Select DR',
+                    model_number: 'MULTIX-SELECT-DR',
+                    manufacturer_id: manufacturers[1].id, // Siemens
+                    supplier_id: suppliers[0].id
+                }
+            }),
+            prisma.device_models.create({
+                data: {
+                    category_id: subCategories[1].id, // Imaging
+                    name: 'LOGIQ P9',
+                    model_number: 'LOGIQ-P9',
+                    manufacturer_id: manufacturers[2].id, // GE
+                    supplier_id: suppliers[1].id
+                }
+            }),
+            prisma.device_models.create({
+                data: {
+                    category_id: subCategories[3].id, // Environment
+                    name: 'AUO Display G070VW01',
+                    model_number: 'G070VW01',
+                    manufacturer_id: manufacturers[3].id, // AUO
+                    supplier_id: suppliers[1].id
+                }
+            })
+        ]);
+
+        // 10. Create Devices
+        console.log('🖥️ Creating devices...');
         const devices = await Promise.all([
             prisma.device.create({
                 data: {
-                    model_id: deviceModels[0].id, // IntelliVue MX450
-                    serial_number: 'PH2024001',
-                    status: 'active',
-                    location: 'Khoa Cấp cứu - Giường 1',
-                    installation_date: new Date('2024-01-15'),
+                    model_id: deviceModels[0].id,
+                    organization_id: organization.id,
                     department_id: departments[0].id,
-                    organization_id: organization.id
-                }
-            }),
-            prisma.device.create({
-                data: {
-                    model_id: deviceModels[1].id, // PB980
-                    serial_number: 'MD2024002',
+                    serial_number: 'RC6000-2024-001',
+                    asset_tag: 'XN-001',
                     status: 'active',
-                    location: 'Khoa Cấp cứu - Giường 2',
+                    purchase_date: new Date('2024-01-15'),
                     installation_date: new Date('2024-02-01'),
-                    department_id: departments[0].id,
-                    organization_id: organization.id
+                    location: 'Phòng XN - Tầng 2'
                 }
             }),
             prisma.device.create({
                 data: {
-                    model_id: deviceModels[2].id, // MAC 2000
-                    serial_number: 'GE2024003',
-                    status: 'active',
-                    location: 'Khoa Nội tim mạch - Phòng khám',
-                    installation_date: new Date('2024-01-20'),
+                    model_id: deviceModels[1].id,
+                    organization_id: organization.id,
                     department_id: departments[1].id,
-                    organization_id: organization.id
+                    serial_number: 'SI-DR-2024-003',
+                    asset_tag: 'CDHA-001',
+                    status: 'active',
+                    purchase_date: new Date('2024-02-20'),
+                    installation_date: new Date('2024-03-15'),
+                    location: 'Phòng X-quang - Tầng 1'
                 }
             }),
             prisma.device.create({
                 data: {
-                    model_id: deviceModels[3].id, // Perfusor Space
-                    serial_number: 'BB2024004',
-                    status: 'maintenance',
-                    location: 'Khoa Ngoại - Phòng phẫu thuật 1',
-                    installation_date: new Date('2024-03-01'),
-                    department_id: departments[2].id,
-                    organization_id: organization.id
+                    model_id: deviceModels[3].id,
+                    organization_id: organization.id,
+                    department_id: departments[0].id,
+                    serial_number: 'AUO-ENV-001',
+                    asset_tag: 'ENV-001',
+                    status: 'active',
+                    purchase_date: new Date('2024-03-01'),
+                    installation_date: new Date('2024-03-10'),
+                    location: 'Phòng XN - Cảm biến môi trường'
                 }
             })
         ]);
 
-        console.log('✅ Database seeding completed successfully!');
-        console.log(`
-📊 Seed Summary:
-   • Organization: ${organization.name}
-   • Departments: ${departments.length} created
-   • Roles: ${roles.length + 1} created (including SuperAdmin)
-   • Permissions: ${permissions.length} created
-     - SuperAdmin: ${rolePermissionMapping['SuperAdmin'].length} permissions (ALL GLOBAL)
-     - Admin: ${rolePermissionMapping['Admin'].length} permissions (ALL)
-     - Manager: ${rolePermissionMapping['Manager'].length} permissions  
-     - Technician: ${rolePermissionMapping['Technician'].length} permissions
-     - User: ${rolePermissionMapping['User'].length} permissions
-   • Device Categories: ${categories.length} created
-   • Manufacturers: ${manufacturers.length} created
-   • Device Models: ${deviceModels.length} created
-   • Users: ${users.length + 1} created (including SuperAdmin)
-   • PDUs: ${pdus.length} created
-   • Sockets: ${sockets.length} created  
-   • Devices: ${devices.length} created
+        // 11. Device Connectivity removed - MQTT config now handled via PDU/Socket configuration
+        console.log('📡 Skipping device connectivity (moved to socket configuration)...');
 
-🔑 Default Login Credentials:
-   • SuperAdmin: superadmin / admin123 (GLOBAL ACCESS)
-   • Admin: admin / admin123
-   • Manager: manager01 / admin123  
-   • Technician: tech01 / admin123
-   • User: user01 / admin123
-        `);
+        // 12. Create Warranty Information
+        console.log('📋 Creating warranty information...');
+        await Promise.all([
+            prisma.warranty_info.create({
+                data: {
+                    device_id: devices[0].id,
+                    warranty_start: new Date('2024-02-01'),
+                    warranty_end: new Date('2027-02-01'),
+                    provider: 'Roche Diagnostics Vietnam'
+                }
+            }),
+            prisma.warranty_info.create({
+                data: {
+                    device_id: devices[1].id,
+                    warranty_start: new Date('2024-03-15'),
+                    warranty_end: new Date('2029-03-15'),
+                    provider: 'Siemens Healthineers Vietnam'
+                }
+            })
+        ]);
+
+        // 13. Create Specifications (skip for now due to complex schema)
+        console.log('📝 Skipping device specifications (complex schema)...');
+
+        // 14. Create some sample IoT data tables (skip for now)
+        console.log('🌡️ Skipping IoT data tables (will be populated by MQTT)...');
+
+        console.log('✅ IoMT database seeding completed successfully!');
+        console.log('\n📊 Summary:');
+        console.log(`- Organizations: 1`);
+        console.log(`- Departments: ${departments.length}`);
+        console.log(`- Users: ${users.length}`);
+        console.log(`- Roles: ${roles.length}`);
+        console.log(`- Permissions: ${permissions.length} (Complete IoMT permission set)`);
+        console.log(`- Role-Permission Assignments: Configured for all roles`);
+        console.log(`- Device Categories: ${categories.length + subCategories.length}`);
+        console.log(`- Device Models: ${deviceModels.length}`);
+        console.log(`- Devices: ${devices.length}`);
+        console.log('\n🔐 Permission Summary:');
+        console.log('- Admin: All permissions (system admin)');
+        console.log('- Manager: Device management, User management, PDU/Socket oversight, Data export, Alerts');
+        console.log('- Technician: Device maintenance, MQTT configuration, Socket management, Alerts handling');
+        console.log('- User: Read-only access to devices, data, alerts, and maintenance records');
+        console.log('\n🔑 Login credentials:');
+        console.log('Username: admin | Password: admin123');
+        console.log('Username: BSNHhai | Password: password123');
+        console.log('Username: technician1 | Password: tech123');
 
     } catch (error) {
         console.error('❌ Error seeding database:', error);
@@ -720,4 +893,7 @@ main()
     .catch((e) => {
         console.error(e);
         process.exit(1);
+    })
+    .finally(async () => {
+        await prisma.$disconnect();
     });

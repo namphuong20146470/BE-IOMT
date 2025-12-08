@@ -15,7 +15,8 @@ import iotRoutes from './iotRoutes.js';
 
 // PDU Management Routes - Now from features
 import pduRoutes from '../features/pdu/pdu.routes.js';
-import outletRoutes from '../features/outlets/outlet.routes.js';
+import socketRoutes from '../features/sockets/socket.routes.js';
+import socketDataRoutes from '../features/sockets/socket-data.routes.js';
 import deviceAssignmentRoutes from '../features/devices/device-assignment.routes.js';
 
 // Additional Feature Routes
@@ -46,7 +47,8 @@ router.use('/iot', iotRoutes);
 
 // PDU Management System Routes
 router.use('/pdus', pduRoutes);
-router.use('/outlets', outletRoutes);
+router.use('/sockets', socketRoutes);
+router.use('/sockets', socketDataRoutes); // Socket data endpoints
 router.use('/device-assignment', deviceAssignmentRoutes);
 
 // Additional Feature Routes
@@ -54,6 +56,10 @@ router.use('/roles', roleRoutes);
 router.use('/permissions', permissionRoutes);
 router.use('/logs', auditLogRoutes); // Alias for audit logs as 'logs'
 // router.use('/sessions', sessionRoutes);
+
+// MQTT Device Management Routes
+import mqttRoutes from './mqttRoutes.js';
+router.use('/mqtt', mqttRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -96,7 +102,7 @@ router.get('/info', (req, res) => {
             ],
             pdu_management: [
                 '/api/v1/pdus - Power Distribution Unit Management',
-                '/api/v1/outlets - Outlet Control & Monitoring',
+                '/api/v1/sockets - Socket Control & Monitoring',
                 '/api/v1/device-assignment - Device Assignment System'
             ],
             security_management: [

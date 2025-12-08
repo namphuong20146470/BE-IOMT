@@ -22,7 +22,7 @@ export const getAllPDUs = async (req, res) => {
 };
 
 /**
- * Get PDU by ID with detailed outlet information
+ * Get PDU by ID with detailed socket information
  */
 export const getPDUById = async (req, res) => {
     try {
@@ -39,7 +39,7 @@ export const getPDUById = async (req, res) => {
 };
 
 /**
- * Create new PDU with auto-generated outlets
+ * Create new PDU with auto-generated sockets
  */
 export const createPDU = async (req, res) => {
     try {
@@ -73,7 +73,7 @@ export const updatePDU = async (req, res) => {
 };
 
 /**
- * Delete PDU (and all associated outlets)
+ * Delete PDU (and all associated sockets)
  */
 export const deletePDU = async (req, res) => {
     try {
@@ -97,16 +97,16 @@ export const getPDUStatistics = async (req, res) => {
         const { timeframe = '24h' } = req.query;
 
         // Get overall PDU system statistics
-        const [totalPDUs, activePDUs, pdusByType, totalOutlets, enabledOutlets, outletsByStatus] = await Promise.all([
+        const [totalPDUs, activePDUs, pdusByType, totalSockets, enabledSockets, socketsByStatus] = await Promise.all([
             prisma.power_distribution_units.count(),
             prisma.power_distribution_units.count({ where: { is_active: true } }),
             prisma.power_distribution_units.groupBy({
                 by: ['type'],
                 _count: true
             }),
-            prisma.outlets.count(),
-            prisma.outlets.count({ where: { is_enabled: true } }),
-            prisma.outlets.groupBy({
+            prisma.sockets.count(),
+            prisma.sockets.count({ where: { is_enabled: true } }),
+            prisma.sockets.groupBy({
                 by: ['status'],
                 _count: true
             })
@@ -131,7 +131,7 @@ export const getPDUStatistics = async (req, res) => {
             include: {
                 device: {
                     include: {
-                        outlet: {
+                        socket: {
                             include: {
                                 pdu: { select: { id: true, name: true } }
                             }
@@ -154,11 +154,11 @@ export const getPDUStatistics = async (req, res) => {
                     count: group._count
                 }))
             },
-            outlet_summary: {
-                total_outlets: totalOutlets,
-                enabled_outlets: enabledOutlets,
-                disabled_outlets: totalOutlets - enabledOutlets,
-                outlet_status_breakdown: outletsByStatus.map(group => ({
+            socket_summary: {
+                total_sockets: totalSockets,
+                enabled_sockets: enabledSockets,
+                disabled_sockets: totalSockets - enabledSockets,
+                socket_status_breakdown: socketsByStatus.map(group => ({
                     status: group.status,
                     count: group._count
                 }))
@@ -185,9 +185,9 @@ export const getPDUStatistics = async (req, res) => {
 };
 
 /**
- * Get all outlets for a specific PDU
+ * Get all sockets for a specific PDU
  */
-export const getPDUOutlets = async (req, res) => {
+export const getPDUSockets = async (req, res) => {
     try {
         const { id } = req.params;
         const { include_device = false, include_data = false, status } = req.query;
@@ -218,7 +218,7 @@ export const getPDUOutlets = async (req, res) => {
             });
         }
 
-        // Build where clause for outlets
+        // Build where clause for sockets
         let whereClause = { pdu_id: id };
         if (status) {
             whereClause.status = status;
@@ -226,51 +226,54 @@ export const getPDUOutlets = async (req, res) => {
 
         // Build include options
         const includeOptions = {};
-        if (include_device) {
+        
+        if (include_device === 'true' || include_device === true) {
             includeOptions.device = {
                 include: {
-                    model: { select: { name: true, manufacturer_id: true } },
-                    device_connectivity: { 
-                        select: { mqtt_topic: true, last_connected: true, is_active: true } 
+                    model: { select: { name: true, manufacturer_id: true } }
+                }
+            };
+
+            // Add device data if requested
+            if (include_data === 'true' || include_data === true) {
+                includeOptions.device.include.device_data_latest = {
+                    select: {
+                        voltage: true,
+                        current: true,
+                        power: true,
+                        power_factor: true,
+                        machine_state: true,
+                        socket_state: true,
+                        sensor_state: true,
+                        timestamp: true,
+                        updated_at: true
                     }
-                }
-            };
+                };
+            }
         }
 
-        if (include_data) {
-            includeOptions.device_data = {
-                take: 10,
-                orderBy: { timestamp: 'desc' },
-                select: {
-                    data_payload: true,
-                    timestamp: true,
-                    measurements: { select: { name: true, unit: true } }
-                }
-            };
-        }
-
-        // Get outlets
-        const outlets = await prisma.outlets.findMany({
+        // Get sockets
+        const sockets = await prisma.sockets.findMany({
             where: whereClause,
             include: includeOptions,
-            orderBy: { outlet_number: 'asc' }
+            orderBy: { socket_number: 'asc' }
         });
 
         return res.status(200).json({
             success: true,
-            data: outlets,
+            data: sockets,
             pdu: {
                 id: pdu.id,
                 name: pdu.name
             },
-            total: outlets.length
+            total: sockets.length
         });
 
     } catch (error) {
-        console.error('Error fetching PDU outlets:', error);
+        console.error('Error fetching PDU sockets:', error);
         return res.status(500).json({
             success: false,
-            message: 'Failed to fetch PDU outlets',
+            message: 'Failed to fetch PDU sockets',
             error: error.message
         });
     }
@@ -284,5 +287,5 @@ export default {
     updatePDU,
     deletePDU,
     getPDUStatistics,
-    getPDUOutlets
+    getPDUSockets
 };

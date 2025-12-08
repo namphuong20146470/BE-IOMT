@@ -1,37 +1,37 @@
-// features/outlets/outlet.repository.js
+// features/sockets/socket.repository.js
 import prisma from '../../config/db.js';
 
 /**
- * Outlet Repository - Handles all database operations for outlets
+ * Socket Repository - Handles all database operations for sockets
  */
-class OutletRepository {
+class SocketRepository {
     async findMany(where = {}, options = {}) {
-        return prisma.outlets.findMany({
+        return prisma.sockets.findMany({
             where,
             ...options
         });
     }
 
     async findFirst(where) {
-        return prisma.outlets.findFirst({ where });
+        return prisma.sockets.findFirst({ where });
     }
 
     async findUnique(where, options = {}) {
-        return prisma.outlets.findUnique({
+        return prisma.sockets.findUnique({
             where,
             ...options
         });
     }
 
     async findById(id, include = {}) {
-        return prisma.outlets.findUnique({
+        return prisma.sockets.findUnique({
             where: { id },
             include
         });
     }
 
     async create(data) {
-        return prisma.outlets.create({
+        return prisma.sockets.create({
             data,
             include: {
                 pdu: { select: { id: true, name: true } },
@@ -41,7 +41,7 @@ class OutletRepository {
     }
 
     async update(id, data) {
-        return prisma.outlets.update({
+        return prisma.sockets.update({
             where: { id },
             data: {
                 ...data,
@@ -64,13 +64,13 @@ class OutletRepository {
     }
 
     async delete(id) {
-        return prisma.outlets.delete({
+        return prisma.sockets.delete({
             where: { id }
         });
     }
 
     async count(where = {}) {
-        return prisma.outlets.count({ where });
+        return prisma.sockets.count({ where });
     }
 
     async findAvailable(organizationId = null, departmentId = null) {
@@ -91,7 +91,7 @@ class OutletRepository {
             };
         }
 
-        return prisma.outlets.findMany({
+        return prisma.sockets.findMany({
             where,
             include: {
                 pdu: {
@@ -105,7 +105,7 @@ class OutletRepository {
             },
             orderBy: [
                 { pdu: { name: 'asc' } },
-                { outlet_number: 'asc' }
+                { socket_number: 'asc' }
             ]
         });
     }
@@ -123,17 +123,17 @@ class OutletRepository {
     }
 
     async findDeviceAssignment(deviceId) {
-        return prisma.outlets.findFirst({
+        return prisma.sockets.findFirst({
             where: { device_id: deviceId },
             select: {
                 id: true,
-                outlet_number: true,
+                socket_number: true,
                 pdu: { select: { name: true } }
             }
         });
     }
 
-    async getOutletData(outletId, options = {}) {
+    async getSocketData(socketId, options = {}) {
         const {
             date_from,
             date_to,
@@ -142,7 +142,7 @@ class OutletRepository {
             limit = 100
         } = options;
 
-        let where = { outlet_id: outletId };
+        let where = { socket_id: socketId };
         
         if (date_from || date_to) {
             where.timestamp = {};
@@ -165,11 +165,11 @@ class OutletRepository {
         });
     }
 
-    async getOutletHistory(outletId, limit = 50) {
+    async getSocketHistory(socketId, limit = 50) {
         // This would track assignment history
         // For now, return basic assignment info
-        return prisma.outlets.findUnique({
-            where: { id: outletId },
+        return prisma.sockets.findUnique({
+            where: { id: socketId },
             select: {
                 id: true,
                 assigned_at: true,
@@ -187,8 +187,8 @@ class OutletRepository {
         });
     }
 
-    async controlOutlet(outletId, action) {
-        // This would implement actual outlet control
+    async controlSocket(socketId, action) {
+        // This would implement actual socket control
         // For now, just update status
         const validActions = ['turn_on', 'turn_off', 'reset', 'toggle'];
         if (!validActions.includes(action)) {
@@ -198,11 +198,11 @@ class OutletRepository {
         const newStatus = action === 'turn_on' ? 'active' : 
                          action === 'turn_off' ? 'inactive' : 'active';
 
-        return this.update(outletId, { 
+        return this.update(socketId, { 
             status: newStatus,
             last_data_at: new Date()
         });
     }
 }
 
-export default new OutletRepository();
+export default new SocketRepository();

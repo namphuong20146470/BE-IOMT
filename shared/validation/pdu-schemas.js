@@ -16,8 +16,8 @@ export const pduStatusSchema = z.enum(['active', 'inactive', 'maintenance'], {
     errorMap: () => ({ message: 'PDU status must be one of: active, inactive, maintenance' })
 });
 
-export const outletStatusSchema = z.enum(['active', 'idle', 'error', 'inactive'], {
-    errorMap: () => ({ message: 'Outlet status must be one of: active, idle, error, inactive' })
+export const socketStatusSchema = z.enum(['active', 'idle', 'error', 'inactive'], {
+    errorMap: () => ({ message: 'Socket status must be one of: active, idle, error, inactive' })
 });
 
 export const deviceActionSchema = z.enum(['turn_on', 'turn_off', 'reset', 'toggle'], {
@@ -42,9 +42,9 @@ export const futureDateSchema = z.string().datetime().refine(
     { message: 'Date must be in the future' }
 ).optional();
 
-// PDU Outlet Configuration Schema
-export const outletConfigSchema = z.object({
-    outlet_number: z.number().int().min(1, 'Outlet number must be at least 1').max(48, 'Maximum 48 outlets supported'),
+// PDU Socket Configuration Schema
+export const socketConfigSchema = z.object({
+    socket_number: z.number().int().min(1, 'Socket number must be at least 1').max(48, 'Maximum 48 sockets supported'),
     name: nonEmptyStringSchema(100).optional(),
     is_enabled: z.boolean().default(true),
     max_power_watts: positiveNumberSchema.optional(),
@@ -60,7 +60,7 @@ export const createPDUSchema = z.object({
     code: nonEmptyStringSchema(50),
     type: pduTypeSchema,
     organization_id: uuidSchema,
-    outlet_count: z.number().int().min(1, 'At least 1 outlet required').max(48, 'Maximum 48 outlets supported'),
+    socket_count: z.number().int().min(1, 'At least 1 socket required').max(48, 'Maximum 48 sockets supported'),
     voltage_rating: positiveNumberSchema,
     max_current: positiveNumberSchema,
 
@@ -79,7 +79,7 @@ export const createPDUSchema = z.object({
     installation_date: dateTimeSchema,
     warranty_end: futureDateSchema,
     notes: z.string().max(1000, 'Notes maximum 1000 characters').optional(),
-    outlets_config: z.array(outletConfigSchema).optional()
+    sockets_config: z.array(socketConfigSchema).optional()
 });
 
 export const updatePDUSchema = z.object({
@@ -107,8 +107,8 @@ export const updatePDUSchema = z.object({
     status: pduStatusSchema.optional()
 });
 
-// Outlet Schemas
-export const updateOutletSchema = z.object({
+// Socket Schemas
+export const updateSocketSchema = z.object({
     name: z.string().max(100, 'Name maximum 100 characters').optional(),
     is_enabled: z.boolean().optional(),
     max_power_watts: positiveNumberSchema.optional(),
@@ -128,8 +128,8 @@ export const unassignDeviceSchema = z.object({
 });
 
 export const transferDeviceSchema = z.object({
-    from_outlet_id: uuidSchema,
-    to_outlet_id: uuidSchema,
+    from_socket_id: uuidSchema,
+    to_socket_id: uuidSchema,
     notes: z.string().max(500, 'Notes maximum 500 characters').optional()
 });
 
@@ -141,7 +141,7 @@ export const bulkAssignSchema = z.object({
     })).min(1, 'At least one assignment required').max(50, 'Maximum 50 assignments per request')
 });
 
-export const outletControlSchema = z.object({
+export const socketControlSchema = z.object({
     action: deviceActionSchema,
     force: z.boolean().default(false)
 });
@@ -174,25 +174,25 @@ export const pduQuerySchema = z.object({
     }).default('name')
 });
 
-export const outletQuerySchema = z.object({
+export const socketQuerySchema = z.object({
     ...paginationSchema.shape,
     ...sortSchema.shape,
     pdu_id: uuidSchema.optional(),
     organization_id: uuidSchema.optional(),
     department_id: uuidSchema.optional(),
-    status: outletStatusSchema.optional(),
+    status: socketStatusSchema.optional(),
     assigned: z.enum(['true', 'false'], {
         errorMap: () => ({ message: 'Assigned filter must be "true" or "false"' })
     }).transform(val => val === 'true').optional(),
     search: z.string().min(1, 'Search term cannot be empty').optional(),
     include_device: z.string().transform(val => val === 'true').default(false),
     include_data: z.string().transform(val => val === 'true').default(false),
-    sort_by: z.enum(['outlet_number', 'status', 'assigned_at', 'last_data_at'], {
-        errorMap: () => ({ message: 'Invalid sort field for outlets' })
-    }).default('outlet_number')
+    sort_by: z.enum(['socket_number', 'status', 'assigned_at', 'last_data_at'], {
+        errorMap: () => ({ message: 'Invalid sort field for sockets' })
+    }).default('socket_number')
 });
 
-export const outletDataQuerySchema = z.object({
+export const socketDataQuerySchema = z.object({
     date_from: dateTimeSchema,
     date_to: dateTimeSchema,
     interval: z.enum(['minute', 'hour', 'day'], {
@@ -213,39 +213,39 @@ export const statisticsQuerySchema = z.object({
 
 // Device Assignment Validation Schemas
 export const validateAssignmentSchema = z.object({
-    outlet_id: uuidSchema,
+    socket_id: uuidSchema,
     device_id: uuidSchema
 });
 
 export const validateBulkAssignmentSchema = z.object({
     assignments: z.array(z.object({
-        outlet_id: uuidSchema,
+        socket_id: uuidSchema,
         device_id: uuidSchema
     })).min(1, 'At least one assignment required').max(100, 'Maximum 100 assignments per validation')
 });
 
 export const validateTransferSchema = z.object({
-    from_outlet_id: uuidSchema,
-    to_outlet_id: uuidSchema
+    from_socket_id: uuidSchema,
+    to_socket_id: uuidSchema
 });
 
 export const availableResourcesQuerySchema = z.object({
     organization_id: uuidSchema.optional(),
     department_id: uuidSchema.optional(),
-    resource_type: z.enum(['devices', 'outlets'], {
-        errorMap: () => ({ message: 'Resource type must be "devices" or "outlets"' })
+    resource_type: z.enum(['devices', 'sockets'], {
+        errorMap: () => ({ message: 'Resource type must be "devices" or "sockets"' })
     }).default('devices')
 });
 
 export const assignmentHistoryQuerySchema = z.object({
-    resource_type: z.enum(['device', 'outlet'], {
-        errorMap: () => ({ message: 'Resource type must be "device" or "outlet"' })
+    resource_type: z.enum(['device', 'socket'], {
+        errorMap: () => ({ message: 'Resource type must be "device" or "socket"' })
     }).default('device'),
     limit: z.string().regex(/^\d+$/).transform(Number).refine(n => n > 0 && n <= 100, 'Limit must be between 1 and 100').default('50')
 });
 
 export const checkConflictsSchema = z.object({
-    outlet_id: uuidSchema,
+    socket_id: uuidSchema,
     device_id: uuidSchema
 });
 
@@ -309,17 +309,17 @@ export const pduSchemas = {
     // Entity schemas
     createPDU: createPDUSchema,
     updatePDU: updatePDUSchema,
-    updateOutlet: updateOutletSchema,
+    updateSocket: updateSocketSchema,
     assignDevice: assignDeviceSchema,
     unassignDevice: unassignDeviceSchema,
     transferDevice: transferDeviceSchema,
     bulkAssign: bulkAssignSchema,
-    outletControl: outletControlSchema,
+    socketControl: socketControlSchema,
     
     // Query schemas
     pduQuery: pduQuerySchema,
-    outletQuery: outletQuerySchema,
-    outletData: outletDataQuerySchema,
+    socketQuery: socketQuerySchema,
+    socketData: socketDataQuerySchema,
     statistics: statisticsQuerySchema,
     
     // Assignment schemas

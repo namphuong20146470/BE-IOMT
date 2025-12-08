@@ -9,7 +9,7 @@ import {
     getPDUQuerySchema,
     pduStatsQuerySchema,
     pduByIdSchema,
-    pduOutletsSchema,
+    pduSocketsSchema,
     validateRequest,
     asyncHandler
 } from './pdu.validation.js';
@@ -126,7 +126,7 @@ router.get('/:id',
  *             required:
  *               - name
  *               - organization_id
- *               - total_outlets
+ *               - total_sockets
  *               - voltage_rating
  */
 router.post('/',
@@ -170,18 +170,18 @@ router.delete('/:id',
 
 /**
  * @swagger
- * /api/pdus/{id}/outlets:
+ * /api/pdus/{id}/sockets:
  *   get:
- *     summary: Get all outlets for a PDU
+ *     summary: Get all sockets for a PDU
  *     tags: [PDU]
  *     security:
  *       - bearerAuth: []
  */
-router.get('/:id/outlets',
+router.get('/:id/sockets',
     authMiddleware,
     requirePermission('device.read'),
-    validateRequest(pduOutletsSchema),
-    asyncHandler(pduController.getPDUOutlets)
+    validateRequest(pduSocketsSchema),
+    asyncHandler(pduController.getPDUSockets)
 );
 
 export default router;
