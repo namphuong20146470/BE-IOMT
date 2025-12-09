@@ -318,9 +318,9 @@ class SocketMQTTClient extends EventEmitter {
                     over_voltage: mqttData.hasOwnProperty('over_voltage') ? mqttData.over_voltage : latestRecord.over_voltage,
                     under_voltage: mqttData.hasOwnProperty('under_voltage') ? mqttData.under_voltage : latestRecord.under_voltage,
                     
-                    // Always update timestamps and metadata
-                    timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date(),
-                    data_payload: mqttData
+                    // Always update timestamps
+                    timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date()
+                    // Note: data_payload removed - not in device_data schema, raw JSON stored in device_data_logs
                 };
 
                 // Log what was changed vs preserved

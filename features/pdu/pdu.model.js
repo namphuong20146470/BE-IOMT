@@ -15,7 +15,7 @@ export const PduCreateSchema = z.object({
     floor: z.string().max(50).optional(),
     building: z.string().max(100).optional(),
     description: z.string().max(255).optional(),
-    total_sockets: z.number().int().min(1).max(48).default(4),
+    total_sockets: z.number().int().min(1).max(48),
     voltage_rating: z.number().positive().default(220),
     max_power_watts: z.number().positive().default(10000).optional(),
     mqtt_base_topic: z.string().max(255).optional(),
