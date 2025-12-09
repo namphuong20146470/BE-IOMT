@@ -92,6 +92,8 @@ class SocketService {
             device_id: deviceId,
             assigned_at: new Date(),
             assigned_by: user.id,
+            status: 'active',
+            is_enabled: true,
             notes
         });
 
@@ -122,6 +124,7 @@ class SocketService {
             device_id: null,
             assigned_at: null,
             assigned_by: null,
+            status: 'inactive',
             notes
         });
 
