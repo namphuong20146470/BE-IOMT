@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import dynamicMqttManager from '../../Database/mqtt.dynamic.js';
+// import dynamicMqttManager from '../../Database/mqtt.dynamic.js'; // REMOVED - no longer used
 import crypto from 'crypto';
 
 const prisma = new PrismaClient();
