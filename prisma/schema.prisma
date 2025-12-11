@@ -875,12 +875,24 @@ model maintenance_history {
   updated_at            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
   created_by            String?                @db.Uuid
   organization_id       String                 @db.Uuid
+  customer_issue        String?
+  technician_issue      String?
+  conclusion            String?
+  root_cause            String?
+  ticket_number         String?                @db.VarChar(50)
+  socket_id             String?                @db.Uuid
+  start_time            DateTime?              @db.Timestamptz(6)
+  end_time              DateTime?              @db.Timestamptz(6)
+  initial_metrics       Json?                  @default("{}")
+  final_metrics         Json?                  @default("{}")
   creator               users?                 @relation("MaintenanceCreator", fields: [created_by], references: [id])
   department            departments?           @relation(fields: [department_id], references: [id])
   device                device                 @relation(fields: [device_id], references: [id], onDelete: Cascade)
   organization          organizations          @relation(fields: [organization_id], references: [id])
   performer             users?                 @relation("MaintenancePerformer", fields: [performed_by], references: [id])
   schedule              maintenance_schedules? @relation(fields: [schedule_id], references: [id])
+  sockets               sockets?               @relation(fields: [socket_id], references: [id], onUpdate: NoAction)
+  maintenance_jobs      maintenance_jobs[]
   parts                 maintenance_parts[]
 
   @@index([device_id], map: "idx_maintenance_history_device")
@@ -890,6 +902,10 @@ model maintenance_history {
   @@index([status], map: "idx_maintenance_history_status")
   @@index([performed_by], map: "idx_maintenance_history_performer")
   @@index([device_id, performed_date(sort: Desc)], map: "idx_maintenance_device_date")
+  @@index([socket_id], map: "idx_maintenance_socket")
+  @@index([start_time, end_time], map: "idx_maintenance_time_range")
+  @@index([final_metrics], map: "idx_maintenance_history_final_metrics", type: Gin)
+  @@index([initial_metrics], map: "idx_maintenance_history_initial_metrics", type: Gin)
 }
 
 model maintenance_parts {
@@ -947,33 +963,34 @@ model power_distribution_units {
 }
 
 model sockets {
-  id                 String                   @id(map: "outlets_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  pdu_id             String                   @db.Uuid
-  socket_number      Int
-  name               String?                  @db.VarChar(100)
-  description        String?                  @db.VarChar(255)
-  mqtt_topic_suffix  String                   @db.VarChar(100)
-  max_power_watts    Float?                   @default(3000) @db.Real
-  socket_type        String?                  @db.VarChar(50)
-  device_id          String?                  @unique(map: "outlets_device_id_key") @db.Uuid
-  assigned_at        DateTime?                @db.Timestamptz(6)
-  assigned_by        String?                  @db.Uuid
-  status             socket_status            @default(inactive)
-  is_enabled         Boolean                  @default(true)
-  display_order      Int?                     @default(1)
-  notes              String?                  @db.VarChar(500)
-  created_at         DateTime?                @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime?                @default(now()) @updatedAt @db.Timestamptz(6)
-  mqtt_broker_host   String?                  @db.VarChar(255)
-  mqtt_broker_port   Int?                     @default(1883)
-  mqtt_credentials   Json?                    @default("{}")
-  mqtt_config        Json?                    @default("{}")
-  device_data        device_data[]
-  device_data_latest device_data_latest[]
-  device_data_logs   device_data_logs[]
-  assigned_by_user   users?                   @relation("SocketAssignedBy", fields: [assigned_by], references: [id], map: "outlets_assigned_by_fkey")
-  device             device?                  @relation(fields: [device_id], references: [id], map: "outlets_device_id_fkey")
-  pdu                power_distribution_units @relation(fields: [pdu_id], references: [id], onDelete: Cascade, map: "outlets_pdu_id_fkey")
+  id                  String                   @id(map: "outlets_pkey") @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  pdu_id              String                   @db.Uuid
+  socket_number       Int
+  name                String?                  @db.VarChar(100)
+  description         String?                  @db.VarChar(255)
+  mqtt_topic_suffix   String                   @db.VarChar(100)
+  max_power_watts     Float?                   @default(3000) @db.Real
+  socket_type         String?                  @db.VarChar(50)
+  device_id           String?                  @unique(map: "outlets_device_id_key") @db.Uuid
+  assigned_at         DateTime?                @db.Timestamptz(6)
+  assigned_by         String?                  @db.Uuid
+  status              socket_status            @default(inactive)
+  is_enabled          Boolean                  @default(true)
+  display_order       Int?                     @default(1)
+  notes               String?                  @db.VarChar(500)
+  created_at          DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?                @default(now()) @updatedAt @db.Timestamptz(6)
+  mqtt_broker_host    String?                  @db.VarChar(255)
+  mqtt_broker_port    Int?                     @default(1883)
+  mqtt_credentials    Json?                    @default("{}")
+  mqtt_config         Json?                    @default("{}")
+  device_data         device_data[]
+  device_data_latest  device_data_latest[]
+  device_data_logs    device_data_logs[]
+  maintenance_history maintenance_history[]
+  assigned_by_user    users?                   @relation("SocketAssignedBy", fields: [assigned_by], references: [id], map: "outlets_assigned_by_fkey")
+  device              device?                  @relation(fields: [device_id], references: [id], map: "outlets_device_id_fkey")
+  pdu                 power_distribution_units @relation(fields: [pdu_id], references: [id], onDelete: Cascade, map: "outlets_pdu_id_fkey")
 
   @@unique([pdu_id, socket_number], map: "unique_pdu_socket")
   @@index([pdu_id], map: "idx_sockets_pdu")
@@ -1066,6 +1083,35 @@ model socket4_data {
   sensor_state  Boolean?  @default(false)
   over_voltage  Boolean?  @default(false)
   under_voltage Boolean?  @default(false)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model maintenance_jobs {
+  id                  String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  maintenance_id      String              @db.Uuid
+  job_number          Int
+  name                String              @db.VarChar(255)
+  category            String?             @db.VarChar(100)
+  description         String?
+  start_time          DateTime?           @db.Timestamptz(6)
+  end_time            DateTime?           @db.Timestamptz(6)
+  duration_minutes    Int?
+  status              String?             @default("pending") @db.VarChar(50)
+  result              String?             @db.VarChar(50)
+  notes               String?
+  issues_found        String?
+  actions_taken       String?
+  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  before_metrics      Json?               @default("{}")
+  after_metrics       Json?               @default("{}")
+  maintenance_history maintenance_history @relation(fields: [maintenance_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_maintenance_jobs_maintenance")
+
+  @@index([maintenance_id], map: "idx_maintenance_jobs_maintenance")
+  @@index([maintenance_id, job_number], map: "idx_maintenance_jobs_number")
+  @@index([status], map: "idx_maintenance_jobs_status")
+  @@index([after_metrics], map: "idx_maintenance_jobs_after_metrics", type: Gin)
+  @@index([before_metrics], map: "idx_maintenance_jobs_before_metrics", type: Gin)
 }
 
 enum device_status {

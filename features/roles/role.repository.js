@@ -255,7 +255,7 @@ class RoleRepository {
             }
         });
 
-        return rolePermissions.map(rp => rp.permission);
+        return rolePermissions.map(rp => rp.permissions);
     }
 
     /**
@@ -272,8 +272,7 @@ class RoleRepository {
             if (permissionIds.length > 0) {
                 const rolePermissions = permissionIds.map(permissionId => ({
                     role_id: roleId,
-                    permission_id: permissionId,
-                    assigned_by: userId
+                    permission_id: permissionId
                 }));
 
                 await tx.role_permissions.createMany({
@@ -312,8 +311,7 @@ class RoleRepository {
         return await prisma.role_permissions.create({
             data: {
                 role_id: roleId,
-                permission_id: permissionId,
-                assigned_by: userId
+                permission_id: permissionId
             },
             include: {
                 permissions: true
@@ -391,6 +389,54 @@ class RoleRepository {
             rolesWithoutUsers: totalRoles - rolesWithUsers,
             organizationBreakdown: organizationRoles
         };
+    }
+
+    /**
+     * Bulk assign permissions to role
+     */
+    async bulkAssignPermissions(roleId, permissionIds, userId) {
+        try {
+            // Create role_permissions entries, skip if already exists
+            const data = permissionIds.map(permissionId => ({
+                role_id: roleId,
+                permission_id: permissionId
+            }));
+
+            const result = await prisma.role_permissions.createMany({
+                data,
+                skipDuplicates: true
+            });
+
+            // Invalidate permission cache for users with this role
+            // TODO: Implement cache invalidation
+
+            return result;
+        } catch (error) {
+            console.error('Error in bulkAssignPermissions repository:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Bulk remove permissions from role
+     */
+    async bulkRemovePermissions(roleId, permissionIds) {
+        try {
+            const result = await prisma.role_permissions.deleteMany({
+                where: {
+                    role_id: roleId,
+                    permission_id: { in: permissionIds }
+                }
+            });
+
+            // Invalidate permission cache for users with this role
+            // TODO: Implement cache invalidation
+
+            return result;
+        } catch (error) {
+            console.error('Error in bulkRemovePermissions repository:', error);
+            throw error;
+        }
     }
 }
 

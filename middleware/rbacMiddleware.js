@@ -70,13 +70,13 @@ export function requirePermission(permission, resourceType = null) {
         console.log(`✅ Super Admin detected - bypassing permission check`);
         hasPermission = true;
       } else {
-        // Check permissions from JWT token roles
-        const userPermissions = req.user.roles?.flatMap(role => role.permissions || []) || [];
+        // Check permissions from JWT token (already loaded by authMiddleware)
+        const userPermissions = req.user.permissions || [];
         hasPermission = userPermissions.includes(permission);
         
-        console.log(`� JWT Token permissions:`, userPermissions.slice(0, 10) + '...');
+        console.log(`🔑 User permissions:`, userPermissions.slice(0, 10));
         console.log(`🔍 Required permission: ${permission}`);
-        console.log(`🔍 Permission found in JWT: ${hasPermission}`);
+        console.log(`🔍 Permission found: ${hasPermission}`);
       }
 
       // ✅ Fallback: If not found in JWT, check database
@@ -107,7 +107,7 @@ export function requirePermission(permission, resourceType = null) {
           resource_type: resourceType,
           user_roles: req.user.roles?.map(r => r.name) || [],
           debug: {
-            jwt_permissions: req.user.roles?.flatMap(role => role.permissions || []).slice(0, 5),
+            jwt_permissions: req.user.permissions?.slice(0, 5) || [],
             super_admin: isSuperAdmin(req.user)
           }
         });

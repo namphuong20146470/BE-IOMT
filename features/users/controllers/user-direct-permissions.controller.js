@@ -17,8 +17,8 @@ const prisma = new PrismaClient();
 export const assignDirectPermissionToUser = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { permission_id, organization_id, conditions, expires_at } = req.body;
-        const assignedBy = req.user.id;
+        const { permission_id, conditions, valid_until } = req.body;
+        const grantedBy = req.user.id;
 
         // Validate permission exists
         const permission = await prisma.permissions.findUnique({
@@ -37,7 +37,6 @@ export const assignDirectPermissionToUser = async (req, res) => {
             where: {
                 user_id: userId,
                 permission_id,
-                organization_id: organization_id || null,
                 is_active: true
             }
         });
@@ -54,11 +53,10 @@ export const assignDirectPermissionToUser = async (req, res) => {
             data: {
                 user_id: userId,
                 permission_id,
-                organization_id,
                 conditions: conditions || null,
-                expires_at: expires_at ? new Date(expires_at) : null,
-                assigned_by: assignedBy,
-                assigned_at: new Date(),
+                valid_until: valid_until ? new Date(valid_until) : null,
+                granted_by: grantedBy,
+                granted_at: new Date(),
                 is_active: true
             },
             include: {
@@ -75,16 +73,15 @@ export const assignDirectPermissionToUser = async (req, res) => {
 
         // Log audit
         await auditService.logActivity(
-            assignedBy,
+            grantedBy,
             'user_permission.assign',
             'user_permission',
             assignment.id,
             {
                 user_id: userId,
                 permission: permission.name,
-                organization_id,
                 conditions,
-                expires_at
+                valid_until
             }
         );
 
@@ -118,10 +115,14 @@ export const getUserDirectPermissions = async (req, res) => {
         };
 
         // Filter out expired permissions unless explicitly requested
-        if (!include_expired) {
-            whereCondition.OR = [
-                { expires_at: null },
-                { expires_at: { gte: new Date() } }
+        if (include_expired === 'false' || include_expired === false) {
+            whereCondition.AND = [
+                {
+                    OR: [
+                        { valid_until: null },
+                        { valid_until: { gte: new Date() } }
+                    ]
+                }
             ];
         }
 
@@ -138,28 +139,20 @@ export const getUserDirectPermissions = async (req, res) => {
                         group_id: true
                     }
                 },
-                organizations: {
-                    select: {
-                        id: true,
-                        name: true,
-                        code: true
-                    }
-                }
             },
             orderBy: {
-                assigned_at: 'desc'
+                granted_at: 'desc'
             }
         });
 
         const formattedPermissions = directPermissions.map(up => ({
             assignment_id: up.id,
             permission: up.permissions,
-            organization: up.organizations,
             conditions: up.conditions,
-            expires_at: up.expires_at,
-            assigned_at: up.assigned_at,
-            assigned_by: up.assigned_by,
-            is_expired: up.expires_at ? new Date(up.expires_at) < new Date() : false
+            valid_until: up.valid_until,
+            granted_at: up.granted_at,
+            granted_by: up.granted_by,
+            is_expired: up.valid_until ? new Date(up.valid_until) < new Date() : false
         }));
 
         res.json({
@@ -186,7 +179,6 @@ export const removeDirectPermissionFromUser = async (req, res) => {
     try {
         const { userId, permissionId } = req.params;
         const { reason } = req.body;
-        const removedBy = req.user.id;
 
         // Find the assignment
         const assignment = await prisma.user_permissions.findFirst({
@@ -211,20 +203,18 @@ export const removeDirectPermissionFromUser = async (req, res) => {
             });
         }
 
-        // Soft delete the assignment
+        // Soft delete the assignment (just set is_active to false)
         await prisma.user_permissions.update({
             where: { id: assignment.id },
             data: {
                 is_active: false,
-                removed_at: new Date(),
-                removed_by: removedBy,
-                removal_reason: reason || 'Manual removal'
+                notes: reason ? `Removed: ${reason}` : 'Removed manually'
             }
         });
 
         // Log audit
         await auditService.logActivity(
-            removedBy,
+            req.user.id,
             'user_permission.remove',
             'user_permission',
             assignment.id,

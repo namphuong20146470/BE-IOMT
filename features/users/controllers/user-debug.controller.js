@@ -90,8 +90,8 @@ export const debugUserPermissions = async (req, res) => {
         console.log('🔑 Direct permissions:', directPermissions.map(up => ({
             permission_name: up.permissions.name,
             organization_id: up.organization_id,
-            expires_at: up.expires_at,
-            is_expired: up.expires_at ? new Date(up.expires_at) < new Date() : false
+            valid_until: up.valid_until,
+            is_expired: up.valid_until ? new Date(up.valid_until) < new Date() : false
         })));
 
         // 4. Aggregate all permissions
@@ -106,14 +106,14 @@ export const debugUserPermissions = async (req, res) => {
         );
 
         const directPerms = directPermissions
-            .filter(up => !up.expires_at || new Date(up.expires_at) >= new Date())
+            .filter(up => !up.valid_until || new Date(up.valid_until) >= new Date())
             .map(up => ({
                 name: up.permissions.name,
                 source: 'Direct Assignment',
                 resource: up.permissions.resource,
                 action: up.permissions.action,
                 organization_id: up.organization_id,
-                expires_at: up.expires_at
+                valid_until: up.valid_until
             }));
 
         const allPermissions = [...rolePermissions, ...directPerms];
@@ -164,7 +164,7 @@ export const debugUserPermissions = async (req, res) => {
                 direct_permissions: directPerms,
                 all_unique_permissions: Object.values(uniquePermissions),
                 expired_permissions: directPermissions.filter(up => 
-                    up.expires_at && new Date(up.expires_at) < new Date()
+                    up.valid_until && new Date(up.valid_until) < new Date()
                 )
             },
             message: 'Debug information retrieved successfully'
