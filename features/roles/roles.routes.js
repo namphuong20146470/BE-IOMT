@@ -198,4 +198,74 @@ router.put('/:roleId/permissions', requirePermission('role.update'), roleControl
  */
 router.delete('/:roleId/permissions/:permissionId', requirePermission('role.update'), roleController.removePermissionFromRole);
 
+/**
+ * @swagger
+ * /api/v1/roles/{roleId}/permissions/bulk:
+ *   post:
+ *     summary: Bulk assign permissions to role (by IDs or group)
+ *     tags: [Roles]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             oneOf:
+ *               - type: object
+ *                 properties:
+ *                   permission_ids:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *               - type: object
+ *                 properties:
+ *                   group_id:
+ *                     type: string
+ *     responses:
+ *       200:
+ *         description: Permissions assigned successfully
+ */
+router.post('/:roleId/permissions/bulk', requirePermission('role.update'), roleController.bulkAssignPermissions);
+
+/**
+ * @swagger
+ * /api/v1/roles/{roleId}/permissions/bulk:
+ *   delete:
+ *     summary: Bulk remove permissions from role (by IDs or group)
+ *     tags: [Roles]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             oneOf:
+ *               - type: object
+ *                 properties:
+ *                   permission_ids:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *               - type: object
+ *                 properties:
+ *                   group_id:
+ *                     type: string
+ *     responses:
+ *       200:
+ *         description: Permissions removed successfully
+ */
+router.delete('/:roleId/permissions/bulk', requirePermission('role.update'), roleController.bulkRemovePermissions);
+
 export default router;

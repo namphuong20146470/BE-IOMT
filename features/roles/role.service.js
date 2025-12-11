@@ -1,7 +1,10 @@
 // features/roles/role.service.js
+import { PrismaClient } from '@prisma/client';
 import roleRepository from './role.repository.js';
 import roleModel from './role.model.js';
 import { AppError } from '../../shared/utils/errorHandler.js';
+
+const prisma = new PrismaClient();
 
 class RoleService {
     /**
@@ -169,9 +172,9 @@ class RoleService {
     }
 
     /**
-     * Get role permissions
+     * Get role permissions (with optional grouping)
      */
-    async getRolePermissions(roleId, user) {
+    async getRolePermissions(roleId, user, options = {}) {
         try {
             // Validate role ID
             const validatedId = roleModel.validateRoleId(roleId);
@@ -185,6 +188,16 @@ class RoleService {
             // Get role permissions
             const permissions = await roleRepository.getRolePermissions(validatedId);
             
+            // If grouped requested, organize by permission groups
+            if (options.grouped === 'true' || options.grouped === true) {
+                const grouped = await this.groupPermissionsByGroup(permissions, role);
+                return {
+                    success: true,
+                    message: 'Role permissions retrieved successfully',
+                    data: grouped
+                };
+            }
+            
             return {
                 success: true,
                 message: 'Role permissions retrieved successfully',
@@ -193,6 +206,209 @@ class RoleService {
         } catch (error) {
             console.error('Error in getRolePermissions service:', error);
             throw new AppError(error.message || 'Failed to fetch role permissions', error.statusCode || 500);
+        }
+    }
+
+    /**
+     * Group permissions by permission groups for UI
+     */
+    async groupPermissionsByGroup(permissions, role) {
+        try {
+            // Get all permission groups
+            const allGroups = await prisma.permission_groups.findMany({
+                where: { is_active: true },
+                orderBy: { sort_order: 'asc' },
+                include: {
+                    permissions: {
+                        select: {
+                            id: true,
+                            name: true,
+                            description: true,
+                            resource: true,
+                            action: true,
+                            priority: true
+                        }
+                    }
+                }
+            });
+
+            const rolePermissionIds = new Set(permissions.map(p => p.id));
+            
+            const groupedPermissions = {};
+            
+            for (const group of allGroups) {
+                const assignedPerms = group.permissions.filter(p => rolePermissionIds.has(p.id));
+                
+                groupedPermissions[group.id] = {
+                    group_name: group.name,
+                    group_description: group.description,
+                    group_color: group.color,
+                    group_icon: group.icon,
+                    sort_order: group.sort_order,
+                    total_in_group: group.permissions.length,
+                    assigned_count: assignedPerms.length,
+                    all_assigned: assignedPerms.length === group.permissions.length && group.permissions.length > 0,
+                    permissions: assignedPerms
+                };
+            }
+
+            return {
+                role: {
+                    id: role.id,
+                    name: role.name,
+                    description: role.description
+                },
+                total_permissions: permissions.length,
+                grouped_permissions: groupedPermissions
+            };
+        } catch (error) {
+            console.error('Error grouping permissions:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Bulk assign permissions to role
+     */
+    async bulkAssignPermissions(roleId, data, user) {
+        try {
+            const validatedId = roleModel.validateRoleId(roleId);
+            
+            // Check role access
+            const role = await roleRepository.findByIdWithAccess(validatedId, user);
+            if (!role) {
+                throw new AppError('Role not found or access denied', 404);
+            }
+
+            // Check if it's a system role
+            if (role.is_system_role && !user.permissions.includes('system.admin')) {
+                throw new AppError('Only system admin can modify system role permissions', 403);
+            }
+
+            let permissionIds = [];
+            
+            // If group_id provided, get all permissions from that group
+            if (data.group_id) {
+                const group = await prisma.permission_groups.findUnique({
+                    where: { id: data.group_id },
+                    include: {
+                        permissions: {
+                            select: { id: true }
+                        }
+                    }
+                });
+
+                if (!group) {
+                    throw new AppError('Permission group not found', 404);
+                }
+
+                permissionIds = group.permissions.map(p => p.id);
+            } 
+            // Otherwise use provided permission_ids
+            else if (data.permission_ids && Array.isArray(data.permission_ids)) {
+                permissionIds = data.permission_ids;
+            } else {
+                throw new AppError('Either group_id or permission_ids must be provided', 400);
+            }
+
+            if (permissionIds.length === 0) {
+                throw new AppError('No permissions to assign', 400);
+            }
+
+            // Bulk insert role_permissions (skip duplicates)
+            const result = await roleRepository.bulkAssignPermissions(validatedId, permissionIds, user.id);
+            
+            // Get permission names for response
+            const permissions = await prisma.permissions.findMany({
+                where: { id: { in: permissionIds } },
+                select: { name: true }
+            });
+
+            return {
+                success: true,
+                message: `Assigned ${result.count} permissions to role`,
+                data: {
+                    role_id: validatedId,
+                    assigned_count: result.count,
+                    permissions: permissions.map(p => p.name),
+                    ...(data.group_id && { group_id: data.group_id })
+                }
+            };
+        } catch (error) {
+            console.error('Error in bulkAssignPermissions:', error);
+            throw error instanceof AppError ? error : new AppError(error.message, 500);
+        }
+    }
+
+    /**
+     * Bulk remove permissions from role
+     */
+    async bulkRemovePermissions(roleId, data, user) {
+        try {
+            const validatedId = roleModel.validateRoleId(roleId);
+            
+            // Check role access
+            const role = await roleRepository.findByIdWithAccess(validatedId, user);
+            if (!role) {
+                throw new AppError('Role not found or access denied', 404);
+            }
+
+            // Check if it's a system role
+            if (role.is_system_role && !user.permissions.includes('system.admin')) {
+                throw new AppError('Only system admin can modify system role permissions', 403);
+            }
+
+            let permissionIds = [];
+            
+            // If group_id provided, get all permissions from that group
+            if (data.group_id) {
+                const group = await prisma.permission_groups.findUnique({
+                    where: { id: data.group_id },
+                    include: {
+                        permissions: {
+                            select: { id: true }
+                        }
+                    }
+                });
+
+                if (!group) {
+                    throw new AppError('Permission group not found', 404);
+                }
+
+                permissionIds = group.permissions.map(p => p.id);
+            } 
+            // Otherwise use provided permission_ids
+            else if (data.permission_ids && Array.isArray(data.permission_ids)) {
+                permissionIds = data.permission_ids;
+            } else {
+                throw new AppError('Either group_id or permission_ids must be provided', 400);
+            }
+
+            if (permissionIds.length === 0) {
+                throw new AppError('No permissions to remove', 400);
+            }
+
+            // Bulk delete role_permissions
+            const result = await roleRepository.bulkRemovePermissions(validatedId, permissionIds);
+            
+            // Get remaining permission count
+            const remainingCount = await prisma.role_permissions.count({
+                where: { role_id: validatedId }
+            });
+
+            return {
+                success: true,
+                message: `Removed ${result.count} permissions from role`,
+                data: {
+                    role_id: validatedId,
+                    removed_count: result.count,
+                    remaining_permissions: remainingCount,
+                    ...(data.group_id && { group_id: data.group_id })
+                }
+            };
+        } catch (error) {
+            console.error('Error in bulkRemovePermissions:', error);
+            throw error instanceof AppError ? error : new AppError(error.message, 500);
         }
     }
 

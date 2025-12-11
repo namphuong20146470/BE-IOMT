@@ -9,6 +9,7 @@ import departmentRoutes from '../features/departments/departments.routes.js';
 import deviceRoutes from '../features/devices/device.routes.js';
 import maintenanceRoutes from '../features/maintenance/maintenance.routes.js';
 import alertRoutes from '../features/alerts/alerts.routes.js';
+import maintenanceLogsRoutes from '../features/maintenance/maintenance-logs.routes.js';
 
 // IoT Routes (warnings, environment data)
 import iotRoutes from './iotRoutes.js';
@@ -22,6 +23,7 @@ import deviceAssignmentRoutes from '../features/devices/device-assignment.routes
 // Additional Feature Routes
 import roleRoutes from '../features/roles/roles.routes.js';
 import permissionRoutes from '../features/permissions/routes.js';
+import permissionGroupRoutes from '../features/permissions/permission-groups.routes.js';
 import auditLogRoutes from '../features/audit-logs/audit-logs.routes.js';
 // import sessionRoutes from '../features/sessions/sessions.routes.js';
 
@@ -44,6 +46,7 @@ router.use('/devices', deviceRoutes);
 router.use('/maintenance', maintenanceRoutes);
 router.use('/alerts', alertRoutes);
 router.use('/iot', iotRoutes);
+router.use('/maintenance-logs', maintenanceLogsRoutes);
 
 // PDU Management System Routes
 router.use('/pdus', pduRoutes);
@@ -54,6 +57,7 @@ router.use('/device-assignment', deviceAssignmentRoutes);
 // Additional Feature Routes
 router.use('/roles', roleRoutes);
 router.use('/permissions', permissionRoutes);
+router.use('/permission-groups', permissionGroupRoutes);
 router.use('/logs', auditLogRoutes); // Alias for audit logs as 'logs'
 // router.use('/sessions', sessionRoutes);
 

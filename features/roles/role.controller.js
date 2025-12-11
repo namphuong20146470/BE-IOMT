@@ -94,9 +94,15 @@ export const deleteRole = async (req, res) => {
 /**
  * Get role permissions
  */
+/**
+ * Get role permissions (with optional grouping)
+ */
 export const getRolePermissions = async (req, res) => {
     try {
-        const result = await roleService.getRolePermissions(req.params.roleId, req.user);
+        const options = {
+            grouped: req.query.grouped
+        };
+        const result = await roleService.getRolePermissions(req.params.roleId, req.user, options);
         res.status(200).json(result);
     } catch (error) {
         console.error('Error fetching role permissions:', error);
@@ -183,6 +189,40 @@ export const getRoleStats = async (req, res) => {
 };
 
 /**
+ * Bulk assign permissions to role
+ */
+export const bulkAssignPermissions = async (req, res) => {
+    try {
+        const result = await roleService.bulkAssignPermissions(req.params.roleId, req.body, req.user);
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error bulk assigning permissions:', error);
+        res.status(error.statusCode || 400).json({
+            success: false,
+            message: error.message || 'Failed to assign permissions',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Bulk remove permissions from role
+ */
+export const bulkRemovePermissions = async (req, res) => {
+    try {
+        const result = await roleService.bulkRemovePermissions(req.params.roleId, req.body, req.user);
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error bulk removing permissions:', error);
+        res.status(error.statusCode || 400).json({
+            success: false,
+            message: error.message || 'Failed to remove permissions',
+            error: error.message
+        });
+    }
+};
+
+/**
  * Legacy endpoints compatibility
  */
 
@@ -214,6 +254,8 @@ export default {
     updateRolePermissions,
     assignPermissionToRole,
     removePermissionFromRole,
+    bulkAssignPermissions,
+    bulkRemovePermissions,
     getRoleStats,
     assignRoleToUser,
     getUserActiveRoles
