@@ -33,8 +33,6 @@ import mqttRoutes from './routes/mqttRoutes.js';
 
 // Legacy MQTT system (keep existing)
 import './Database/mqtt.database.js';
-// New Dynamic MQTT system (parallel)
-import './Database/mqtt.dynamic.js';
 // Socket-based MQTT system (for PDU sockets)
 import socketMQTTClient from './features/mqtt/socket-mqtt-client.js';
 import { configureSSL } from './config/ssl.js';

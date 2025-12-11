@@ -700,13 +700,6 @@ class DynamicMqttManager {
         return measurementMap;
     }
 
-    // ✅ DEPRECATED: Keep for backward compatibility but not used
-    async ensureMeasurementsExist(allFields, fullState) {
-        console.warn('⚠️ ensureMeasurementsExist is deprecated, use ensureMeasurementsInTransaction');
-        // Empty implementation - method được giữ để tránh breaking changes
-    }
-
-    // ✅ NEW: Clear cache for specific fields on error
     clearMeasurementCacheForFields(allFields, fullState) {
         const allFieldNames = new Set([
             ...Object.keys(allFields),
@@ -899,49 +892,6 @@ class DynamicMqttManager {
         }
         
         return 'text'; // Default fallback
-    }
-
-    // ✅ NEW: Safe measurement creation outside transaction
-    async getOrCreateMeasurementSafe(fieldName, value) {
-        try {
-            // First try to find existing using raw query (faster)
-            const existing = await prisma.$queryRaw`
-                SELECT id, name, data_type 
-                FROM measurements 
-                WHERE name = ${fieldName}
-            `;
-            
-            if (existing.length > 0) {
-                console.log(`📋 Found existing measurement (safe): ${fieldName}`);
-                return existing[0];
-            }
-            
-            // Create new measurement using UPSERT for safety
-            const dataType = this.inferDataType(value);
-            const result = await prisma.$queryRaw`
-                INSERT INTO measurements (
-                    name, data_type, unit, validation_rules
-                ) VALUES (
-                    ${fieldName},
-                    ${dataType}::measurement_data_type,
-                    'auto',
-                    ${JSON.stringify({ auto_created: true, source: 'mqtt_dynamic_safe' })}::jsonb
-                )
-                ON CONFLICT (name) 
-                DO UPDATE SET 
-                    data_type = EXCLUDED.data_type,
-                    validation_rules = EXCLUDED.validation_rules
-                RETURNING id, name, data_type
-            `;
-            
-            console.log(`📊 Safe auto-created measurement: ${fieldName} (${dataType})`);
-            return result[0];
-            
-        } catch (error) {
-            console.error(`❌ Error in safe measurement creation ${fieldName}:`, error.message);
-            // Don't throw - this is pre-creation, let transaction handle it
-            return null;
-        }
     }
 
     // ===== ERROR HANDLING & RETRY =====
