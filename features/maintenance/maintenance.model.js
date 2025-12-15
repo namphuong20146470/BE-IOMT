@@ -6,13 +6,55 @@ import { z } from 'zod';
  */
 
 // Electrical metrics schema (reusable)
+// ✅ Support both standard metrics AND custom fields
 const ElectricalMetricsSchema = z.object({
     voltage: z.number().min(0).max(500).optional(),
     current: z.number().min(0).max(100).optional(),
     power: z.number().min(0).max(50000).optional(),
     frequency: z.number().min(45).max(65).optional(),
     power_factor: z.number().min(0).max(1).optional()
-});
+}).passthrough(); // ✅ Allow additional custom fields
+
+// Extended metrics schema with common measurements
+const ExtendedMetricsSchema = z.object({
+    // ===== Điện năng cơ bản =====
+    voltage: z.number().min(0).max(500).optional(),
+    current: z.number().min(0).max(100).optional(),
+    power: z.number().min(0).max(50000).optional(),
+    frequency: z.number().min(45).max(65).optional(),
+    power_factor: z.number().min(0).max(1).optional(),
+    
+    // ===== Nhiệt độ =====
+    temperature_internal: z.number().min(-50).max(200).optional(),  // Nhiệt độ trong máy (°C)
+    temperature_external: z.number().min(-50).max(200).optional(),  // Nhiệt độ vỏ ngoài
+    room_temperature: z.number().min(0).max(50).optional(),         // Nhiệt độ phòng
+    
+    // ===== Môi trường =====
+    room_humidity: z.number().min(0).max(100).optional(),           // Độ ẩm (%)
+    noise_level: z.number().min(0).max(200).optional(),             // Tiếng ồn (dB)
+    vibration_level: z.number().min(0).optional(),                  // Độ rung (mm/s)
+    
+    // ===== Cơ khí =====
+    fan_speed: z.number().min(0).max(10000).optional(),             // Tốc độ quạt (RPM)
+    motor_speed: z.number().min(0).max(10000).optional(),           // Tốc độ động cơ (RPM)
+    
+    // ===== Áp suất & Lưu lượng =====
+    pressure: z.number().min(0).optional(),                         // Áp suất (bar)
+    flow_rate: z.number().min(0).optional(),                        // Lưu lượng (L/min)
+    
+    // ===== Quang học =====
+    brightness: z.number().min(0).optional(),                       // Độ sáng (cd/m²)
+    light_intensity: z.number().min(0).optional(),                  // Cường độ sáng (lux)
+    
+    // ===== Khí y tế =====
+    co2_pressure: z.number().min(0).optional(),                     // Áp suất CO2 (PSI)
+    co2_flow_rate: z.number().min(0).optional(),                    // Lưu lượng CO2
+    o2_concentration: z.number().min(0).max(100).optional(),        // Nồng độ O2 (%)
+    
+    // ===== Hiệu suất =====
+    efficiency: z.number().min(0).max(100).optional(),              // Hiệu suất (%)
+    operating_hours: z.number().min(0).optional()                   // Số giờ vận hành
+}).passthrough(); // ✅ Still allow any other custom fields
 
 // Create maintenance log schema
 export const MaintenanceCreateSchema = z.object({
@@ -97,20 +139,34 @@ export const MaintenanceJobCreateSchema = z.object({
     category: z.string().max(100).optional(),
     description: z.string().optional(),
     
-    // Before/After metrics - JSONB format
+    // ✅ Before/After metrics - NOW OPTIONAL for 3-stage workflow
     before_metrics: ElectricalMetricsSchema.optional(),
     after_metrics: ElectricalMetricsSchema.optional(),
     
-    // Timing
+    // Timing - all optional initially
     start_time: z.string().datetime().optional(),
     end_time: z.string().datetime().optional(),
     duration_minutes: z.number().int().min(0).optional(),
     
-    // Status
+    // ✅ Status defaults to 'pending' for new workflow
     status: z.enum(['pending', 'in_progress', 'completed', 'failed']).default('pending'),
     result: z.enum(['success', 'failed', 'continue', 'partial']).optional(),
     
     // Notes
+    notes: z.string().optional(),
+    issues_found: z.string().optional(),
+    actions_taken: z.string().optional()
+});
+
+// Start job schema (pending → in_progress)
+export const MaintenanceJobStartSchema = z.object({
+    before_metrics: ElectricalMetricsSchema.optional() // Auto-captured if not provided
+});
+
+// Complete job schema (in_progress → completed)
+export const MaintenanceJobCompleteSchema = z.object({
+    after_metrics: ElectricalMetricsSchema, // Required
+    result: z.enum(['success', 'failed', 'continue', 'partial']), // Required
     notes: z.string().optional(),
     issues_found: z.string().optional(),
     actions_taken: z.string().optional()
@@ -163,6 +219,14 @@ export const validateCreateJob = (data) => {
     return MaintenanceJobCreateSchema.parse(data);
 };
 
+export const validateStartJob = (data) => {
+    return MaintenanceJobStartSchema.parse(data);
+};
+
+export const validateCompleteJob = (data) => {
+    return MaintenanceJobCompleteSchema.parse(data);
+};
+
 export const validateMaintenanceQuery = (query) => {
     return MaintenanceQuerySchema.parse(query);
 };
@@ -171,10 +235,14 @@ export default {
     MaintenanceCreateSchema,
     MaintenanceUpdateSchema,
     MaintenanceJobCreateSchema,
+    MaintenanceJobStartSchema,
+    MaintenanceJobCompleteSchema,
     MaintenanceQuerySchema,
     validateMaintenanceId,
     validateCreateMaintenance,
     validateUpdateMaintenance,
     validateCreateJob,
+    validateStartJob,
+    validateCompleteJob,
     validateMaintenanceQuery
 };

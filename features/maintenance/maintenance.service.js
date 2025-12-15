@@ -231,7 +231,11 @@ class MaintenanceService {
      */
     async createMaintenanceJob(jobData, user) {
         try {
+            console.log('🔍 Service received jobData:', JSON.stringify(jobData, null, 2));
+            
             const validatedData = maintenanceModel.validateCreateJob(jobData);
+            
+            console.log('✅ Validated data:', JSON.stringify(validatedData, null, 2));
 
             // Check maintenance log exists
             const maintenanceLog = await maintenanceRepository.findById(validatedData.maintenance_id);
@@ -247,6 +251,7 @@ class MaintenanceService {
             }
 
             // Create job
+            console.log('💾 Saving to DB:', JSON.stringify(validatedData, null, 2));
             await maintenanceRepository.createJob(validatedData);
 
             // Get updated jobs list
@@ -348,6 +353,147 @@ class MaintenanceService {
             console.error('Error capturing current metrics:', error);
             throw new AppError(
                 error.message || 'Failed to capture current metrics',
+                error.statusCode || 500
+            );
+        }
+    }
+
+    /**
+     * Start maintenance job (pending → in_progress)
+     */
+    async startMaintenanceJob(maintenanceId, jobId, data, user) {
+        try {
+            // Validate IDs
+            const validatedMaintenanceId = maintenanceModel.validateMaintenanceId(maintenanceId);
+            const validatedJobId = maintenanceModel.validateMaintenanceId(jobId);
+
+            // Get existing job
+            const job = await maintenanceRepository.getJobById(validatedJobId);
+            if (!job) {
+                throw new AppError('Maintenance job not found', 404);
+            }
+
+            // Verify job belongs to the maintenance log
+            if (job.maintenance_id !== validatedMaintenanceId) {
+                throw new AppError('Job does not belong to this maintenance log', 400);
+            }
+
+            // Validate status transition
+            if (job.status !== 'pending') {
+                throw new AppError(
+                    `Cannot start job with status '${job.status}'. Job must be in 'pending' status.`,
+                    400
+                );
+            }
+
+            // Auto-capture metrics if not provided
+            let beforeMetrics = data.before_metrics;
+            if (!beforeMetrics || Object.keys(beforeMetrics).length === 0) {
+                const maintenanceLog = await maintenanceRepository.findById(validatedMaintenanceId);
+                const metricsResponse = await this.captureCurrentMetrics(maintenanceLog.device_id);
+                beforeMetrics = metricsResponse.data;
+                // Remove timestamp from metrics
+                delete beforeMetrics.timestamp;
+            }
+
+            // Prepare update data
+            const updateData = {
+                before_metrics: beforeMetrics,
+                status: 'in_progress',
+                start_time: new Date().toISOString()
+            };
+
+            // Update job
+            const updatedJob = await maintenanceRepository.updateJob(validatedJobId, updateData);
+
+            return {
+                success: true,
+                message: 'Maintenance job started successfully',
+                data: updatedJob
+            };
+        } catch (error) {
+            console.error('Error starting maintenance job:', error);
+            throw new AppError(
+                error.message || 'Failed to start maintenance job',
+                error.statusCode || 500
+            );
+        }
+    }
+
+    /**
+     * Complete maintenance job (in_progress → completed)
+     */
+    async completeMaintenanceJob(maintenanceId, jobId, data, user) {
+        try {
+            // Validate IDs
+            const validatedMaintenanceId = maintenanceModel.validateMaintenanceId(maintenanceId);
+            const validatedJobId = maintenanceModel.validateMaintenanceId(jobId);
+
+            // Get existing job
+            const job = await maintenanceRepository.getJobById(validatedJobId);
+            if (!job) {
+                throw new AppError('Maintenance job not found', 404);
+            }
+
+            // Verify job belongs to the maintenance log
+            if (job.maintenance_id !== validatedMaintenanceId) {
+                throw new AppError('Job does not belong to this maintenance log', 400);
+            }
+
+            // Validate status transition
+            if (job.status !== 'in_progress') {
+                throw new AppError(
+                    `Cannot complete job with status '${job.status}'. Job must be in 'in_progress' status.`,
+                    400
+                );
+            }
+
+            // Validate required fields
+            if (!data.after_metrics || Object.keys(data.after_metrics).length === 0) {
+                throw new AppError('after_metrics is required to complete job', 400);
+            }
+            if (!data.result) {
+                throw new AppError('result is required to complete job', 400);
+            }
+
+            // Validate result enum
+            const validResults = ['success', 'failed', 'partial', 'continue'];
+            if (!validResults.includes(data.result)) {
+                throw new AppError(
+                    `Invalid result. Must be one of: ${validResults.join(', ')}`,
+                    400
+                );
+            }
+
+            // Calculate duration
+            const startTime = new Date(job.start_time);
+            const endTime = new Date();
+            const durationMinutes = Math.round((endTime - startTime) / 60000);
+
+            // Prepare update data
+            const updateData = {
+                after_metrics: data.after_metrics,
+                status: 'completed',
+                result: data.result,
+                end_time: endTime.toISOString(),
+                duration_minutes: durationMinutes,
+                notes: data.notes !== undefined ? data.notes : job.notes,
+                issues_found: data.issues_found !== undefined ? data.issues_found : job.issues_found,
+                actions_taken: data.actions_taken !== undefined ? data.actions_taken : job.actions_taken
+            };
+
+            // Update job
+            const updatedJob = await maintenanceRepository.updateJob(validatedJobId, updateData);
+
+            return {
+                success: true,
+                message: 'Maintenance job completed successfully',
+                data: updatedJob
+            };
+        } catch (error) {
+            console.error('Error completing maintenance job:', error);
+            throw new AppError(
+                error.message || 'Failed to complete maintenance job',
                 error.statusCode || 500
             );
         }

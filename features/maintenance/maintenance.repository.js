@@ -336,7 +336,14 @@ class MaintenanceRepository {
      * Create maintenance job
      */
     async createJob(jobData) {
-        return prisma.maintenance_jobs.create({
+        console.log('📦 Repository creating job with data:', {
+            before_metrics: jobData.before_metrics,
+            after_metrics: jobData.after_metrics,
+            before_type: typeof jobData.before_metrics,
+            after_type: typeof jobData.after_metrics
+        });
+        
+        const result = await prisma.maintenance_jobs.create({
             data: {
                 maintenance_id: jobData.maintenance_id,
                 job_number: jobData.job_number,
@@ -357,6 +364,14 @@ class MaintenanceRepository {
                 updated_at: new Date()
             }
         });
+        
+        console.log('✅ Job created in DB:', {
+            id: result.id,
+            before_metrics: result.before_metrics,
+            after_metrics: result.after_metrics
+        });
+        
+        return result;
     }
 
     /**
@@ -366,6 +381,61 @@ class MaintenanceRepository {
         return prisma.maintenance_jobs.findMany({
             where: { maintenance_id: maintenanceId },
             orderBy: { job_number: 'asc' }
+        });
+    }
+
+    /**
+     * Get maintenance job by ID
+     */
+    async getJobById(jobId) {
+        return prisma.maintenance_jobs.findUnique({
+            where: { id: jobId }
+        });
+    }
+
+    /**
+     * Update maintenance job
+     */
+    async updateJob(jobId, data) {
+        const updateData = {
+            updated_at: new Date()
+        };
+
+        // Add fields if provided
+        if (data.before_metrics !== undefined) {
+            updateData.before_metrics = data.before_metrics;
+        }
+        if (data.after_metrics !== undefined) {
+            updateData.after_metrics = data.after_metrics;
+        }
+        if (data.status) {
+            updateData.status = data.status;
+        }
+        if (data.result) {
+            updateData.result = data.result;
+        }
+        if (data.start_time) {
+            updateData.start_time = new Date(data.start_time);
+        }
+        if (data.end_time) {
+            updateData.end_time = new Date(data.end_time);
+        }
+        if (data.duration_minutes !== undefined) {
+            updateData.duration_minutes = data.duration_minutes;
+        }
+        if (data.notes !== undefined) {
+            updateData.notes = data.notes;
+        }
+        if (data.issues_found !== undefined) {
+            updateData.issues_found = data.issues_found;
+        }
+        if (data.actions_taken !== undefined) {
+            updateData.actions_taken = data.actions_taken;
+        }
+
+        return prisma.maintenance_jobs.update({
+            where: { id: jobId },
+            data: updateData
         });
     }
 }

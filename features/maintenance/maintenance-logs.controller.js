@@ -109,6 +109,7 @@ export const createMaintenanceJob = async (req, res) => {
             ...req.body,
             maintenance_id: req.params.id
         };
+    
         
         const result = await maintenanceService.createMaintenanceJob(jobData, req.user);
         res.status(201).json(result);
@@ -179,6 +180,52 @@ export const captureCurrentMetrics = async (req, res) => {
     }
 };
 
+/**
+ * PATCH /api/v1/maintenance-logs/:id/jobs/:jobId/start
+ * Start a maintenance job (pending → in_progress)
+ */
+export const startMaintenanceJob = async (req, res) => {
+    try {
+        const { id: maintenanceId, jobId } = req.params;
+        const result = await maintenanceService.startMaintenanceJob(
+            maintenanceId,
+            jobId,
+            req.body,
+            req.user
+        );
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error in startMaintenanceJob:', error);
+        res.status(error.statusCode || 500).json({
+            success: false,
+            message: error.message || 'Failed to start maintenance job'
+        });
+    }
+};
+
+/**
+ * PATCH /api/v1/maintenance-logs/:id/jobs/:jobId/complete
+ * Complete a maintenance job (in_progress → completed)
+ */
+export const completeMaintenanceJob = async (req, res) => {
+    try {
+        const { id: maintenanceId, jobId } = req.params;
+        const result = await maintenanceService.completeMaintenanceJob(
+            maintenanceId,
+            jobId,
+            req.body,
+            req.user
+        );
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error in completeMaintenanceJob:', error);
+        res.status(error.statusCode || 500).json({
+            success: false,
+            message: error.message || 'Failed to complete maintenance job'
+        });
+    }
+};
+
 export default {
     createMaintenanceLog,
     getAllMaintenanceLogs,
@@ -188,5 +235,7 @@ export default {
     createMaintenanceJob,
     getStatistics,
     getDeviceHistory,
-    captureCurrentMetrics
+    captureCurrentMetrics,
+    startMaintenanceJob,
+    completeMaintenanceJob
 };

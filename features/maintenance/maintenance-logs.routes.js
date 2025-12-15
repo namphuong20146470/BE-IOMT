@@ -9,7 +9,9 @@ import {
     createMaintenanceJob,
     getStatistics,
     getDeviceHistory,
-    captureCurrentMetrics
+    captureCurrentMetrics,
+    startMaintenanceJob,
+    completeMaintenanceJob
 } from './maintenance-logs.controller.js';
 import { authMiddleware } from '../../middleware/authMiddleware.js';
 import { requirePermission } from '../../middleware/rbacMiddleware.js';
@@ -374,5 +376,125 @@ router.delete('/:id', requirePermission('maintenance.delete'), deleteMaintenance
  *         description: Maintenance job created successfully
  */
 router.post('/:id/jobs', requirePermission('maintenance.update'), createMaintenanceJob);
+
+/**
+ * @swagger
+ * /api/v1/maintenance-logs/{id}/jobs/{jobId}/start:
+ *   patch:
+ *     summary: Start a maintenance job (pending → in_progress)
+ *     tags: [Maintenance Jobs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Maintenance log ID
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Job ID
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               before_metrics:
+ *                 type: object
+ *                 description: Electrical metrics before job (optional, auto-captured if not provided)
+ *                 properties:
+ *                   voltage:
+ *                     type: number
+ *                   current:
+ *                     type: number
+ *                   power:
+ *                     type: number
+ *                   frequency:
+ *                     type: number
+ *                   power_factor:
+ *                     type: number
+ *     responses:
+ *       200:
+ *         description: Job started successfully
+ *       400:
+ *         description: Invalid status transition or validation error
+ *       404:
+ *         description: Job not found
+ */
+router.patch('/:id/jobs/:jobId/start', requirePermission('maintenance.update'), startMaintenanceJob);
+
+/**
+ * @swagger
+ * /api/v1/maintenance-logs/{id}/jobs/{jobId}/complete:
+ *   patch:
+ *     summary: Complete a maintenance job (in_progress → completed)
+ *     tags: [Maintenance Jobs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Maintenance log ID
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Job ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - after_metrics
+ *               - result
+ *             properties:
+ *               after_metrics:
+ *                 type: object
+ *                 description: Electrical metrics after job completion
+ *                 properties:
+ *                   voltage:
+ *                     type: number
+ *                   current:
+ *                     type: number
+ *                   power:
+ *                     type: number
+ *                   frequency:
+ *                     type: number
+ *                   power_factor:
+ *                     type: number
+ *               result:
+ *                 type: string
+ *                 enum: [success, failed, partial, continue]
+ *                 description: Job completion result
+ *               notes:
+ *                 type: string
+ *               issues_found:
+ *                 type: string
+ *               actions_taken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Job completed successfully
+ *       400:
+ *         description: Invalid status transition or validation error
+ *       404:
+ *         description: Job not found
+ */
+router.patch('/:id/jobs/:jobId/complete', requirePermission('maintenance.update'), completeMaintenanceJob);
 
 export default router;
