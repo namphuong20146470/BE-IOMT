@@ -438,6 +438,15 @@ class MaintenanceRepository {
             data: updateData
         });
     }
+
+    /**
+     * Delete maintenance job
+     */
+    async deleteJob(jobId) {
+        return prisma.maintenance_jobs.delete({
+            where: { id: jobId }
+        });
+    }
 }
 
 export default new MaintenanceRepository();

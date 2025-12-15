@@ -226,6 +226,28 @@ export const completeMaintenanceJob = async (req, res) => {
     }
 };
 
+/**
+ * DELETE /api/v1/maintenance-logs/:id/jobs/:jobId
+ * Delete a maintenance job
+ */
+export const deleteMaintenanceJob = async (req, res) => {
+    try {
+        const { id: maintenanceId, jobId } = req.params;
+        const result = await maintenanceService.deleteMaintenanceJob(
+            maintenanceId,
+            jobId,
+            req.user
+        );
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error in deleteMaintenanceJob:', error);
+        res.status(error.statusCode || 500).json({
+            success: false,
+            message: error.message || 'Failed to delete maintenance job'
+        });
+    }
+};
+
 export default {
     createMaintenanceLog,
     getAllMaintenanceLogs,
@@ -237,5 +259,6 @@ export default {
     getDeviceHistory,
     captureCurrentMetrics,
     startMaintenanceJob,
-    completeMaintenanceJob
+    completeMaintenanceJob,
+    deleteMaintenanceJob
 };

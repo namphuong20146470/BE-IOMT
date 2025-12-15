@@ -11,7 +11,8 @@ import {
     getDeviceHistory,
     captureCurrentMetrics,
     startMaintenanceJob,
-    completeMaintenanceJob
+    completeMaintenanceJob,
+    deleteMaintenanceJob
 } from './maintenance-logs.controller.js';
 import { authMiddleware } from '../../middleware/authMiddleware.js';
 import { requirePermission } from '../../middleware/rbacMiddleware.js';
@@ -502,5 +503,49 @@ router.patch('/:id/jobs/:jobId/start', requirePermission('maintenance.update'), 
  *         description: Job not found
  */
 router.patch('/:id/jobs/:jobId/complete', requirePermission('maintenance.update'), completeMaintenanceJob);
+
+/**
+ * @swagger
+ * /api/v1/maintenance-logs/{id}/jobs/{jobId}:
+ *   delete:
+ *     summary: Delete a maintenance job
+ *     tags: [Maintenance Jobs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Maintenance log ID
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Job ID to delete
+ *     responses:
+ *       200:
+ *         description: Job deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Cannot delete completed jobs or job doesn't belong to maintenance log
+ *       404:
+ *         description: Job not found
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.delete('/:id/jobs/:jobId', requirePermission('maintenance.delete'), deleteMaintenanceJob);
 
 export default router;

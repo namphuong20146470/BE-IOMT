@@ -506,6 +506,50 @@ class MaintenanceService {
             );
         }
     }
+
+    /**
+     * Delete maintenance job
+     */
+    async deleteMaintenanceJob(maintenanceId, jobId, user) {
+        try {
+            // Validate IDs
+            const validatedMaintenanceId = maintenanceModel.validateMaintenanceId(maintenanceId);
+            const validatedJobId = maintenanceModel.validateMaintenanceId(jobId);
+
+            // Get existing job
+            const job = await maintenanceRepository.getJobById(validatedJobId);
+            if (!job) {
+                throw new AppError('Maintenance job not found', 404);
+            }
+
+            // Verify job belongs to the maintenance log
+            if (job.maintenance_id !== validatedMaintenanceId) {
+                throw new AppError('Job does not belong to this maintenance log', 400);
+            }
+
+            // Prevent deletion of completed jobs (optional - remove if you want to allow)
+            if (job.status === 'completed') {
+                throw new AppError(
+                    'Cannot delete completed job. Only pending or in-progress jobs can be deleted.',
+                    400
+                );
+            }
+
+            // Delete the job
+            await maintenanceRepository.deleteJob(validatedJobId);
+
+            return {
+                success: true,
+                message: 'Maintenance job deleted successfully'
+            };
+        } catch (error) {
+            console.error('Error deleting maintenance job:', error);
+            throw new AppError(
+                error.message || 'Failed to delete maintenance job',
+                error.statusCode || 500
+            );
+        }
+    }
 }
 
 export default new MaintenanceService();
