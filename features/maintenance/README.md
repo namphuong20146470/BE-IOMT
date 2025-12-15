@@ -145,14 +145,83 @@ Content-Type: application/json
   "job_number": 1,
   "name": "Kiểm tra nguồn chính",
   "category": "nguồn",
-  "description": "Đo điện áp, dòng điện đầu vào/ra",
-  "before_voltage": 220.5,
-  "before_current": 2.3,
-  "before_power": 506.15,
-  "before_frequency": 50.0,
-  "before_power_factor": 0.95,
-  "start_time": "2025-12-09T08:15:00Z",
-  "status": "in_progress"
+  "description": "Đo điện áp, dòng điện đầu vào/ra"
+}
+```
+
+**Note:** With the new 3-stage workflow, jobs are created with minimal info. Metrics are added later via START and COMPLETE endpoints.
+
+---
+
+### **5a. Start Maintenance Job** ✨ NEW
+```http
+PATCH /api/v1/maintenance-logs/{id}/jobs/{jobId}/start
+Content-Type: application/json
+
+{
+  "before_metrics": {
+    "voltage": 220.5,
+    "current": 2.3,
+    "power": 506.15,
+    "frequency": 50.0,
+    "power_factor": 0.95
+  }
+}
+```
+
+**Auto-Capture Option:** If `before_metrics` is omitted, system will automatically capture from device's real-time data.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Maintenance job started successfully",
+  "data": {
+    "id": "job-uuid",
+    "status": "in_progress",
+    "before_metrics": { ... },
+    "start_time": "2025-12-15T10:30:00Z"
+  }
+}
+```
+
+---
+
+### **5b. Complete Maintenance Job** ✨ NEW
+```http
+PATCH /api/v1/maintenance-logs/{id}/jobs/{jobId}/complete
+Content-Type: application/json
+
+{
+  "after_metrics": {
+    "voltage": 230.4,
+    "current": 2.5,
+    "power": 576.0,
+    "frequency": 50.0,
+    "power_factor": 0.98
+  },
+  "result": "success",
+  "notes": "Job completed successfully",
+  "issues_found": "Minor voltage fluctuation",
+  "actions_taken": "Adjusted voltage regulator"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Maintenance job completed successfully",
+  "data": {
+    "id": "job-uuid",
+    "status": "completed",
+    "result": "success",
+    "before_metrics": { ... },
+    "after_metrics": { ... },
+    "start_time": "2025-12-15T10:30:00Z",
+    "end_time": "2025-12-15T11:15:00Z",
+    "duration_minutes": 45
+  }
 }
 ```
 
@@ -194,33 +263,64 @@ GET /api/v1/maintenance-logs/statistics?organization_id=xxx&start_date=2025-01-0
 
 **Response:**
 ```json
-{
-  "success": true,
-  "data": {
-    "total": 150,
-    "by_type": [
-      { "type": "preventive", "count": 80 },
-      { "type": "corrective", "count": 50 },
-      { "type": "emergency", "count": 20 }
-    ],
-    "by_status": [
-      { "status": "completed", "count": 120 },
-      { "status": "failed", "count": 10 },
-      { "status": "partial", "count": 20 }
-    ],
-    "average_duration_minutes": 45,
-    "total_cost": 15000000
-  }
+{Create Maintenance Log**
+```typescript
+const maintenanceLog = await api.post('/maintenance-logs', {
+  device_id,
+  title,
+  maintenance_type,
+  customer_issue
+});
+```
+
+**Step 2: Create Jobs (Minimal Info)**
+```typescript
+for (let job of jobs) {
+  await api.post(`/maintenance-logs/${maintenanceLog.id}/jobs`, {
+    job_number: job.number,
+    name: job.name,
+    category: job.category,
+    description: job.description
+    // Status automatically set to 'pending'
+  });
 }
 ```
 
----
+**Step 3: Start Job & Capture Before Metrics**
+```typescript
+// Option A: Auto-capture from device
+await api.patch(`/maintenance-logs/${maintenanceLog.id}/jobs/${job.id}/start`, {});
 
-## 🔧 Database Schema
+// Option B: Manual metrics
+await api.patch(`/maintenance-logs/${maintenanceLog.id}/jobs/${job.id}/start`, {
+  before_metrics: {
+    voltage: 220.5,
+    current: 2.3,
+    power: 506.15,
+    frequency: 50.0,
+    power_factor: 0.95
+  }
+});
+```
 
-### **maintenance_history** (Extended)
-- `ticket_number` - Auto-generated (MT-YYYYMMDD-XXXX)
-- `socket_id` - Tracking socket assignment
+**Step 4: Complete Job & Capture After Metrics**
+```typescript
+await api.patch(`/maintenance-logs/${maintenanceLog.id}/jobs/${job.id}/complete`, {
+  after_metrics: {
+    voltage: 230.4,
+    current: 2.5,
+    power: 576.0,
+    frequency: 50.0,
+    power_factor: 0.98
+  },
+  result: 'success', // or 'failed', 'partial', 'continue'
+  notes: 'Job completed successfully',
+  issues_found: 'Minor issue description',
+  actions_taken: 'Actions taken to resolve'
+});
+```
+
+**Step 5: Complete Maintenance Logacking socket assignment
 - `initial_*` - Electrical metrics before maintenance
 - `final_*` - Electrical metrics after maintenance
 - `customer_issue` - Issue reported by customer
