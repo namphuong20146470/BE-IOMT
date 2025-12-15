@@ -403,6 +403,14 @@ class MaintenanceService {
                 start_time: new Date().toISOString()
             };
 
+            // Add optional fields if provided
+            if (data.issues_found !== undefined) {
+                updateData.issues_found = data.issues_found;
+            }
+            if (data.actions_taken !== undefined) {
+                updateData.actions_taken = data.actions_taken;
+            }
+
             // Update job
             const updatedJob = await maintenanceRepository.updateJob(validatedJobId, updateData);
 

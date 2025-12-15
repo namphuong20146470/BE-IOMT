@@ -20,11 +20,16 @@ Content-Type: application/json
     "power": 506.15,
     "frequency": 50.0,
     "power_factor": 0.95
-  }
+  },
+  "issues_found": "Phát hiện điện áp thấp hơn mức bình thường",
+  "actions_taken": "Bắt đầu kiểm tra nguồn điện chính"
 }
 ```
 
-**Note:** `before_metrics` is optional. If not provided, will auto-capture from device real-time data.
+**Optional fields:**
+- `before_metrics` - Auto-captured from device if not provided
+- `issues_found` - Document issues discovered when starting
+- `actions_taken` - Document initial actions taken
 
 ### 2. Complete Job (In Progress → Completed)
 ```http
@@ -137,7 +142,7 @@ Content-Type: application/json
 - Send empty body or omit `before_metrics`
 - System will auto-capture from device's real-time data
 
-**Test Case B: Manual Metrics**
+**Test Case B: Manual Metrics + Issues**
 ```json
 {
   "before_metrics": {
@@ -146,7 +151,9 @@ Content-Type: application/json
     "power": 506.15,
     "frequency": 50.0,
     "power_factor": 0.95
-  }
+  },
+  "issues_found": "Voltage lower than normal",
+  "actions_taken": "Started power supply inspection"
 }
 ```
 

@@ -165,11 +165,16 @@ Content-Type: application/json
     "power": 506.15,
     "frequency": 50.0,
     "power_factor": 0.95
-  }
+  },
+  "issues_found": "Phát hiện điện áp thấp",
+  "actions_taken": "Bắt đầu kiểm tra nguồn"
 }
 ```
 
-**Auto-Capture Option:** If `before_metrics` is omitted, system will automatically capture from device's real-time data.
+**Optional Fields:**
+- `before_metrics` - Auto-captured from device if not provided
+- `issues_found` - Issues discovered when starting work
+- `actions_taken` - Initial actions taken
 
 **Response:**
 ```json
@@ -291,7 +296,7 @@ for (let job of jobs) {
 // Option A: Auto-capture from device
 await api.patch(`/maintenance-logs/${maintenanceLog.id}/jobs/${job.id}/start`, {});
 
-// Option B: Manual metrics
+// Option B: Manual metrics + document issues
 await api.patch(`/maintenance-logs/${maintenanceLog.id}/jobs/${job.id}/start`, {
   before_metrics: {
     voltage: 220.5,
@@ -299,7 +304,9 @@ await api.patch(`/maintenance-logs/${maintenanceLog.id}/jobs/${job.id}/start`, {
     power: 506.15,
     frequency: 50.0,
     power_factor: 0.95
-  }
+  },
+  issues_found: 'Voltage lower than normal',
+  actions_taken: 'Started power supply inspection'
 });
 ```
 

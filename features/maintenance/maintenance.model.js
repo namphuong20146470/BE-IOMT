@@ -160,7 +160,9 @@ export const MaintenanceJobCreateSchema = z.object({
 
 // Start job schema (pending → in_progress)
 export const MaintenanceJobStartSchema = z.object({
-    before_metrics: ElectricalMetricsSchema.optional() // Auto-captured if not provided
+    before_metrics: ElectricalMetricsSchema.optional(), // Auto-captured if not provided
+    issues_found: z.string().optional(), // Issues discovered when starting
+    actions_taken: z.string().optional() // Initial actions taken
 });
 
 // Complete job schema (in_progress → completed)

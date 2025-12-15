@@ -420,6 +420,12 @@ router.post('/:id/jobs', requirePermission('maintenance.update'), createMaintena
  *                     type: number
  *                   power_factor:
  *                     type: number
+ *               issues_found:
+ *                 type: string
+ *                 description: Issues discovered when starting the job
+ *               actions_taken:
+ *                 type: string
+ *                 description: Initial actions taken when starting the job
  *     responses:
  *       200:
  *         description: Job started successfully
