@@ -3,6 +3,7 @@ import maintenanceRepository from './maintenance.repository.js';
 import maintenanceModel from './maintenance.model.js';
 import prisma from '../../config/db.js';
 import { AppError } from '../../shared/utils/errorHandler.js';
+import { isSuperAdmin } from '../../shared/middleware/rbacMiddleware.js';
 
 /**
  * Maintenance History Service - Business logic
@@ -126,7 +127,7 @@ class MaintenanceService {
             const validatedQuery = maintenanceModel.validateMaintenanceQuery(query);
 
             // Filter by user's organization if not admin
-            if (!user.is_admin && !validatedQuery.organization_id) {
+            if (!isSuperAdmin(user) && !validatedQuery.organization_id) {
                 validatedQuery.organization_id = user.organization_id;
             }
 
@@ -206,8 +207,15 @@ class MaintenanceService {
                 throw new AppError('Maintenance log not found', 404);
             }
 
-            // Check permissions (only creator or admin can delete)
-            if (existingLog.created_by !== user.id && !user.is_admin) {
+            // Check permissions - allow if:
+            // 1. User is creator
+            // 2. User is super admin (has system.admin permission)
+            // 3. User has explicit maintenance.delete permission
+            const isCreator = existingLog.created_by === user.id;
+            const isAdmin = isSuperAdmin(user);
+            const hasDeletePermission = user.permissions?.includes('maintenance.delete');
+
+            if (!isCreator && !isAdmin && !hasDeletePermission) {
                 throw new AppError('You do not have permission to delete this maintenance log', 403);
             }
 
@@ -277,7 +285,7 @@ class MaintenanceService {
     async getStatistics(filters, user) {
         try {
             // Filter by user's organization if not admin
-            if (!user.is_admin && !filters.organization_id) {
+            if (!isSuperAdmin(user) && !filters.organization_id) {
                 filters.organization_id = user.organization_id;
             }
 

@@ -10,28 +10,16 @@ import auditService from '../../shared/services/AuditService.js';
  * Helper: Check if user is Super Admin
  * @param {Object} user - User object from JWT
  * @returns {boolean} True if Super Admin
+ * 
+ * ✅ BEST PRACTICE: Permission-based check only
+ * - Không phụ thuộc vào tên role (có thể đổi)
+ * - Consistent với RBAC system
+ * - Dễ kiểm soát và thu hồi quyền
  */
 export function isSuperAdmin(user) {
   if (!user) return false;
   
-  // ✅ NEW: Fast check using role_names array from JWT
-  if (user.role_names) {
-    return user.role_names.some(roleName => 
-      roleName?.toLowerCase().includes('super admin') ||
-      roleName?.toLowerCase() === 'super admin'
-    );
-  }
-  
-  // ✅ Fallback: Check roles array (backward compatibility)
-  if (user.roles) {
-    return user.roles.some(role => 
-      role.is_system_role === true || 
-      role.name?.toLowerCase().includes('super admin') ||
-      role.name?.toLowerCase() === 'super admin'
-    );
-  }
-  
-  // ✅ Ultimate fallback: Check permissions directly
+  // ✅ Check permission system.admin (recommended approach)
   return user.permissions?.includes('system.admin') || false;
 }
 
