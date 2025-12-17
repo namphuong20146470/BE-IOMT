@@ -6,6 +6,51 @@ import { EventEmitter } from 'events';
 const prisma = new PrismaClient();
 
 /**
+ * Parse MQTT timestamp to valid Date object
+ * Format: "HH:mm:ss DD/MM/YYYY" (e.g., "16:38:46 17/12/2025")
+ */
+function parseMqttTimestamp(timestampStr) {
+    if (!timestampStr) return new Date();
+    
+    try {
+        // Expected format: "HH:mm:ss DD/MM/YYYY"
+        const match = timestampStr.match(/^(\d{2}):(\d{2}):(\d{2})\s+(\d{2})\/(\d{2})\/(\d{4})$/);
+        
+        if (match) {
+            const [, hours, minutes, seconds, day, month, year] = match;
+            // JavaScript Date: months are 0-indexed
+            const date = new Date(
+                parseInt(year),
+                parseInt(month) - 1,
+                parseInt(day),
+                parseInt(hours),
+                parseInt(minutes),
+                parseInt(seconds)
+            );
+            
+            // Validate the date is valid
+            if (!isNaN(date.getTime())) {
+                return date;
+            }
+        }
+        
+        // Fallback: try native Date parsing
+        const date = new Date(timestampStr);
+        if (!isNaN(date.getTime())) {
+            return date;
+        }
+        
+        // If all parsing fails, use current time
+        console.warn(`⚠️  Invalid timestamp format: "${timestampStr}", using current time`);
+        return new Date();
+        
+    } catch (error) {
+        console.error(`❌ Error parsing timestamp "${timestampStr}":`, error.message);
+        return new Date();
+    }
+}
+
+/**
  * Socket-based MQTT Client Manager
  * Manages MQTT connections for devices via their assigned sockets
  */
@@ -189,12 +234,16 @@ class SocketMQTTClient extends EventEmitter {
                 const data = JSON.parse(message.toString());
                 console.log(`📨 Socket ${socket.socket_number} received data:`, data);
 
-                // Store data in device_data_logs
-                await this.storeDeviceData(socketId, data);
-
-                // Update device current state if configured
+                // ✅ FIX: Only store if device is assigned
                 if (socket.device_id) {
+                    // Store data in device_data_logs
+                    await this.storeDeviceData(socketId, data);
+
+                    // Update device current state
                     await this.updateDeviceCurrentState(socket.device_id, socketId, data);
+                } else {
+                    console.warn(`⚠️  Socket ${socket.socket_number} (${socket.name}) received data but NO DEVICE ASSIGNED - skipping storage`);
+                    console.warn(`   Data received:`, JSON.stringify(data).substring(0, 100));
                 }
 
                 this.emit('data', { 
@@ -286,6 +335,12 @@ class SocketMQTTClient extends EventEmitter {
             const socket = this.connections.get(socketId).socket;
             const deviceId = socket.device_id;
             
+            // ✅ VALIDATION: Must have device assigned
+            if (!deviceId) {
+                console.warn(`⚠️  [Socket ${socket.socket_number}] Cannot store data - no device assigned`);
+                return null;
+            }
+            
             console.log(`📝 [Device ${deviceId}] Storing history with DUPLICATE+UPDATE strategy`);
             
             // 1. Get latest device_data record for this device
@@ -319,7 +374,7 @@ class SocketMQTTClient extends EventEmitter {
                     under_voltage: mqttData.hasOwnProperty('under_voltage') ? mqttData.under_voltage : latestRecord.under_voltage,
                     
                     // Always update timestamps
-                    timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date()
+                    timestamp: parseMqttTimestamp(mqttData.timestamp)
                     // Note: data_payload removed - not in device_data schema, raw JSON stored in device_data_logs
                 };
 
@@ -354,7 +409,7 @@ class SocketMQTTClient extends EventEmitter {
                     over_voltage: mqttData.over_voltage || false,
                     under_voltage: mqttData.under_voltage || false,
                     
-                    timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date()
+                    timestamp: parseMqttTimestamp(mqttData.timestamp)
                     // Note: data_payload removed - not in schema, use device_data_logs for raw JSON
                 };
 
@@ -391,6 +446,12 @@ class SocketMQTTClient extends EventEmitter {
      */
     async updateDeviceCurrentState(deviceId, socketId, mqttData) {
         try {
+            // ✅ VALIDATION: Must have valid deviceId
+            if (!deviceId) {
+                console.warn(`⚠️  Cannot update device state - deviceId is null`);
+                return null;
+            }
+            
             console.log(`📊 [Device ${deviceId}] Updating current state with MERGE strategy:`, Object.keys(mqttData));
             
             // Get current state from database
@@ -406,7 +467,7 @@ class SocketMQTTClient extends EventEmitter {
                     is_connected: true,
                     last_seen_at: new Date(),
                     updated_at: new Date(),
-                    timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date()
+                    timestamp: parseMqttTimestamp(mqttData.timestamp)
                 };
 
                 // Map ONLY incoming MQTT fields (preserve existing values for others)
@@ -477,7 +538,7 @@ class SocketMQTTClient extends EventEmitter {
                     is_connected: true,
                     last_seen_at: new Date(),
                     updated_at: new Date(),
-                    timestamp: mqttData.timestamp ? new Date(mqttData.timestamp) : new Date()
+                    timestamp: parseMqttTimestamp(mqttData.timestamp)
                 };
 
                 await prisma.device_data_latest.create({
