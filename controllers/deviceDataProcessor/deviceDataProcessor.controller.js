@@ -3,16 +3,25 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Get device data from generic logs
+/**
+ * Get device data with advanced filtering and aggregation
+ * Supports: time range, interval grouping, metric selection, pagination
+ */
 export const getDeviceData = async (req, res) => {
   try {
     const { deviceId } = req.params;
     const { 
       limit = 50, 
-      offset = 0, 
-      startDate, 
+      offset = 0,
+      // ✅ New params for better chart support
+      startTime,      // ISO timestamp (e.g., 2025-09-12T07:00:00Z)
+      endTime,        // ISO timestamp
+      interval,       // Time grouping: 1m, 5m, 15m, 1h, 1d
+      metrics,        // Comma-separated fields: current,voltage,power
+      // ✅ Backward compatibility
+      startDate,      
       endDate,
-      tableName = 'device_data_logs'
+      tableName = 'device_data'
     } = req.query;
 
     // Validate UUID
@@ -23,6 +32,13 @@ export const getDeviceData = async (req, res) => {
       });
     }
 
+    // Parse time range (support both old and new params)
+    const timeStart = startTime || startDate;
+    const timeEnd = endTime || endDate;
+
+    // Parse metrics filter
+    const selectedMetrics = metrics ? metrics.split(',').map(m => m.trim()) : null;
+
     let whereClause = '';
     let queryParams = [];
     let paramIndex = 1;
@@ -32,76 +48,132 @@ export const getDeviceData = async (req, res) => {
       queryParams.push(deviceId);
     }
 
-    if (startDate && endDate) {
+    if (timeStart && timeEnd) {
       const connector = deviceId ? 'AND' : 'WHERE';
       whereClause += ` ${connector} timestamp BETWEEN $${paramIndex++}::timestamp AND $${paramIndex++}::timestamp`;
-      queryParams.push(startDate, endDate);
+      queryParams.push(timeStart, timeEnd);
     }
 
-    // Check if using generic table or custom table
+    // Build SELECT clause based on metrics filter and interval
+    let selectClause;
+    let groupByClause = '';
+    let orderByClause = 'ORDER BY timestamp DESC';
+
+    if (interval) {
+      // ✅ Aggregated query with time interval grouping
+      const intervalMap = {
+        '1m': '1 minute',
+        '5m': '5 minutes',
+        '15m': '15 minutes',
+        '30m': '30 minutes',
+        '1h': '1 hour',
+        '2h': '2 hours',
+        '6h': '6 hours',
+        '12h': '12 hours',
+        '1d': '1 day'
+      };
+
+      const postgresInterval = intervalMap[interval] || '1 hour';
+
+      // Build aggregated SELECT with optional metric filtering
+      const metricsToAggregate = selectedMetrics || ['voltage', 'current', 'power', 'frequency', 'power_factor'];
+      
+      const aggFields = metricsToAggregate.map(metric => `
+        AVG(${metric}) as ${metric}_avg,
+        MIN(${metric}) as ${metric}_min,
+        MAX(${metric}) as ${metric}_max
+      `).join(',');
+
+      selectClause = `
+        DATE_TRUNC('${postgresInterval.split(' ')[1]}', timestamp) + 
+        INTERVAL '${postgresInterval}' * FLOOR(EXTRACT(EPOCH FROM timestamp - DATE_TRUNC('${postgresInterval.split(' ')[1]}', timestamp)) / EXTRACT(EPOCH FROM INTERVAL '${postgresInterval}')) as time_bucket,
+        COUNT(*) as data_points,
+        ${aggFields}
+      `;
+      
+      groupByClause = 'GROUP BY time_bucket';
+      orderByClause = 'ORDER BY time_bucket DESC';
+
+    } else if (selectedMetrics) {
+      // ✅ Raw query with metric filtering (no aggregation)
+      const metricFields = selectedMetrics.join(', ');
+      selectClause = `id, device_id, ${metricFields}, timestamp`;
+      
+    } else {
+      // ✅ Full raw query (all fields)
+      selectClause = '*';
+    }
+
+    // Build final query
     let query;
     if (tableName === 'device_data_logs') {
       query = `
         SELECT 
-          ddl.*,
+          ${selectClause}${!interval && !selectedMetrics ? `,
           d.serial_number,
           dm.name as model_name,
-          dm.manufacturer_id
-        FROM device_data_logs ddl
+          dm.manufacturer_id` : ''}
+        FROM device_data_logs ${interval || selectedMetrics ? '' : 'ddl'}
+        ${!interval && !selectedMetrics ? `
         LEFT JOIN device d ON ddl.device_id = d.id
-        LEFT JOIN device_models dm ON d.model_id = dm.id
+        LEFT JOIN device_models dm ON d.model_id = dm.id` : ''}
         ${whereClause}
-        ORDER BY ddl.timestamp DESC
-        LIMIT $${paramIndex++}::integer
-        OFFSET $${paramIndex++}::integer
+        ${groupByClause}
+        ${orderByClause}
+        ${!interval ? `LIMIT $${paramIndex++}::integer OFFSET $${paramIndex++}::integer` : ''}
       `;
-      queryParams.push(parseInt(limit), parseInt(offset));
     } else {
-      // For custom tables, construct query dynamically
       query = `
         SELECT 
-          *,
-          (SELECT serial_number FROM device WHERE id = device_id) as serial_number
+          ${selectClause}${!interval && !selectedMetrics ? `,
+          (SELECT serial_number FROM device WHERE id = device_id) as serial_number` : ''}
         FROM ${tableName}
         ${whereClause}
-        ORDER BY timestamp DESC
-        LIMIT $${paramIndex++}::integer
-        OFFSET $${paramIndex++}::integer
+        ${groupByClause}
+        ${orderByClause}
+        ${!interval ? `LIMIT $${paramIndex++}::integer OFFSET $${paramIndex++}::integer` : ''}
       `;
+    }
+
+    // Add pagination params if not using interval
+    if (!interval) {
       queryParams.push(parseInt(limit), parseInt(offset));
     }
 
     const result = await prisma.$queryRawUnsafe(query, ...queryParams);
 
-    // Get total count
-    let countQuery;
-    if (tableName === 'device_data_logs') {
-      countQuery = `
-        SELECT COUNT(*) as total
-        FROM device_data_logs
-        ${whereClause}
-      `;
-    } else {
-      countQuery = `
+    // Get total count (skip if using interval aggregation)
+    let totalCount = result.length;
+    if (!interval) {
+      let countQuery = `
         SELECT COUNT(*) as total
         FROM ${tableName}
         ${whereClause}
       `;
+      const countResult = await prisma.$queryRawUnsafe(
+        countQuery, 
+        ...queryParams.slice(0, deviceId ? (timeStart && timeEnd ? 3 : 1) : (timeStart && timeEnd ? 2 : 0))
+      );
+      totalCount = parseInt(countResult[0].total);
     }
-
-    const countResult = await prisma.$queryRawUnsafe(
-      countQuery, 
-      ...queryParams.slice(0, -2) // Remove limit and offset from count query
-    );
 
     res.json({
       success: true,
       data: result,
-      pagination: {
-        total: parseInt(countResult[0].total),
+      pagination: interval ? undefined : {
+        total: totalCount,
         limit: parseInt(limit),
         offset: parseInt(offset),
-        hasMore: parseInt(offset) + result.length < parseInt(countResult[0].total)
+        hasMore: parseInt(offset) + result.length < totalCount
+      },
+      metadata: {
+        interval: interval || 'raw',
+        metrics: selectedMetrics || 'all',
+        timeRange: timeStart && timeEnd ? {
+          start: timeStart,
+          end: timeEnd
+        } : undefined,
+        dataPoints: result.length
       }
     });
 

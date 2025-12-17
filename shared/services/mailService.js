@@ -269,17 +269,15 @@ class MailService {
                     <tr><td>Giá trị đo </td><td><strong>${data.formatted_measured_value || this.formatValueWithUnit(data.measured_value || data.current_value, data.warning_type) || 'N/A'}</strong></td></tr>
                     <tr><td>Ngưỡng cho phép </td><td><strong>${data.formatted_threshold_value || this.formatValueWithUnit(data.threshold_value, data.warning_type) || 'N/A'}</strong></td></tr>
                     <tr><td>Thời gian ghi nhận</td><td>${new Date(data.created_at).toLocaleString('vi-VN')}</td></tr>
-                    <tr><td>Vị trí</td><td>Tầng 2 - HOPT</td></tr>
                     ${data.escalation_level > 1 ? `<tr><td>Mức leo thang</td><td>Level ${data.escalation_level}</td></tr>` : ''}
                 </table>
                 
                 <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 4px;">
                     <h3>📋 Khuyến nghị:</h3>
                     <ul>
-                        <li>Kiểm tra tình trạng thiết bị/cảm biến ngay khi nhận cảnh báo.</li>
-                        <li>Xác nhận giá trị đo và so sánh với ngưỡng cho phép.</li>
-                        <li>Ghi nhận kết quả và hành động khắc phục vào hệ thống.</li>
-                        <li>Liên hệ bộ phận kỹ thuật nếu sự cố vượt khả năng xử lý tại chỗ.</li>
+                        <li>Tắt, dừng ngay thiết bị.</li>
+                        <li>Kiểm tra nguồn tại hộp điện</li>
+                        <li>Kiểm tra cổng nguồn, cầu chì và dây điện trong hộp</li>
                         ${data.escalation_level > 1 ? '<li><strong>⚠️ Đây là cảnh báo leo thang - cần xử lý ngay lập tức</strong></li>' : ''}
                     </ul>
                 </div>
