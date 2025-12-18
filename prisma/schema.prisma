@@ -54,12 +54,19 @@ model device {
   location              String?                 @db.VarChar(255)
   notes                 String?
   visibility            device_visibility       @default(private)
+  
+  // ✅ Soft Delete Fields
+  deleted_at            DateTime?               @db.Timestamptz(6)
+  deleted_by            String?                 @db.Uuid
+  deletion_reason       String?
+  
   alert_rules           alert_rules[]
   alert_suppressions    alert_suppressions[]
   alerts                alerts[]
   department            departments?            @relation(fields: [department_id], references: [id], onUpdate: NoAction)
   model                 device_models           @relation(fields: [model_id], references: [id], onUpdate: NoAction)
   organization          organizations           @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  deleted_by_user       users?                  @relation("DeviceDeletedBy", fields: [deleted_by], references: [id], onDelete: SetNull)
   device_data           device_data[]
   device_data_latest    device_data_latest?
   maintenance_history   maintenance_history[]
@@ -73,6 +80,8 @@ model device {
   @@index([status], map: "idx_device_status")
   @@index([visibility], map: "idx_device_visibility")
   @@index([organization_id, visibility], map: "idx_device_org_visibility")
+  @@index([deleted_at], map: "idx_device_deleted")
+  @@index([deleted_by], map: "idx_device_deleted_by")
 }
 
 model warranty_info {
@@ -494,6 +503,7 @@ model users {
   user_roles_assigned                                    user_roles[]               @relation("UserRoleAssignedBy")
   user_roles                                             user_roles[]
   user_sessions                                          user_sessions[]
+  devices_deleted                                        device[]                   @relation("DeviceDeletedBy")
   departments                                            departments?               @relation(fields: [department_id], references: [id], onUpdate: NoAction, map: "users_v2_department_id_fkey")
   organizations                                          organizations?             @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "users_v2_organization_id_fkey")
 
@@ -1119,6 +1129,7 @@ enum device_status {
   inactive
   maintenance
   decommissioned
+  archived
 }
 
 enum access_level {

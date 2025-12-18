@@ -3,11 +3,6 @@ import AuditLogger from '../../shared/services/AuditLogger.js';
 
 const prisma = new PrismaClient();
 
-function getVietnamDate() {
-    const now = new Date();
-    return new Date(now.getTime() + 7 * 60 * 60 * 1000);
-}
-
 // ✅ Helper function to safely get user permissions
 function getUserPermissions(user) {
     return Array.isArray(user?.permissions) ? user.permissions : [];
@@ -163,6 +158,9 @@ export const getAllDevices = async (req, res) => {
             params.push(status);
             paramIndex++;
         }
+
+        // ✅ IMPORTANT: Filter out soft-deleted devices by default
+        whereConditions.push(`d.deleted_at IS NULL`);
 
         if (manufacturer) {
             whereConditions.push(`m.name ILIKE $${paramIndex}`);
@@ -621,8 +619,8 @@ export const createDevice = async (req, res) => {
                     ${deviceVisibility}::device_visibility,
                     ${purchaseDateValue}::date,
                     ${installationDateValue}::date,
-                    ${getVietnamDate()}::timestamptz,
-                    ${getVietnamDate()}::timestamptz
+                    NOW(),
+                    NOW()
                 )
                 RETURNING id
             `;
@@ -767,9 +765,7 @@ export const updateDevice = async (req, res) => {
             });
         }
 
-        updateFields.push(`updated_at = $${paramIndex}::timestamptz`);
-        params.push(getVietnamDate());
-        paramIndex++;
+        updateFields.push(`updated_at = NOW()`);
 
         params.push(id);
         const updatedDevice = await prisma.$queryRawUnsafe(`
@@ -794,36 +790,324 @@ export const updateDevice = async (req, res) => {
     }
 };
 
-// Delete device
+// ✅ Soft Delete device (Archive with data preservation)
 export const deleteDevice = async (req, res) => {
     try {
         const { id } = req.params;
+        const { reason } = req.body;
 
-        // Check if device exists
-        const existingDevice = await prisma.$queryRaw`
-            SELECT id FROM device WHERE id = ${id}::uuid
-        `;
-        if (existingDevice.length === 0) {
+        // Check if device exists and get data summary
+        const device = await prisma.device.findUnique({
+            where: { id },
+            include: {
+                _count: {
+                    select: {
+                        device_data: true,
+                        alerts: true,
+                        maintenance_history: true
+                    }
+                },
+                model: {
+                    select: { name: true, model_number: true }
+                }
+            }
+        });
+
+        if (!device) {
             return res.status(404).json({
                 success: false,
                 message: 'Device not found'
             });
         }
 
-        // Delete device (cascades will handle related records)
-        await prisma.$queryRaw`
-            DELETE FROM device WHERE id = ${id}::uuid
-        `;
+        // Check if already deleted
+        if (device.deleted_at) {
+            return res.status(400).json({
+                success: false,
+                message: 'Device already deleted',
+                data: {
+                    deleted_at: device.deleted_at,
+                    deleted_by: device.deleted_by,
+                    deletion_reason: device.deletion_reason
+                }
+            });
+        }
+
+        // ✅ SOFT DELETE: Update status + deleted_at
+        const deletedDevice = await prisma.device.update({
+            where: { id },
+            data: {
+                status: 'archived',
+                deleted_at: new Date(),
+                deleted_by: req.user.id,
+                deletion_reason: reason || 'No reason provided',
+                updated_at: new Date()
+            }
+        });
+
+        // Create audit log
+        await AuditLogger.log({
+            user_id: req.user.id,
+            action: 'delete_device',
+            resource_type: 'device',
+            resource_id: id,
+            details: {
+                device_name: device.model?.name,
+                model_number: device.model?.model_number,
+                serial_number: device.serial_number,
+                reason: reason,
+                data_preserved: {
+                    device_data_count: device._count.device_data,
+                    alerts_count: device._count.alerts,
+                    maintenance_count: device._count.maintenance_history
+                }
+            }
+        });
 
         res.status(200).json({
             success: true,
-            message: 'Device deleted successfully'
+            message: 'Device archived successfully. All historical data preserved. Can be restored within 90 days.',
+            data: {
+                id: deletedDevice.id,
+                serial_number: deletedDevice.serial_number,
+                status: deletedDevice.status,
+                deleted_at: deletedDevice.deleted_at,
+                data_preserved: device._count
+            }
         });
+
     } catch (error) {
         console.error('Error deleting device:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to delete device',
+            message: 'Failed to archive device',
+            error: error.message
+        });
+    }
+};
+
+// ✅ Restore deleted device
+export const restoreDevice = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const device = await prisma.device.findUnique({
+            where: { id },
+            include: {
+                model: {
+                    select: { name: true, model_number: true }
+                }
+            }
+        });
+
+        if (!device) {
+            return res.status(404).json({
+                success: false,
+                message: 'Device not found'
+            });
+        }
+
+        if (!device.deleted_at) {
+            return res.status(400).json({
+                success: false,
+                message: 'Device is not deleted',
+                data: {
+                    status: device.status,
+                    message: 'Device is currently active'
+                }
+            });
+        }
+
+        // Check if deleted more than 90 days ago
+        const daysSinceDeleted = Math.floor((new Date() - new Date(device.deleted_at)) / (1000 * 60 * 60 * 24));
+        if (daysSinceDeleted > 90) {
+            return res.status(400).json({
+                success: false,
+                message: `Device was deleted ${daysSinceDeleted} days ago. Restoration period (90 days) has expired.`,
+                data: {
+                    deleted_at: device.deleted_at,
+                    days_since_deleted: daysSinceDeleted
+                }
+            });
+        }
+
+        // Restore device
+        const restoredDevice = await prisma.device.update({
+            where: { id },
+            data: {
+                status: 'inactive', // Set to inactive, needs manual activation
+                deleted_at: null,
+                deleted_by: null,
+                deletion_reason: null,
+                updated_at: new Date(),
+                notes: `${device.notes || ''}\n[RESTORED on ${new Date().toISOString()} by user ${req.user.id}]`.trim()
+            }
+        });
+
+        // Audit log
+        await AuditLogger.log({
+            user_id: req.user.id,
+            action: 'restore_device',
+            resource_type: 'device',
+            resource_id: id,
+            details: {
+                device_name: device.model?.name,
+                model_number: device.model?.model_number,
+                serial_number: device.serial_number,
+                restored_from: device.deleted_at,
+                original_deletion_reason: device.deletion_reason,
+                days_deleted: daysSinceDeleted
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Device restored successfully. Please activate the device to use it.',
+            data: {
+                id: restoredDevice.id,
+                serial_number: restoredDevice.serial_number,
+                status: restoredDevice.status,
+                restored_at: new Date(),
+                note: 'Device is currently inactive. Change status to active to use.'
+            }
+        });
+
+    } catch (error) {
+        console.error('Error restoring device:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to restore device',
+            error: error.message
+        });
+    }
+};
+
+// ✅ Get deleted devices (for restore interface)
+export const getDeletedDevices = async (req, res) => {
+    try {
+        const { 
+            organization_id,
+            page = 1, 
+            limit = 50 
+        } = req.query;
+
+        // Check user permissions
+        const user = req.user;
+        const userPermissions = getUserPermissions(user);
+        const isSuperAdmin = userPermissions.includes('system.admin') && !user?.organization_id;
+
+        let where = {
+            deleted_at: { not: null } // Only deleted devices
+        };
+
+        if (!isSuperAdmin) {
+            // Force organization filter for non-super-admin
+            const userOrgId = user?.organization_id;
+            if (!userOrgId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'User organization not found'
+                });
+            }
+            where.organization_id = userOrgId;
+
+            // Validate organization filter in query
+            if (organization_id && organization_id !== userOrgId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied: Cannot access devices from different organization'
+                });
+            }
+        } else if (organization_id) {
+            // Super admin can filter by organization
+            where.organization_id = organization_id;
+        }
+
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        const [devices, total] = await Promise.all([
+            prisma.device.findMany({
+                where,
+                include: {
+                    model: {
+                        select: {
+                            name: true,
+                            model_number: true,
+                            manufacturer_id: true
+                        }
+                    },
+                    organization: {
+                        select: {
+                            name: true
+                        }
+                    },
+                    department: {
+                        select: {
+                            name: true
+                        }
+                    },
+                    deleted_by_user: {
+                        select: {
+                            full_name: true,
+                            email: true
+                        }
+                    },
+                    _count: {
+                        select: {
+                            device_data: true,
+                            alerts: true,
+                            maintenance_history: true
+                        }
+                    }
+                },
+                skip: offset,
+                take: parseInt(limit),
+                orderBy: { deleted_at: 'desc' }
+            }),
+            prisma.device.count({ where })
+        ]);
+
+        // Calculate days since deletion and restoration eligibility
+        const devicesWithMeta = devices.map(device => {
+            const daysSinceDeleted = Math.floor((new Date() - new Date(device.deleted_at)) / (1000 * 60 * 60 * 24));
+            const canRestore = daysSinceDeleted <= 90;
+            const daysUntilPermanent = canRestore ? 90 - daysSinceDeleted : 0;
+
+            return {
+                ...device,
+                meta: {
+                    days_since_deleted: daysSinceDeleted,
+                    can_restore: canRestore,
+                    days_until_permanent_delete: daysUntilPermanent,
+                    restoration_deadline: canRestore 
+                        ? new Date(new Date(device.deleted_at).getTime() + 90 * 24 * 60 * 60 * 1000)
+                        : null
+                }
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: devicesWithMeta,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                totalPages: Math.ceil(total / parseInt(limit))
+            },
+            meta: {
+                total_deleted: total,
+                message: 'Devices can be restored within 90 days of deletion. After 90 days, they will be permanently deleted.',
+                restorable_count: devicesWithMeta.filter(d => d.meta.can_restore).length,
+                permanent_delete_pending: devicesWithMeta.filter(d => !d.meta.can_restore).length
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching deleted devices:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch deleted devices',
             error: error.message
         });
     }
@@ -1093,7 +1377,7 @@ export const changeDeviceVisibility = async (req, res) => {
         
         let updateFields = {
             visibility: consistencyCheck.visibility,
-            updated_at: getVietnamDate()
+            updated_at: new Date()
         };
 
         // If department_id needs to be cleared due to consistency rules

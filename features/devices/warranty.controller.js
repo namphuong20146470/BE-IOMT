@@ -1,11 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
-function getVietnamDate() {
-    const now = new Date();
-    return new Date(now.getTime() + 7 * 60 * 60 * 1000);
-}
-
 // Get warranty info by device ID
 export const getWarrantyByDevice = async (req, res) => {
     try {

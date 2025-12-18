@@ -7,10 +7,13 @@ const prisma = new PrismaClient();
 
 /**
  * Parse MQTT timestamp to valid Date object
+ * ✅ IMPORTANT: This preserves the MQTT device's timestamp as-is
+ * - Does NOT convert timezone
+ * - Returns whatever timestamp the device sends
  * Format: "HH:mm:ss DD/MM/YYYY" (e.g., "16:38:46 17/12/2025")
  */
 function parseMqttTimestamp(timestampStr) {
-    if (!timestampStr) return new Date();
+    if (!timestampStr) return new Date();  // Fallback to current time
     
     try {
         // Expected format: "HH:mm:ss DD/MM/YYYY"
@@ -19,6 +22,7 @@ function parseMqttTimestamp(timestampStr) {
         if (match) {
             const [, hours, minutes, seconds, day, month, year] = match;
             // JavaScript Date: months are 0-indexed
+            // ✅ Parse as-is, no timezone conversion
             const date = new Date(
                 parseInt(year),
                 parseInt(month) - 1,
@@ -417,8 +421,13 @@ class SocketMQTTClient extends EventEmitter {
             }
 
             // 4. Insert new history record with complete data
+            // ✅ timestamp: MQTT device timestamp (as-is)
+            // ✅ created_at: Server UTC time (auto by Prisma @default(now()))
             const newRecord = await prisma.device_data.create({
-                data: completeData
+                data: {
+                    ...completeData,
+                    created_at: new Date()  // ✅ Explicitly set UTC time
+                }
             });
 
             console.log(`✅ [Device ${deviceId}] History record created - ID: ${newRecord.id}`);
@@ -429,7 +438,7 @@ class SocketMQTTClient extends EventEmitter {
                     device_id: deviceId,
                     socket_id: socketId,
                     data_json: mqttData,
-                    timestamp: new Date()
+                    timestamp: new Date()  // ✅ UTC time
                 }
             });
             
@@ -465,9 +474,9 @@ class SocketMQTTClient extends EventEmitter {
                     // Always update metadata
                     socket_id: socketId,
                     is_connected: true,
-                    last_seen_at: new Date(),
-                    updated_at: new Date(),
-                    timestamp: parseMqttTimestamp(mqttData.timestamp)
+                    last_seen_at: new Date(),  // ✅ UTC
+                    updated_at: new Date(),    // ✅ UTC
+                    timestamp: parseMqttTimestamp(mqttData.timestamp)  // ✅ MQTT timestamp (as-is)
                 };
 
                 // Map ONLY incoming MQTT fields (preserve existing values for others)
@@ -536,9 +545,9 @@ class SocketMQTTClient extends EventEmitter {
                     
                     // Metadata
                     is_connected: true,
-                    last_seen_at: new Date(),
-                    updated_at: new Date(),
-                    timestamp: parseMqttTimestamp(mqttData.timestamp)
+                    last_seen_at: new Date(),  // ✅ UTC
+                    updated_at: new Date(),    // ✅ UTC
+                    timestamp: parseMqttTimestamp(mqttData.timestamp)  // ✅ MQTT timestamp (as-is)
                 };
 
                 await prisma.device_data_latest.create({

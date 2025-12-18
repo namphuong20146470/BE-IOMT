@@ -34,6 +34,8 @@ import {
     createDevice,
     updateDevice,
     deleteDevice,
+    restoreDevice,
+    getDeletedDevices,
     getDeviceStatistics,
     validateAssetTag,
     validateSerialNumber,
@@ -142,6 +144,9 @@ router.get('/validate/asset-tag', authMiddleware, requirePermission('device.read
 // GET /devices/visibility/:visibility - Get devices by visibility (public/department/private/all)
 router.get('/visibility/:visibility', authMiddleware, requirePermission('device.read'), getDevicesByVisibility);
 
+// GET /devices/deleted - Get deleted devices (for restore)
+router.get('/deleted', authMiddleware, requirePermission('device.read'), getDeletedDevices);
+
 // GET /devices/:id - Get device by ID with full details
 router.get('/:id', authMiddleware, requirePermission('device.read'), getDeviceById);
 
@@ -157,7 +162,10 @@ router.put('/:id/visibility', authMiddleware, requirePermission('device.update')
 // PUT /devices/:id/department - Assign device to department
 router.put('/:id/department', authMiddleware, requirePermission('device.update'), assignDeviceToDepartment);
 
-// DELETE /devices/:id - Delete device
+// POST /devices/:id/restore - Restore deleted device
+router.post('/:id/restore', authMiddleware, requirePermission('device.delete'), restoreDevice);
+
+// DELETE /devices/:id - Delete device (soft delete)
 router.delete('/:id', authMiddleware, requirePermission('device.delete'), deleteDevice);
 
 // ====================================================================
