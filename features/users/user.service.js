@@ -114,7 +114,8 @@ class UserService {
                 success: true,
                 data: users.map(user => ({
                     ...user,
-                    roles: user.user_roles.map(ur => ur.roles)
+                    // ✅ User chỉ có 1 role duy nhất -> Trả về object thay vì array
+                    role: user.user_roles[0]?.roles || null
                 })),
                 pagination: {
                     page: parseInt(page),
@@ -197,7 +198,8 @@ class UserService {
                 success: true,
                 data: {
                     ...user,
-                    roles: user.user_roles.map(ur => ur.roles)
+                    // ✅ User chỉ có 1 role duy nhất -> Trả về object thay vì array
+                    role: user.user_roles[0]?.roles || null
                 }
             };
         } catch (error) {
@@ -385,8 +387,8 @@ class UserService {
      * Check if user is super admin
      */
     isSuperAdmin(user) {
-        return user && user.roles && 
-               user.roles.some(role => role.name === 'super_admin');
+        // ✅ User chỉ có 1 role -> Check object thay vì array
+        return user && user.role && user.role.name === 'super_admin';
     }
 }
 

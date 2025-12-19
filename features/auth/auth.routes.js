@@ -8,7 +8,7 @@ import {
     validateChangePassword, 
     validateUpdateProfile,
     validateRefreshToken 
-} from './auth.validation.js';
+} from './auth.validator.js';
 
 const router = express.Router();
 
