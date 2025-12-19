@@ -302,7 +302,6 @@ export const getProfile = async (req, res) => {
                     username: user.username,
                     full_name: user.full_name,
                     email: user.email,
-                    avatar: user.avatar || null,
                     organization_id: user.organization_id,
                     department_id: user.department_id,
                     role: user.role || null,

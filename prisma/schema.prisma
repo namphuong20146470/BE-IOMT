@@ -870,7 +870,7 @@ model maintenance_history {
   currency              String?                @default("VND") @db.VarChar(3)
   parts_replaced        Json?                  @default("[]")
   consumables_used      Json?                  @default("[]")
-  status                maintenance_status     @default(completed)
+  status                maintenance_status     @default(pending)
   severity              maintenance_severity   @default(routine)
   issues_found          String?
   actions_taken         String?
@@ -1255,10 +1255,12 @@ enum org_status {
 }
 
 enum maintenance_status {
-  completed
-  failed
-  partial
-  cancelled
+  pending       // Chờ thực hiện
+  in_progress   // Đang thực hiện
+  completed     // Hoàn thành
+  failed        // Thất bại
+  partial       // Hoàn thành một phần
+  cancelled     // Đã hủy
 }
 
 enum maintenance_severity {

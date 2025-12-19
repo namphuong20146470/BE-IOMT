@@ -297,7 +297,6 @@ class SessionService {
             username: userWithRoles.username,
             full_name: userWithRoles.full_name,
             email: userWithRoles.email,
-            avatar: userWithRoles.avatar || null,
             organization_id: userWithRoles.organization_id,
             department_id: userWithRoles.department_id,
             is_active: userWithRoles.is_active,

@@ -160,8 +160,6 @@ export class AuthRepository {
                 full_name: true,
                 email: true,
                 phone: true,
-                address: true,
-                avatar: true,
                 updated_at: true,
                 organizations: {
                     select: {
@@ -247,7 +245,6 @@ export class AuthRepository {
                 username: true,
                 full_name: true,
                 email: true,
-                avatar: true,
                 phone: true,
                 organization_id: true,
                 department_id: true,
