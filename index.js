@@ -2,7 +2,6 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import https from 'https';
 import http from 'http';
-import { Server } from 'socket.io';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
@@ -65,10 +64,6 @@ const allowedOrigins = [
 // Middleware
 app.use(express.json());
 app.use(cookieParser()); // 🍪 Enable cookie parsing for HttpOnly cookies
-// const io = new Server();
-// io.on('connection', (socket) => {
-//   console.log('New client connected:', socket.id);
-// });
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
@@ -167,91 +162,57 @@ app.use('/api/v1', deviceDataRoutes);
 // SSL Configuration
 const { options, useHttps } = configureSSL();
 
-// ==================== SIMPLE SOCKET.IO SETUP ====================
-let io;
+// ==================== START HTTP/HTTPS SERVER ====================
 
 // Start server
 if (process.env.NODE_ENV !== 'test') {
     if (useHttps) {
         const httpsServer = https.createServer(options, app);
-        
-        // ✅ Khởi tạo Socket.IO đơn giản
-        io = new Server(httpsServer, {
-            cors: {
-                origin: allowedOrigins,
-                credentials: true
-            }
-        });
 
         httpsServer.listen(port, "0.0.0.0", () => {
-            console.log(`🔒 HTTPS Server + Socket.IO chạy tại: https://192.168.0.252:${port}`);
+            console.log(`🔒 HTTPS Server running at: https://192.168.0.252:${port}`);
         });
 
+        // HTTP redirect to HTTPS
         try {
             http.createServer((req, res) => {
                 res.writeHead(301, { "Location": `https://${req.headers.host}${req.url}` });
                 res.end();
             }).listen(httpPort, () => {
-                console.log(`🌍 HTTP Server chạy trên cổng ${httpPort} và tự động chuyển sang HTTPS`);
+                console.log(`🌍 HTTP Server on port ${httpPort} redirects to HTTPS`);
             });
         } catch (error) {
-            console.error("❌ Không thể khởi động HTTP server:", error.message);
+            console.error("❌ Failed to start HTTP redirect server:", error.message);
         }
     } else {
         const httpServer = http.createServer(app);
 
-        // ✅ Khởi tạo Socket.IO đơn giản
-        io = new Server(httpServer, {
-            cors: {
-                origin: allowedOrigins,
-                credentials: true
-            }
-        });
-
         httpServer.listen(port, () => {
-            console.log(`🌍 HTTP Server + Socket.IO chạy tại: http://localhost:${port}`);
+            console.log(`🌍 HTTP Server running at: http://localhost:${port}`);
         });
     }
 
-    // ==================== SOCKET.IO EVENT HANDLING ====================
-    if (io) {
-        // Lắng nghe sự kiện khi client kết nối
-        io.on('connection', (socket) => {
-            console.log('🔌 New client connected:', socket.id);
+    // ==================== INITIALIZE SOCKET-BASED MQTT CLIENT ====================
+    setTimeout(async () => {
+        try {
+            console.log('🚀 Initializing Socket-based MQTT Client...');
             
-            socket.on('disconnect', () => {
-                console.log('❌ Client disconnected:', socket.id);
-            });
-        });
-
-        // Tạo global reference cho MQTT dynamic manager
-        global.io = io;
-        
-        console.log('✅ Socket.IO initialized successfully');
-        
-        // ==================== INITIALIZE SOCKET-BASED MQTT CLIENT ====================
-        setTimeout(async () => {
-            try {
-                console.log('🚀 Initializing Socket-based MQTT Client...');
-                
-                // Add error handler to prevent crashes
-                socketMQTTClient.on('error', (errorData) => {
-                    console.error('🚨 Socket MQTT Error:', {
-                        socketId: errorData.socketId,
-                        socketNumber: errorData.socket?.socket_number,
-                        error: errorData.error.message,
-                        code: errorData.error.code
-                    });
+            // Add error handler to prevent crashes
+            socketMQTTClient.on('error', (errorData) => {
+                console.error('🚨 Socket MQTT Error:', {
+                    socketId: errorData.socketId,
+                    socketNumber: errorData.socket?.socket_number,
+                    error: errorData.error.message,
+                    code: errorData.error.code
                 });
-
-                await socketMQTTClient.initializeAll();
-                console.log('✅ Socket-based MQTT Client initialized successfully');
-            } catch (error) {
-                console.error('❌ Error initializing Socket MQTT Client:', error);
-            }
-        }, 3000); // Wait 3s for server to be fully ready
-    }
+            });
+            
+            await socketMQTTClient.initializeAll();
+            console.log('✅ Socket MQTT Client initialized');
+        } catch (error) {
+            console.error('❌ Error initializing Socket MQTT Client:', error);
+        }
+    }, 3000); // Wait 3s for server to be fully ready
 }
-
 
 export default app;

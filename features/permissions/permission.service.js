@@ -8,6 +8,7 @@ import {
     validateOrganizationAccess,
     getEffectiveOrganizationId
 } from '../../shared/utils/permissionHelpers.js';
+import { filterHiddenPermissions } from '../../shared/constants/permissions.constants.js';
 
 const prisma = new PrismaClient();
 const permissionRepository = new PermissionRepository();
@@ -50,10 +51,13 @@ class PermissionService {
                 includeUsers: sanitizedQuery.include_users
             });
             
+            // ✅ Filter out hidden permissions at service layer
+            const filteredPermissions = filterHiddenPermissions(result.permissions);
+            
             return {
                 success: true,
                 message: 'Permissions retrieved successfully',
-                data: result.permissions,
+                data: filteredPermissions,
                 pagination: result.pagination
             };
             
@@ -289,10 +293,13 @@ class PermissionService {
                 includeUsers: options.include_users
             });
             
+            // ✅ Filter out hidden permissions at service layer
+            const filteredPermissions = filterHiddenPermissions(permissions);
+            
             return {
                 success: true,
                 message: 'Permissions retrieved successfully',
-                data: permissions,
+                data: filteredPermissions,
                 category: validatedCategory
             };
             
@@ -374,10 +381,19 @@ class PermissionService {
             // Get permissions hierarchy
             const hierarchy = await permissionRepository.getHierarchy(accessibleOrganizations);
             
+            // ✅ Filter out hidden permissions from hierarchy at service layer
+            const filteredHierarchy = {};
+            for (const [category, resources] of Object.entries(hierarchy)) {
+                filteredHierarchy[category] = {};
+                for (const [resource, permissions] of Object.entries(resources)) {
+                    filteredHierarchy[category][resource] = filterHiddenPermissions(permissions);
+                }
+            }
+            
             return {
                 success: true,
                 message: 'Permissions hierarchy retrieved successfully',
-                data: hierarchy
+                data: filteredHierarchy
             };
             
         } catch (error) {

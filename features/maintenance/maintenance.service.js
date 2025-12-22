@@ -258,9 +258,21 @@ class MaintenanceService {
                 validatedData.duration_minutes = Math.round((endTime - startTime) / 60000);
             }
 
+            // Check if this is the first job
+            const existingJobs = await maintenanceRepository.getMaintenanceJobs(validatedData.maintenance_id);
+            const isFirstJob = existingJobs.length === 0;
+
             // Create job
             console.log('💾 Saving to DB:', JSON.stringify(validatedData, null, 2));
             await maintenanceRepository.createJob(validatedData);
+
+            // Auto-update status to in_progress when first job is created
+            if (isFirstJob && maintenanceLog.status === 'pending') {
+                await maintenanceRepository.update(validatedData.maintenance_id, {
+                    status: 'in_progress'
+                });
+                console.log('✅ Auto-updated maintenance status: pending → in_progress');
+            }
 
             // Get updated jobs list
             const jobs = await maintenanceRepository.getMaintenanceJobs(validatedData.maintenance_id);

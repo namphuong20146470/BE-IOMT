@@ -3,6 +3,10 @@ import { PrismaClient } from '@prisma/client';
 import roleRepository from './role.repository.js';
 import roleModel from './role.model.js';
 import { AppError } from '../../shared/utils/errorHandler.js';
+import { 
+    isHiddenPermission, 
+    validatePermissionAssignment 
+} from '../../shared/constants/permissions.constants.js';
 
 const prisma = new PrismaClient();
 
@@ -315,6 +319,21 @@ class RoleService {
                 throw new AppError('No permissions to assign', 400);
             }
 
+            // ✅ Validate no hidden permissions using centralized helper
+            const permissionsToCheck = await prisma.permissions.findMany({
+                where: { id: { in: permissionIds } },
+                select: { id: true, name: true }
+            });
+
+            const hiddenPerms = permissionsToCheck.filter(p => isHiddenPermission(p.name));
+            if (hiddenPerms.length > 0) {
+                const hiddenNames = hiddenPerms.map(p => p.name).join(', ');
+                throw new AppError(
+                    `Cannot assign hidden permissions: ${hiddenNames}`, 
+                    403
+                );
+            }
+
             // Bulk insert role_permissions (skip duplicates)
             const result = await roleRepository.bulkAssignPermissions(validatedId, permissionIds, user.id);
             
@@ -461,6 +480,23 @@ class RoleService {
             // Validate inputs
             const validatedRoleId = roleModel.validateRoleId(roleId);
             const validatedPermissionId = roleModel.validatePermissionId(permissionId);
+            
+            // ✅ Check if trying to assign hidden permission using centralized helper
+            const permission = await prisma.permissions.findUnique({
+                where: { id: validatedPermissionId },
+                select: { name: true }
+            });
+
+            if (!permission) {
+                throw new AppError('Permission not found', 404);
+            }
+
+            // Validate permission can be assigned (throws error if hidden)
+            try {
+                validatePermissionAssignment(permission.name);
+            } catch (error) {
+                throw new AppError(error.message, 403);
+            }
             
             // Check role access
             const role = await roleRepository.findByIdWithAccess(validatedRoleId, user);
