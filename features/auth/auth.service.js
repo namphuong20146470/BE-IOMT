@@ -30,8 +30,8 @@ export class AuthService {
         // 1. Validate input
         AuthValidator.validateLoginInput(username, password);
         
-        // 2. Find user
-        const users = await AuthRepository.findUserWithFullInfo(username);
+        // 2. Find user (without permissions for better performance)
+        const users = await AuthRepository.findUserForLogin(username);
         
         if (users.length === 0) {
             throw new AuthError(
@@ -108,12 +108,11 @@ export class AuthService {
             user.organization_id
         ).catch(console.error);
         
-        // 8. Transform and return
+        // 8. Transform and return (role already without permissions)
         return {
             user: AuthTransformer.transformUser(user, role),
             tokens: AuthTransformer.transformTokens(sessionData.data),
             session: AuthTransformer.transformSession(sessionData.data, clientInfo),
-            permissions_summary: AuthTransformer.transformPermissionsSummary(role),
             security_info: AuthTransformer.transformSecurityInfo(securityCheck)
         };
     }

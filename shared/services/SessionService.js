@@ -6,8 +6,8 @@ const prisma = new PrismaClient();
 
 class SessionService {
   constructor() {
-    this.ACCESS_TOKEN_EXPIRES = '30m';     // 15 phút
-    this.ACCESS_TOKEN_EXPIRES_SECONDS = 30 * 60; // 900 giây
+    this.ACCESS_TOKEN_EXPIRES = '1h';     // 1 giờ
+    this.ACCESS_TOKEN_EXPIRES_SECONDS = 60 * 60; // 3600 giây
     this.REFRESH_TOKEN_EXPIRES = '7d';     // 7 ngày
     this.REFRESH_TOKEN_EXPIRES_SECONDS = 7 * 24 * 60 * 60; // 604800 giây
     this.SESSION_TIMEOUT = 30 * 60 * 1000; // 30 phút không hoạt động

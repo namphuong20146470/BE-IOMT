@@ -9,8 +9,46 @@ const prisma = new PrismaClient();
 
 export class AuthRepository {
     /**
+     * Find user for login (without permissions for better performance)
+     */
+    static async findUserForLogin(identifier) {
+        return await prisma.$queryRaw`
+            SELECT u.id, u.username, u.full_name, u.email, 
+                   u.organization_id, u.department_id,
+                   u.password_hash, u.is_active,
+                   u.phone, u.created_at,
+                   o.name as organization_name,
+                   d.name as department_name,
+                   COALESCE(
+                       JSON_AGG(
+                           JSON_BUILD_OBJECT(
+                               'id', r.id,
+                               'name', r.name,
+                               'description', r.description,
+                               'color', r.color,
+                               'icon', r.icon
+                           )
+                       ) FILTER (WHERE r.id IS NOT NULL),
+                       '[]'::json
+                   ) as roles
+            FROM users u
+            LEFT JOIN organizations o ON u.organization_id = o.id
+            LEFT JOIN departments d ON u.department_id = d.id
+            LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = true
+            LEFT JOIN roles r ON ur.role_id = r.id AND r.is_active = true
+            WHERE (u.username = ${identifier} OR u.email = ${identifier})
+            AND u.is_active = true
+            GROUP BY u.id, u.username, u.full_name, u.email, 
+                     u.organization_id, u.department_id,
+                     u.password_hash, u.is_active,
+                     u.phone, u.created_at,
+                     o.name, d.name
+        `;
+    }
+
+    /**
      * Find user with full information (roles, permissions, org, dept)
-     * Single query for complete user data - used by login, getMe, etc.
+     * Single query for complete user data - used by getMe, etc.
      */
     static async findUserWithFullInfo(identifier) {
         return await prisma.$queryRaw`

@@ -282,7 +282,7 @@ export const getDeviceDataStats = async (req, res) => {
 export const getDeviceDataStream = async (req, res) => {
   try {
     const { deviceId } = req.params;
-    const { tableName = 'device_data_logs', limit = 10 } = req.query;
+    const { limit = 100 } = req.query;
 
     // Validate UUID
     if (!isValidUUID(deviceId)) {
@@ -292,34 +292,38 @@ export const getDeviceDataStream = async (req, res) => {
       });
     }
 
-    let query;
-    if (tableName === 'device_data_logs') {
-      query = `
-        SELECT 
-          id,
-          data_json,
-          timestamp
-        FROM device_data_logs
-        WHERE device_id = $1::uuid
-        ORDER BY timestamp DESC
-        LIMIT $2::integer
-      `;
-    } else {
-      query = `
-        SELECT *
-        FROM ${tableName}
-        WHERE device_id = $1::uuid
-        ORDER BY timestamp DESC
-        LIMIT $2::integer
-      `;
-    }
+    // Query from device_data table with flat structure (optimized for charts)
+    const query = `
+      SELECT 
+        id,
+        timestamp,
+        voltage,
+        current,
+        power,
+        frequency,
+        power_factor,
+        sensor_state,
+        socket_state,
+        machine_state,
+        over_voltage,
+        under_voltage
+      FROM device_data
+      WHERE device_id = $1::uuid
+      ORDER BY timestamp DESC
+      LIMIT $2::integer
+    `;
 
     const result = await prisma.$queryRawUnsafe(query, deviceId, parseInt(limit));
 
     res.json({
       success: true,
       data: result,
-      timestamp: new Date().toISOString()
+      meta: {
+        device_id: deviceId,
+        count: result.length,
+        limit: parseInt(limit),
+        timestamp: new Date().toISOString()
+      }
     });
 
   } catch (error) {
