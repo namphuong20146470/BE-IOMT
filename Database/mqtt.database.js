@@ -1,6 +1,5 @@
 import mqtt from 'mqtt';
 import { checkDeviceWarnings } from '../controllers/deviceWarningLogs/deviceWarningLogs.controller.js';
-import socketService from '../shared/services/socketService.js';
 import prisma from '../config/db.js';
 import dotenv from 'dotenv';
 import dns from 'dns';
@@ -434,13 +433,13 @@ async function processDeviceData(tableName, topicName, partialData) {
             timestamp: new Date().toISOString()
         };
 
-        // ✅ FIX: Use correct socketService method
-        socketService.broadcastMqttData(result[0].id, topicName, deviceData, {
-            type: 'deviceUpdate',
-            table: tableName,
-            changed: changedFields,
-            preserved: preservedFields.length
-        });
+        // ⚠️ DISABLED: WebSocket broadcast (not needed - data available via API)
+        // socketService.broadcastMqttData(result[0].id, topicName, deviceData, {
+        //     type: 'deviceUpdate',
+        //     table: tableName,
+        //     changed: changedFields,
+        //     preserved: preservedFields.length
+        // });
 
         const preservationRatio = `${preservedFields.length}/${allFields.length}`;
         
@@ -539,12 +538,12 @@ async function processIotEnvData(partialData) {
             timestamp: new Date().toISOString()
         };
 
-        // ✅ FIX: Use correct socketService method
-        socketService.broadcastMqttData('iot-environment', 'IoT Environment Status', envData, {
-            type: 'environmentUpdate',
-            changed: changedFields,
-            preserved: preservedFields.length
-        });
+        // ⚠️ DISABLED: WebSocket broadcast (not needed - data available via API)
+        // socketService.broadcastMqttData('iot-environment', 'IoT Environment Status', envData, {
+        //     type: 'environmentUpdate',
+        //     changed: changedFields,
+        //     preserved: preservedFields.length
+        // });
 
         // ✅ 6. Enhanced success logging
         const preservationRatio = `${preservedFields.length}/${allFields.length}`;

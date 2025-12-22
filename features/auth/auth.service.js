@@ -342,6 +342,250 @@ export class AuthService {
     }
 
     /**
+     * Get user profile - Full data for /me endpoint
+     */
+    static async getProfile(userId) {
+        // 1. Validate user ID
+        AuthValidator.validateUserId(userId);
+        
+        // 2. Get user with full relations
+        const { PrismaClient } = await import('@prisma/client');
+        const prisma = new PrismaClient();
+        
+        const user = await prisma.users.findUnique({
+            where: { id: userId },
+            include: {
+                organizations: {
+                    select: { 
+                        id: true, 
+                        name: true, 
+                        type: true,
+                        address: true,
+                        phone: true,
+                        email: true,
+                        license_number: true,
+                        is_active: true
+                    }
+                },
+                departments: {
+                    select: { 
+                        id: true, 
+                        name: true, 
+                        description: true,
+                        code: true
+                    }
+                },
+                user_roles: {
+                    where: { 
+                        is_active: true,
+                        valid_from: { lte: new Date() },
+                        OR: [
+                            { valid_until: null },
+                            { valid_until: { gte: new Date() } }
+                        ]
+                    },
+                    include: {
+                        roles: {
+                            include: {
+                                role_permissions: {
+                                    include: {
+                                        permissions: {
+                                            select: { name: true }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!user) {
+            throw new AuthError(
+                'User not found or inactive',
+                AUTH_ERROR_CODES.USER_NOT_FOUND,
+                404
+            );
+        }
+
+        // 3. Transform roles with permissions
+        const roles = user.user_roles.map(userRole => ({
+            id: userRole.roles.id,
+            name: userRole.roles.name,
+            description: userRole.roles.description,
+            color: userRole.roles.color,
+            icon: userRole.roles.icon,
+            permissions: userRole.roles.role_permissions.map(rp => rp.permissions.name)
+        }));
+
+        // 4. Calculate permissions summary
+        const allPermissions = [...new Set(roles.flatMap(role => role.permissions))];
+        const scopes = [...new Set(allPermissions.map(p => {
+            const parts = p.split('.');
+            return parts.length > 1 ? parts[0] : 'system';
+        }))];
+
+        return {
+            user: {
+                id: user.id,
+                username: user.username,
+                full_name: user.full_name,
+                email: user.email,
+                phone: user.phone,
+                organization_id: user.organization_id,
+                department_id: user.department_id,
+                is_active: user.is_active,
+                created_at: user.created_at,
+                organization: user.organizations,
+                department: user.departments,
+                roles: roles
+            },
+            permissions_summary: {
+                total: allPermissions.length,
+                scopes: scopes,
+                has_admin_access: roles.some(role => 
+                    role.permissions.includes('system.admin')
+                )
+            }
+        };
+    }
+
+    /**
+     * Get user permissions with caching
+     */
+    static async getUserPermissions(userId) {
+        // 1. Validate user ID
+        AuthValidator.validateUserId(userId);
+        
+        const { PrismaClient } = await import('@prisma/client');
+        const prisma = new PrismaClient();
+        
+        // 2. Check cache first
+        const cacheKey = `permissions:${userId}`;
+        const cached = await prisma.user_permission_cache.findUnique({
+            where: { user_id: userId }
+        });
+
+        const now = new Date();
+        
+        if (cached && cached.expires_at > now) {
+            // Cache hit - return cached data
+            return {
+                permissions: cached.permissions,
+                scopes: cached.scopes,
+                role: cached.role_data,
+                cached: true,
+                version: cached.version,
+                cached_at: cached.cached_at,
+                expires_at: cached.expires_at
+            };
+        }
+
+        // 3. Cache miss - query fresh data
+        const user = await prisma.users.findUnique({
+            where: { id: userId },
+            include: {
+                user_roles: {
+                    where: { 
+                        is_active: true,
+                        valid_from: { lte: new Date() },
+                        OR: [
+                            { valid_until: null },
+                            { valid_until: { gte: new Date() } }
+                        ]
+                    },
+                    include: {
+                        roles: {
+                            include: {
+                                role_permissions: {
+                                    include: {
+                                        permissions: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!user) {
+            throw new AuthError(
+                'User not found',
+                AUTH_ERROR_CODES.USER_NOT_FOUND,
+                404
+            );
+        }
+
+        // 4. Extract permissions
+        const allPermissions = [];
+        const roleData = user.user_roles.map(ur => {
+            const permissions = ur.roles.role_permissions.map(rp => {
+                allPermissions.push(rp.permissions.name);
+                return {
+                    id: rp.permissions.id,
+                    name: rp.permissions.name,
+                    description: rp.permissions.description,
+                    resource: rp.permissions.resource,
+                    action: rp.permissions.action,
+                    scope: rp.permissions.scope
+                };
+            });
+
+            return {
+                id: ur.roles.id,
+                name: ur.roles.name,
+                description: ur.roles.description,
+                color: ur.roles.color,
+                icon: ur.roles.icon,
+                permissions: permissions
+            };
+        });
+
+        // 5. Calculate scopes
+        const uniquePermissions = [...new Set(allPermissions)];
+        const scopes = [...new Set(uniquePermissions.map(p => {
+            const parts = p.split('.');
+            return parts.length > 1 ? parts[0] : 'system';
+        }))];
+
+        // 6. Update cache
+        const version = `v${Date.now()}`;
+        await prisma.user_permission_cache.upsert({
+            where: { user_id: userId },
+            update: {
+                permissions: uniquePermissions,
+                scopes: scopes,
+                role_data: roleData,
+                version: version,
+                cached_at: now,
+                expires_at: new Date(now.getTime() + 15 * 60 * 1000), // 15 minutes
+                updated_at: now
+            },
+            create: {
+                user_id: userId,
+                permissions: uniquePermissions,
+                scopes: scopes,
+                role_data: roleData,
+                version: version,
+                cached_at: now,
+                expires_at: new Date(now.getTime() + 15 * 60 * 1000)
+            }
+        });
+
+        return {
+            permissions: uniquePermissions,
+            scopes: scopes,
+            role: roleData[0] || null,
+            cached: false,
+            version: version,
+            cached_at: now,
+            expires_at: new Date(now.getTime() + 15 * 60 * 1000)
+        };
+    }
+
+    /**
      * Update user profile
      */
     static async updateProfile(userId, updateData) {
