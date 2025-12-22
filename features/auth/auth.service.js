@@ -470,14 +470,19 @@ export class AuthService {
         const now = new Date();
         
         if (cached && cached.expires_at > now) {
-            // Cache hit - return cached data
+            // Cache hit - return cached data with computed scopes
+            const cachedPermissions = cached.permissions || [];
+            const computedScopes = [...new Set(cachedPermissions.map(p => {
+                const parts = p.split('.');
+                return parts.length > 1 ? parts[0] : 'system';
+            }))];
+            
             return {
-                permissions: cached.permissions,
-                scopes: cached.scopes,
-                role: cached.role_data,
+                permissions: cachedPermissions,
+                scopes: computedScopes,
+                roles: [], // Roles not stored in cache
                 cached: true,
-                version: cached.version,
-                cached_at: cached.cached_at,
+                cached_at: cached.computed_at,
                 expires_at: cached.expires_at
             };
         }
@@ -543,33 +548,25 @@ export class AuthService {
             };
         });
 
-        // 5. Calculate scopes
+        // 5. Calculate scopes (for response metadata only)
         const uniquePermissions = [...new Set(allPermissions)];
         const scopes = [...new Set(uniquePermissions.map(p => {
             const parts = p.split('.');
             return parts.length > 1 ? parts[0] : 'system';
         }))];
 
-        // 6. Update cache
-        const version = `v${Date.now()}`;
+        // 6. Update cache (without scopes field - not in schema)
         await prisma.user_permission_cache.upsert({
             where: { user_id: userId },
             update: {
                 permissions: uniquePermissions,
-                scopes: scopes,
-                role_data: roleData,
-                version: version,
-                cached_at: now,
-                expires_at: new Date(now.getTime() + 15 * 60 * 1000), // 15 minutes
-                updated_at: now
+                computed_at: now,
+                expires_at: new Date(now.getTime() + 15 * 60 * 1000) // 15 minutes
             },
             create: {
                 user_id: userId,
                 permissions: uniquePermissions,
-                scopes: scopes,
-                role_data: roleData,
-                version: version,
-                cached_at: now,
+                computed_at: now,
                 expires_at: new Date(now.getTime() + 15 * 60 * 1000)
             }
         });
@@ -577,9 +574,8 @@ export class AuthService {
         return {
             permissions: uniquePermissions,
             scopes: scopes,
-            role: roleData[0] || null,
+            roles: roleData,
             cached: false,
-            version: version,
             cached_at: now,
             expires_at: new Date(now.getTime() + 15 * 60 * 1000)
         };
