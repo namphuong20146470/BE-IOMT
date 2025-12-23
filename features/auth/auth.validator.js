@@ -319,11 +319,17 @@ export const validateUpdateProfile = (req, res, next) => {
  */
 export const validateRefreshToken = (req, res, next) => {
     try {
-        // Check for refresh token in cookies or body
-        const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+        // ✅ Fix: Use refresh_token (with underscore) to match auth.controller.old
+        const refreshToken = req.cookies?.refresh_token || 
+                           req.body?.refresh_token ||
+                           (req.headers.authorization?.startsWith('Bearer ') 
+                               ? req.headers.authorization.substring(7) 
+                               : null);
+        
         const validated = AuthValidator.validateRefreshToken(
             refreshToken, 
-            req.cookies?.refreshToken ? 'cookie' : 'body'
+            req.cookies?.refresh_token ? 'cookie' : 
+            req.headers.authorization ? 'bearer' : 'body'
         );
         req.validatedRefreshToken = validated;
         next();

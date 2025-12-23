@@ -52,7 +52,8 @@ export function requirePermission(permission, resourceType = null) {
         id: req.user?.id,
         username: req.user?.username,
         organization_id: req.user?.organization_id,
-        roles: req.user?.roles?.map(r => ({ name: r.name, permissions: r.permissions?.length || 0 }))
+        roles: req.user?.roles?.map(r => r.name) || [],
+        permissions_count: req.user?.permissions?.length || 0
       }, null, 2));
 
       // Must be authenticated first
@@ -115,7 +116,7 @@ export function requirePermission(permission, resourceType = null) {
           resource_type: resourceType,
           user_roles: req.user.roles?.map(r => r.name) || [],
           debug: {
-            jwt_permissions: req.user.roles?.flatMap(role => role.permissions || []).slice(0, 5),
+            user_permissions_sample: req.user.permissions?.slice(0, 5) || [],
             super_admin: isSuperAdmin(req.user)
           }
         });
@@ -178,7 +179,7 @@ export function requireAnyPermission(permissions) {
         success: false,
         message: 'Insufficient permissions',
         required_permissions: permissions,
-        user_permissions: req.user.permissions?.roles?.map(r => r.name) || []
+        user_roles: req.user.roles?.map(r => r.name) || []
       });
     } catch (error) {
       console.error('Permission middleware error:', error);

@@ -54,8 +54,8 @@ export class AuthService {
             );
         }
         
-        // 4. Parse role (user only has 1 role)
-        const role = this.parseUserRole(user.roles);
+        // 4. Parse roles array (multi-role system)
+        const roles = typeof user.roles === 'string' ? JSON.parse(user.roles) : (user.roles || []);
         
         // 5. Security check
         const securityCheck = await sessionService.detectSuspiciousActivity(
@@ -75,7 +75,7 @@ export class AuthService {
             email: user.email,
             organization_id: user.organization_id,
             department_id: user.department_id,
-            role
+            roles
         };
         
         const sessionData = await sessionService.createSession(
@@ -108,9 +108,9 @@ export class AuthService {
             user.organization_id
         ).catch(console.error);
         
-        // 8. Transform and return (role already without permissions)
+        // 8. Transform and return (roles array)
         return {
-            user: AuthTransformer.transformUser(user, role),
+            user: AuthTransformer.transformUser(user, roles),
             tokens: AuthTransformer.transformTokens(sessionData.data),
             session: AuthTransformer.transformSession(sessionData.data, clientInfo),
             security_info: AuthTransformer.transformSecurityInfo(securityCheck)
@@ -135,9 +135,12 @@ export class AuthService {
             );
         }
         
-        // 3. Transform and return
+        // 3. Get roles array (multi-role system)
+        const roles = result.data.user.roles || [];
+        
+        // 4. Transform and return
         return {
-            user: AuthTransformer.transformUser(result.data.user, result.data.user.role),
+            user: AuthTransformer.transformUser(result.data.user, roles),
             tokens: {
                 access_token: result.data.access_token,
                 access_token_expires_in: result.data.expires_in,
@@ -150,7 +153,7 @@ export class AuthService {
                 created_at: result.data.created_at || new Date().toISOString(),
                 expires_at: result.data.expires_at
             },
-            permissions_summary: AuthTransformer.transformPermissionsSummary(result.data.user.role)
+            permissions_summary: AuthTransformer.transformPermissionsSummary(roles)
         };
     }
 

@@ -56,8 +56,13 @@ export const refreshToken = async (req, res) => {
 
         console.log('🔄 Refresh token request:', {
             hasRefreshToken: !!refreshToken,
+            refreshTokenLength: refreshToken?.length,
+            refreshTokenPreview: refreshToken?.substring(0, 20),
             refreshSource,
-            ipAddress
+            ipAddress,
+            body: req.body,
+            headers_auth: req.headers.authorization,
+            cookies: req.cookies
         });
 
         // Delegate to service

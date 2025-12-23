@@ -109,7 +109,7 @@ export const authMiddleware = async (req, res, next) => {
             email: decoded.email,
             organization_id: decoded.organization_id,
             department_id: decoded.department_id,
-            roles: decoded.roles || [],
+            roles: decoded.roles || [], // Array of roles
             permissions: allPermissions // Include all permissions (from roles + direct)
         };
 
@@ -186,8 +186,8 @@ export const optionalAuth = async (req, res, next) => {
  */
 export const requirePermission = (permission) => {
     return (req, res, next) => {
-        const userPermissions = req.user?.roles
-            ?.flatMap(role => role.permissions || []) || [];
+        // Use permissions array directly (already flattened from all roles + direct)
+        const userPermissions = req.user?.permissions || [];
 
         if (!userPermissions.includes(permission)) {
             return res.status(403).json({
@@ -214,7 +214,8 @@ export const requireRole = (roleName) => {
                 success: false,
                 message: 'Insufficient role',
                 code: 'AUTH_FORBIDDEN',
-                required: roleName
+                required: roleName,
+                current_roles: userRoles
             });
         }
 

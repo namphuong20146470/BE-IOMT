@@ -8,15 +8,19 @@ import { DEFAULT_VALUES } from './auth.constants.js';
 
 export class AuthTransformer {
     /**
-     * Transform user data for API response
+     * Transform user data for API response (multi-role system)
      */
-    static transformUser(user, role = null) {
+    static transformUser(user, roles = null) {
+        // Support multi-role: accept roles array
+        const userRoles = roles || user.roles || [];
+        
         return {
             id: user.id,
             username: user.username,
             full_name: user.full_name,
             email: user.email,
             phone: user.phone || null,
+            avatar: user.avatar || null,
             organization_id: user.organization_id,
             department_id: user.department_id,
             is_active: user.is_active,
@@ -24,7 +28,14 @@ export class AuthTransformer {
             department_name: user.department_name || null,
             created_at: user.created_at,
             last_login: user.last_login || user.last_login_at,
-            role: role || DEFAULT_VALUES.ROLE
+            // Multi-role system: return complete roles array
+            roles: userRoles.map(r => ({
+                id: r.id,
+                name: r.name,
+                description: r.description || null,
+                color: r.color || DEFAULT_VALUES.ROLE.color,
+                icon: r.icon || DEFAULT_VALUES.ROLE.icon
+            }))
         };
     }
 
@@ -80,12 +91,21 @@ export class AuthTransformer {
     }
 
     /**
-     * Transform permissions summary
+     * Transform permissions summary (multi-role)
      */
-    static transformPermissionsSummary(role) {
+    static transformPermissionsSummary(roles) {
+        // Aggregate permissions from all roles
+        const allPermissions = roles?.reduce((acc, role) => {
+            const rolePerms = role?.permissions || [];
+            return [...acc, ...rolePerms];
+        }, []) || [];
+        
+        // Remove duplicates
+        const uniquePermissions = [...new Set(allPermissions)];
+        
         return {
-            total: role?.permissions?.length || 0,
-            has_admin_access: role?.permissions?.includes('system.admin') || false
+            total: uniquePermissions.length,
+            has_admin_access: uniquePermissions.includes('system.admin')
         };
     }
 
