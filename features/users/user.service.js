@@ -384,11 +384,99 @@ class UserService {
     }
 
     /**
+     * Get user profile (safe for viewing by others)
+     */
+    async getUserProfile(userId, requestingUser, isSelf = false) {
+        try {
+            const user = await prisma.users.findUnique({
+                where: { id: userId },
+                select: {
+                    id: true,
+                    username: true,
+                    full_name: true,
+                    email: true,
+                    phone: true,
+                    is_active: true,
+                    created_at: true,
+                    updated_at: true,
+                    organizations: {
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true,
+                            type: true
+                        }
+                    },
+                    departments: {
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true
+                        }
+                    },
+                    user_roles: {
+                        where: { is_active: true },
+                        select: {
+                            roles: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    description: true,
+                                    color: true,
+                                    icon: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (!user) {
+                return {
+                    success: false,
+                    error: 'User not found'
+                };
+            }
+
+            // Transform roles array
+            const roles = user.user_roles.map(ur => ur.roles);
+
+            return {
+                success: true,
+                data: {
+                    id: user.id,
+                    username: user.username,
+                    full_name: user.full_name,
+                    email: user.email,
+                    phone: user.phone,
+                    is_active: user.is_active,
+                    created_at: user.created_at,
+                    updated_at: user.updated_at,
+                    organization: user.organizations,
+                    department: user.departments,
+                    roles
+                }
+            };
+        } catch (error) {
+            console.error('UserService - getUserProfile error:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
      * Check if user is super admin
      */
     isSuperAdmin(user) {
-        // ✅ User chỉ có 1 role -> Check object thay vì array
-        return user && user.role && user.role.name === 'super_admin';
+        // Multi-role system: check if user has any role with admin permissions
+        const roles = user?.roles || [];
+        return roles.some(role => 
+            role.name === 'SuperAdmin' || 
+            role.name === 'super_admin' ||
+            role.permissions?.includes('system.admin')
+        );
     }
 }
 
